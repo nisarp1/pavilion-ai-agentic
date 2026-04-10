@@ -109,3 +109,19 @@ logs/
 # AWS
 .aws/
 
+
+# Virtual environments
+venv/
+env/
+ENV/
+backend/venv/
+
+# Credentials (should use Cloud Secret Manager instead)
+backend/credentials/
+*.key.json
+*credentials*.json
+
+# Backend credentials
+backend/credentials/
+backend/**/*.key.json
+backend/**/*credentials*

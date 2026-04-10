@@ -38,7 +38,7 @@ echo ""
 
 # Step 2: Create/Select GCP Project
 echo -e "${YELLOW}[Step 2/10] Setting up GCP project...${NC}"
-read -p "Enter your GCP Project ID (or press Enter to create new): " PROJECT_ID
+PROJECT_ID=""
 if [ -z "$PROJECT_ID" ]; then
     echo "Creating new project: $PROJECT_NAME"
     gcloud projects create $PROJECT_NAME --name="Pavilion AI Agentic CMS" --set-as-default

@@ -1,0 +1,167 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (local for testing)
+  # For production, use Cloud SQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: pavilion-postgres-dev
+    environment:
+      POSTGRES_DB: pavilion_agentic_local
+      POSTGRES_USER: pavilion_user
+      POSTGRES_PASSWORD: dev-password-change-in-production
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/cloudsql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pavilion_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pavilion-network
+
+  # Redis for Celery and Caching
+  redis:
+    image: redis:7-alpine
+    container_name: pavilion-redis-dev
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pavilion-network
+
+  # Celery Worker
+  celery:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: pavilion-celery-dev
+    command: celery -A pavilion_gemini worker --loglevel=info
+    environment:
+      DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
+      DATABASE_URL: postgresql://pavilion_user:dev-password-change-in-production@postgres:5432/pavilion_agentic_local
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      GOOGLE_APPLICATION_CREDENTIALS: /app/.gcp-secrets/service-account-key.json
+      ENVIRONMENT: development
+      DEBUG: 'true'
+    volumes:
+      - .:/app
+      - ./.gcp-secrets:/app/.gcp-secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pavilion-network
+
+  # Celery Beat (Scheduler)
+  celery-beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: pavilion-celery-beat-dev
+    command: celery -A pavilion_gemini beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    environment:
+      DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
+      DATABASE_URL: postgresql://pavilion_user:dev-password-change-in-production@postgres:5432/pavilion_agentic_local
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      GOOGLE_APPLICATION_CREDENTIALS: /app/.gcp-secrets/service-account-key.json
+      ENVIRONMENT: development
+      DEBUG: 'true'
+    volumes:
+      - .:/app
+      - ./.gcp-secrets:/app/.gcp-secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pavilion-network
+
+  # Django Development Server
+  django:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: pavilion-django-dev
+    command: >
+      sh -c "python backend/manage.py migrate &&
+             python backend/manage.py runserver 0.0.0.0:8000"
+    environment:
+      DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
+      DATABASE_URL: postgresql://pavilion_user:dev-password-change-in-production@postgres:5432/pavilion_agentic_local
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      GOOGLE_APPLICATION_CREDENTIALS: /app/.gcp-secrets/service-account-key.json
+      ENVIRONMENT: development
+      DEBUG: 'true'
+      ALLOWED_HOSTS: '*'
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ./.gcp-secrets:/app/.gcp-secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pavilion-network
+    stdin_open: true
+    tty: true
+
+  # React Frontend (optional)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: pavilion-frontend-dev
+    environment:
+      REACT_APP_API_URL: http://localhost:8000/api
+      REACT_APP_ENVIRONMENT: development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - django
+    networks:
+      - pavilion-network
+    stdin_open: true
+
+networks:
+  pavilion-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+
+# Usage:
+# docker-compose -f docker-compose.dev.yml up -d      # Start all services
+# docker-compose -f docker-compose.dev.yml logs -f    # View logs
+# docker-compose -f docker-compose.dev.yml down       # Stop all services
+#
+# Services will be available at:
+# - Django API: http://localhost:8000
+# - Frontend: http://localhost:3000
+# - PostgreSQL: localhost:5432
+# - Redis: localhost:6379
+#
+# Run Django commands:
+# docker-compose -f docker-compose.dev.yml exec django python manage.py shell
+# docker-compose -f docker-compose.dev.yml exec django python manage.py createsuperuser

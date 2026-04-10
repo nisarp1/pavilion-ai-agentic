@@ -1,0 +1,86 @@
+{
+    "templates": [
+        {
+            "name": "Standard Poster (Top Text)",
+            "background_image": "template_01.png",
+            "text_config": {
+                "text_fields": [
+                    {
+                        "name": "headline",
+                        "x": 540,
+                        "y": 100,
+                        "font_size": 90,
+                        "color": "#FFEA00",
+                        "max_width": 1000,
+                        "align": "center",
+                        "anchor": "mt"
+                    },
+                    {
+                        "name": "summary",
+                        "x": 540,
+                        "y": 450,
+                        "font_size": 55,
+                        "color": "#FFFFFF",
+                        "max_width": 1000,
+                        "align": "center",
+                        "anchor": "mm"
+                    }
+                ]
+            },
+            "image_config": {
+                "image_fields": [
+                    {
+                        "name": "featured_image",
+                        "x": 0,
+                        "y": 600,
+                        "width": 1080,
+                        "height": 1320,
+                        "remove_background": true,
+                        "fit_mode": "contain",
+                        "align_vertical": "bottom"
+                    }
+                ]
+            }
+        },
+        {
+            "name": "Breaking News",
+            "background_image": "template_02.png",
+            "text_config": {
+                "text_fields": [
+                    {
+                        "name": "headline",
+                        "x": 50,
+                        "y": 250,
+                        "font_size": 75,
+                        "color": "#00E5FF",
+                        "max_width": 900,
+                        "align": "left"
+                    },
+                    {
+                        "name": "summary",
+                        "x": 50,
+                        "y": 450,
+                        "font_size": 60,
+                        "color": "#FFFFFF",
+                        "max_width": 900,
+                        "align": "left"
+                    }
+                ]
+            },
+            "image_config": {
+                "image_fields": [
+                    {
+                        "name": "featured_image",
+                        "x": 540,
+                        "y": 600,
+                        "width": 1080,
+                        "height": 1000,
+                        "remove_background": false,
+                        "fit_mode": "cover",
+                        "align_vertical": "center"
+                    }
+                ]
+            }
+        }
+    ]
+}

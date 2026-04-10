@@ -1,0 +1,147 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - develop
+  workflow_dispatch:
+
+env:
+  REGISTRY: us-central1-docker.pkg.dev
+  IMAGE_NAME: pavilion-agentic-app
+  PROJECT_ID: ${{ secrets.GOOGLE_PROJECT_ID }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          version: 'latest'
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.REGISTRY }}
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "ENVIRONMENT=production" >> $GITHUB_OUTPUT
+            echo "SERVICE_NAME=pavilion-api-prod" >> $GITHUB_OUTPUT
+            echo "REGION=us-central1" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+            echo "ENVIRONMENT=staging" >> $GITHUB_OUTPUT
+            echo "SERVICE_NAME=pavilion-api-staging" >> $GITHUB_OUTPUT
+            echo "REGION=us-central1" >> $GITHUB_OUTPUT
+          else
+            echo "ENVIRONMENT=development" >> $GITHUB_OUTPUT
+            echo "SERVICE_NAME=pavilion-api-dev" >> $GITHUB_OUTPUT
+            echo "REGION=us-central1" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg ENVIRONMENT=${{ steps.env.outputs.ENVIRONMENT }} \
+            -t "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            -t "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:latest" \
+            -f docker/Dockerfile.cloudrun \
+            .
+
+      - name: Push Docker image
+        run: |
+          docker push "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          docker push "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:latest"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ steps.env.outputs.SERVICE_NAME }} \
+            --image "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            --platform managed \
+            --region ${{ steps.env.outputs.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --allow-unauthenticated \
+            --memory 2Gi \
+            --cpu 1 \
+            --timeout 3600 \
+            --max-instances 100 \
+            --min-instances 1 \
+            --set-env-vars "ENVIRONMENT=${{ steps.env.outputs.ENVIRONMENT }},DEBUG=False" \
+            --set-cloudsql-instances="${{ env.PROJECT_ID }}:us-central1:pavilion-db-${{ steps.env.outputs.ENVIRONMENT }}" \
+            --service-account=pavilion-agentic@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - name: Get service URL
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ steps.env.outputs.SERVICE_NAME }} \
+            --platform managed \
+            --region ${{ steps.env.outputs.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --format='value(status.url)')
+          echo "Service deployed at: $SERVICE_URL"
+
+      - name: Run database migrations
+        run: |
+          # Run migrations on deployed service
+          gcloud run jobs create migrate-${{ github.run_id }} \
+            --image "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            --platform managed \
+            --region us-central1 \
+            --project ${{ env.PROJECT_ID }} \
+            --set-cloudsql-instances="${{ env.PROJECT_ID }}:us-central1:pavilion-db-${{ steps.env.outputs.ENVIRONMENT }}" \
+            --command="python" \
+            --args="manage.py,migrate" \
+            --service-account=pavilion-agentic@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+            --wait || true
+
+      - name: Health check
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ steps.env.outputs.SERVICE_NAME }} \
+            --platform managed \
+            --region ${{ steps.env.outputs.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --format='value(status.url)')
+
+          echo "Checking service health..."
+          for i in {1..30}; do
+            if curl -f "$SERVICE_URL/api/health/" > /dev/null 2>&1; then
+              echo "✓ Service is healthy"
+              exit 0
+            fi
+            echo "Attempt $i/30 - Waiting for service to be ready..."
+            sleep 10
+          done
+          echo "✗ Service health check failed"
+          exit 1
+
+  notify:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Send notification
+        if: failure()
+        run: |
+          echo "Deployment failed! Check the logs above for details."
+          exit 1
+
+      - name: Success notification
+        if: success()
+        run: |
+          echo "✓ Successfully deployed to Cloud Run!"

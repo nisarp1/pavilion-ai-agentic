@@ -41,7 +41,9 @@ COPY --from=builder /root/.local /root/.local
 
 # Copy application code
 COPY backend ./backend/
-COPY frontend/dist ./frontend/dist/ 2>/dev/null || true
+
+# Create frontend directory (dist artifacts optional)
+RUN mkdir -p ./frontend/dist
 
 # Create necessary directories
 RUN mkdir -p /app/media /app/static /app/logs

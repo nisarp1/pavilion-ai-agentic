@@ -58,25 +58,31 @@ jobs:
 
       - name: Build Docker image
         run: |
+          PROJECT_ID="${{ env.PROJECT_ID }}"
+          IMAGE_TAG="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          IMAGE_TAG_LATEST="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:latest"
+
           docker build \
             --build-arg ENVIRONMENT=${{ steps.env.outputs.ENVIRONMENT }} \
-            -t "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
-            -t "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:latest" \
+            -t "${IMAGE_TAG}" \
+            -t "${IMAGE_TAG_LATEST}" \
             -f docker/Dockerfile.cloudrun \
             .
 
       - name: Push Docker image
         run: |
-          docker push "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          docker push "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:latest"
+          PROJECT_ID="${{ env.PROJECT_ID }}"
+          docker push "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          docker push "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:latest"
 
       - name: Deploy to Cloud Run
         run: |
+          PROJECT_ID="${{ env.PROJECT_ID }}"
           gcloud run deploy ${{ steps.env.outputs.SERVICE_NAME }} \
-            --image "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            --image "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
             --platform managed \
             --region ${{ steps.env.outputs.REGION }} \
-            --project ${{ env.PROJECT_ID }} \
+            --project ${PROJECT_ID} \
             --allow-unauthenticated \
             --memory 2Gi \
             --cpu 1 \
@@ -84,38 +90,41 @@ jobs:
             --max-instances 100 \
             --min-instances 1 \
             --set-env-vars "ENVIRONMENT=${{ steps.env.outputs.ENVIRONMENT }},DEBUG=False" \
-            --set-cloudsql-instances="${{ env.PROJECT_ID }}:us-central1:pavilion-db-${{ steps.env.outputs.ENVIRONMENT }}" \
-            --service-account=pavilion-agentic@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+            --set-cloudsql-instances="${PROJECT_ID}:us-central1:pavilion-db-${{ steps.env.outputs.ENVIRONMENT }}" \
+            --service-account=pavilion-agentic@${PROJECT_ID}.iam.gserviceaccount.com
 
       - name: Get service URL
         run: |
+          PROJECT_ID="${{ env.PROJECT_ID }}"
           SERVICE_URL=$(gcloud run services describe ${{ steps.env.outputs.SERVICE_NAME }} \
             --platform managed \
             --region ${{ steps.env.outputs.REGION }} \
-            --project ${{ env.PROJECT_ID }} \
+            --project ${PROJECT_ID} \
             --format='value(status.url)')
           echo "Service deployed at: $SERVICE_URL"
 
       - name: Run database migrations
         run: |
+          PROJECT_ID="${{ env.PROJECT_ID }}"
           # Run migrations on deployed service
           gcloud run jobs create migrate-${{ github.run_id }} \
-            --image "${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            --image "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
             --platform managed \
             --region us-central1 \
-            --project ${{ env.PROJECT_ID }} \
-            --set-cloudsql-instances="${{ env.PROJECT_ID }}:us-central1:pavilion-db-${{ steps.env.outputs.ENVIRONMENT }}" \
+            --project ${PROJECT_ID} \
+            --set-cloudsql-instances="${PROJECT_ID}:us-central1:pavilion-db-${{ steps.env.outputs.ENVIRONMENT }}" \
             --command="python" \
             --args="manage.py,migrate" \
-            --service-account=pavilion-agentic@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+            --service-account=pavilion-agentic@${PROJECT_ID}.iam.gserviceaccount.com \
             --wait || true
 
       - name: Health check
         run: |
+          PROJECT_ID="${{ env.PROJECT_ID }}"
           SERVICE_URL=$(gcloud run services describe ${{ steps.env.outputs.SERVICE_NAME }} \
             --platform managed \
             --region ${{ steps.env.outputs.REGION }} \
-            --project ${{ env.PROJECT_ID }} \
+            --project ${PROJECT_ID} \
             --format='value(status.url)')
 
           echo "Checking service health..."

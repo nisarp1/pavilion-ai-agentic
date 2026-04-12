@@ -62,8 +62,8 @@ jobs:
         run: |
           # Strip any whitespace/newlines from PROJECT_ID
           PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
-          IMAGE_TAG="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          IMAGE_TAG_LATEST="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:latest"
+          IMAGE_TAG="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          IMAGE_TAG_LATEST="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:latest"
 
           docker build \
             --build-arg ENVIRONMENT=${{ steps.env.outputs.ENVIRONMENT }} \

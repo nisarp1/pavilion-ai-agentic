@@ -58,7 +58,8 @@ jobs:
 
       - name: Build Docker image
         run: |
-          PROJECT_ID="${{ env.PROJECT_ID }}"
+          # Strip any whitespace/newlines from PROJECT_ID
+          PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
           IMAGE_TAG="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           IMAGE_TAG_LATEST="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:latest"
 
@@ -71,13 +72,13 @@ jobs:
 
       - name: Push Docker image
         run: |
-          PROJECT_ID="${{ env.PROJECT_ID }}"
+          PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
           docker push "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           docker push "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:latest"
 
       - name: Deploy to Cloud Run
         run: |
-          PROJECT_ID="${{ env.PROJECT_ID }}"
+          PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
           gcloud run deploy ${{ steps.env.outputs.SERVICE_NAME }} \
             --image "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
             --platform managed \
@@ -95,7 +96,7 @@ jobs:
 
       - name: Get service URL
         run: |
-          PROJECT_ID="${{ env.PROJECT_ID }}"
+          PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
           SERVICE_URL=$(gcloud run services describe ${{ steps.env.outputs.SERVICE_NAME }} \
             --platform managed \
             --region ${{ steps.env.outputs.REGION }} \
@@ -105,7 +106,7 @@ jobs:
 
       - name: Run database migrations
         run: |
-          PROJECT_ID="${{ env.PROJECT_ID }}"
+          PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
           # Run migrations on deployed service
           gcloud run jobs create migrate-${{ github.run_id }} \
             --image "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
@@ -120,7 +121,7 @@ jobs:
 
       - name: Health check
         run: |
-          PROJECT_ID="${{ env.PROJECT_ID }}"
+          PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
           SERVICE_URL=$(gcloud run services describe ${{ steps.env.outputs.SERVICE_NAME }} \
             --platform managed \
             --region ${{ steps.env.outputs.REGION }} \

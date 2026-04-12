@@ -11,12 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY backend/requirements-agentic.txt .
+# Copy requirements (use minimal version with verified packages)
+COPY backend/requirements-minimal.txt .
 
 # Build wheels
 RUN pip install --user --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --user --no-cache-dir -r requirements-agentic.txt
+    pip install --user --no-cache-dir -r requirements-minimal.txt
 
 # Runtime stage: Minimal production image
 FROM python:3.11-slim

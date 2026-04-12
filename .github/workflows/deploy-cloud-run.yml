@@ -82,7 +82,7 @@ jobs:
         run: |
           PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
           gcloud run deploy ${{ steps.env.outputs.SERVICE_NAME }} \
-            --image "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            --image "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
             --platform managed \
             --region ${{ steps.env.outputs.REGION }} \
             --project ${PROJECT_ID} \
@@ -111,7 +111,7 @@ jobs:
           PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
           # Run migrations on deployed service
           gcloud run jobs create migrate-${{ github.run_id }} \
-            --image "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            --image "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
             --platform managed \
             --region us-central1 \
             --project ${PROJECT_ID} \

@@ -65,6 +65,10 @@ sentry-sdk==1.39.1
 # Database Connection
 dj-database-url==2.1.0
 
+# Task Queue
+celery==5.3.4
+redis==5.0.1
+
 # Server
 gunicorn==21.2.0
 whitenoise==6.6.0

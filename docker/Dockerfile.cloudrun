@@ -26,6 +26,7 @@ WORKDIR /app
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/backend:$PYTHONPATH \
     PATH=/usr/local/bin:$PATH \
     PORT=8080
 
@@ -47,6 +48,9 @@ RUN mkdir -p ./frontend/dist
 
 # Create necessary directories
 RUN mkdir -p /app/media /app/static /app/logs
+
+# Set working directory to backend (where manage.py and wsgi.py are)
+WORKDIR /app/backend
 
 # Set permissions - run as root (container is sandboxed)
 RUN chown -R root:root /app

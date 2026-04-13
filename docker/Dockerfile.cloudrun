@@ -50,9 +50,10 @@ RUN mkdir -p /app/media /app/static /app/logs
 
 # Set permissions
 RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
+    chown -R appuser:appuser /app && \
+    chown -R appuser:appuser /root/.local
 
-# Switch to non-root user
+# Switch to app user
 USER appuser
 
 # Health check

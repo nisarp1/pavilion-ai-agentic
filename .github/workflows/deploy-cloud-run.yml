@@ -83,10 +83,9 @@ jobs:
           PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
           DB_INSTANCE="${PROJECT_ID}:us-central1:pavilion-db-${{ steps.env.outputs.ENVIRONMENT }}"
 
-          # Build environment variables - escape special characters properly
-          ENV_VARS="ENVIRONMENT=${{ steps.env.outputs.ENVIRONMENT }},DEBUG=False,SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }},DATABASE_URL=postgresql://pavilion_app:${{ secrets.DB_PASSWORD }}@/pavilion_agentic?unix_socket_dir=/cloudsql/${DB_INSTANCE}&sslmode=disable"
+          # Build database URL - ampersand is safe in double quotes
+          DB_URL="postgresql://pavilion_app:${{ secrets.DB_PASSWORD }}@/pavilion_agentic?unix_socket_dir=/cloudsql/${DB_INSTANCE}&sslmode=disable"
 
-          # Debug: show the URL (safely, without password)
           echo "Deploying to ${{ steps.env.outputs.SERVICE_NAME }} in ${{ steps.env.outputs.REGION }}"
 
           gcloud run deploy ${{ steps.env.outputs.SERVICE_NAME }} \
@@ -100,7 +99,7 @@ jobs:
             --timeout 3600 \
             --max-instances 100 \
             --min-instances 1 \
-            --set-env-vars "${ENV_VARS}" \
+            --set-env-vars "ENVIRONMENT=${{ steps.env.outputs.ENVIRONMENT }},DEBUG=False,SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }},DATABASE_URL=${DB_URL}" \
             --set-cloudsql-instances="${DB_INSTANCE}" \
             --service-account=pavilion-agentic@${PROJECT_ID}.iam.gserviceaccount.com
 

@@ -139,7 +139,7 @@ jobs:
 
           echo "Checking service health..."
           for i in {1..30}; do
-            if curl -f "$SERVICE_URL/api/health/" > /dev/null 2>&1; then
+            if curl -f "$SERVICE_URL/health/" > /dev/null 2>&1; then
               echo "✓ Service is healthy"
               exit 0
             fi

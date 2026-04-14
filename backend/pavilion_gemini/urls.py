@@ -57,8 +57,8 @@ def reset_admin_password(request):
 from rss_fetcher.views import debug_media_view
 
 urlpatterns = [
+    path('health/', health_check, name='health_check'),
     path('', api_root, name='api_root'),
-    path('api/health/', health_check, name='health_check'),
     path('debug-media/', debug_media_view),
     path('admin/', admin.site.urls),
     path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

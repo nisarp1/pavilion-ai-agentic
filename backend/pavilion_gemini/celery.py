@@ -14,7 +14,14 @@ app = Celery('pavilion_gemini')
 app.config_from_object('django.conf:settings', namespace='CELERY')
 
 # Load task modules from all registered Django apps.
-app.autodiscover_tasks()
+# Wrap in try-except to handle missing broker or other startup issues
+try:
+    app.autodiscover_tasks()
+except Exception as e:
+    # If autodiscover fails (e.g., no broker configured), continue
+    # This is acceptable for WSGI deployments where Celery tasks are not needed
+    import warnings
+    warnings.warn(f"Celery autodiscover failed: {e}. Tasks will not be available.")
 
 @app.task(bind=True, ignore_result=True)
 def debug_task(self):

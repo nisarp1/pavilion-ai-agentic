@@ -6,6 +6,8 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -33,6 +35,7 @@ def api_root(request):
         'documentation': 'Access /admin/ for Django admin panel'
     })
 
+@method_decorator(csrf_exempt, name='dispatch')
 class HealthCheckView(APIView):
     """Health check endpoint for load balancers and monitoring."""
     permission_classes = [AllowAny]

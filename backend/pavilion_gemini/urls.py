@@ -30,6 +30,13 @@ def api_root(request):
         'documentation': 'Access /admin/ for Django admin panel'
     })
 
+def health_check(request):
+    """Health check endpoint for load balancers and monitoring."""
+    return JsonResponse({
+        'status': 'healthy',
+        'service': 'pavilion-api'
+    }, status=200)
+
 from django.http import HttpResponse
 from django.contrib.auth.models import User
 
@@ -47,6 +54,7 @@ from rss_fetcher.views import debug_media_view
 
 urlpatterns = [
     path('', api_root, name='api_root'),
+    path('api/health/', health_check, name='health_check'),
     path('debug-media/', debug_media_view),
     path('admin/', admin.site.urls),
     path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

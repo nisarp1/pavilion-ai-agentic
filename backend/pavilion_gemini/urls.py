@@ -34,9 +34,9 @@ def api_root(request):
         'documentation': 'Access /admin/ for Django admin panel'
     })
 
-@csrf_exempt
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@csrf_exempt
 def health_check(request):
     """Health check endpoint for load balancers and monitoring."""
     return Response({

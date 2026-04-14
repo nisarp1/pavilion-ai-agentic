@@ -6,8 +6,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import (
@@ -34,15 +33,15 @@ def api_root(request):
         'documentation': 'Access /admin/ for Django admin panel'
     })
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-@csrf_exempt
-def health_check(request):
+class HealthCheckView(APIView):
     """Health check endpoint for load balancers and monitoring."""
-    return Response({
-        'status': 'healthy',
-        'service': 'pavilion-api'
-    }, status=200)
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({
+            'status': 'healthy',
+            'service': 'pavilion-api'
+        }, status=200)
 
 from django.http import HttpResponse
 from django.contrib.auth.models import User
@@ -61,7 +60,7 @@ from rss_fetcher.views import debug_media_view
 
 urlpatterns = [
     path('', api_root, name='api_root'),
-    path('api/health/', health_check, name='health_check'),
+    path('api/health/', HealthCheckView.as_view(), name='health_check'),
     path('debug-media/', debug_media_view),
     path('admin/', admin.site.urls),
     path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),

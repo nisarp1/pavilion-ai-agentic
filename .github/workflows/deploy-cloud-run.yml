@@ -83,8 +83,10 @@ jobs:
           PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
           DB_INSTANCE="${PROJECT_ID}:us-central1:pavilion-db-${{ steps.env.outputs.ENVIRONMENT }}"
 
-          # Build database URL - ampersand is safe in double quotes
-          DB_URL="postgresql://pavilion_app:${{ secrets.DB_PASSWORD }}@/pavilion_agentic?unix_socket_dir=/cloudsql/${DB_INSTANCE}&sslmode=disable"
+          # Build database URL - URL encode the password to handle special characters
+          PASSWORD="${{ secrets.DB_PASSWORD }}"
+          ENCODED_PASSWORD=$(jq -nr --arg v "$PASSWORD" '$v|@uri')
+          DB_URL="postgresql://pavilion_app:${ENCODED_PASSWORD}@/pavilion_agentic?unix_socket_dir=/cloudsql/${DB_INSTANCE}&sslmode=disable"
 
           echo "Deploying to ${{ steps.env.outputs.SERVICE_NAME }} in ${{ steps.env.outputs.REGION }}"
 

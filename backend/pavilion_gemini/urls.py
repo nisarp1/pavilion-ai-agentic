@@ -31,15 +31,13 @@ def api_root(request):
         'documentation': 'Access /admin/ for Django admin panel'
     })
 
+from django.http import HttpResponse
+
 @csrf_exempt
 def health_check(request):
     """Health check endpoint for load balancers and monitoring."""
-    if request.method == 'GET':
-        return JsonResponse({
-            'status': 'healthy',
-            'service': 'pavilion-api'
-        }, status=200)
-    return JsonResponse({'error': 'Method not allowed'}, status=405)
+    # Return plain text 200 OK - minimal response to avoid any parsing issues
+    return HttpResponse('OK', status=200, content_type='text/plain')
 
 from django.http import HttpResponse
 from django.contrib.auth.models import User

@@ -115,21 +115,6 @@ jobs:
             --format='value(status.url)')
           echo "Service deployed at: $SERVICE_URL"
 
-      - name: Run database migrations
-        run: |
-          PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
-          # Run migrations on deployed service
-          gcloud run jobs create migrate-${{ github.run_id }} \
-            --image "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
-            --platform managed \
-            --region us-central1 \
-            --project ${PROJECT_ID} \
-            --set-cloudsql-instances="${PROJECT_ID}:us-central1:pavilion-db-${{ steps.env.outputs.ENVIRONMENT }}" \
-            --command="python" \
-            --args="manage.py,migrate" \
-            --service-account=pavilion-agentic@${PROJECT_ID}.iam.gserviceaccount.com \
-            --wait || true
-
       - name: Health check
         run: |
           PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"

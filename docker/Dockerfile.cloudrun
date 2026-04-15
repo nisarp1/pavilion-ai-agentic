@@ -45,12 +45,16 @@ RUN python3 -c "import celery; import redis; print('✓ Celery and Redis importe
 
 # Copy application code
 COPY backend ./backend/
+COPY docker/entrypoint.sh ./docker/entrypoint.sh
 
 # Create frontend directory (dist artifacts optional)
 RUN mkdir -p ./frontend/dist
 
 # Create necessary directories
 RUN mkdir -p /app/media /app/static /app/logs
+
+# Make entrypoint executable
+RUN chmod +x ./docker/entrypoint.sh
 
 # Set working directory to backend (where manage.py and wsgi.py are)
 WORKDIR /app/backend
@@ -61,20 +65,12 @@ RUN chown -R root:root /app
 # Run as root (safe in containerized environment)
 USER root
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/api/health/ || exit 1
+# Health check (start-period=60s to allow time for migrations and startup)
+HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health/ || exit 1
 
 # Expose port
 EXPOSE ${PORT}
 
-# Run gunicorn
-CMD ["gunicorn", \
-     "--workers=4", \
-     "--worker-class=sync", \
-     "--bind=0.0.0.0:8080", \
-     "--timeout=120", \
-     "--access-logfile=-", \
-     "--error-logfile=-", \
-     "--log-level=info", \
-     "pavilion_gemini.wsgi:application"]
+# Run entrypoint script
+ENTRYPOINT ["/app/docker/entrypoint.sh"]

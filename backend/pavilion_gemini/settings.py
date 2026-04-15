@@ -94,8 +94,6 @@ import dj_database_url
 # Database
 # Cloud SQL with unix socket via cloud-sql-python-connector
 if ENVIRONMENT == 'production':
-    from cloud_sql_python_connector import Connector
-
     # Get database credentials from environment
     db_instance = env('CLOUD_SQL_INSTANCE', default='')
     db_user = env('DB_USER', default='pavilion_app')
@@ -103,24 +101,36 @@ if ENVIRONMENT == 'production':
     db_name = env('DB_NAME', default='pavilion_agentic')
 
     if db_instance:
-        # Using Cloud SQL Connector for unix socket support
-        connector = Connector()
+        try:
+            from cloud_sql_python_connector import Connector
 
-        def getconn():
-            return connector.connect(
-                db_instance,
-                "postgresql",
-                user=db_user,
-                password=db_password,
-                db=db_name
-            )
+            # Using Cloud SQL Connector for unix socket support
+            connector = Connector()
 
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.postgresql',
-                'CREATOR': getconn,
+            def getconn():
+                return connector.connect(
+                    db_instance,
+                    "postgresql",
+                    user=db_user,
+                    password=db_password,
+                    db=db_name
+                )
+
+            DATABASES = {
+                'default': {
+                    'ENGINE': 'django.db.backends.postgresql',
+                    'CREATOR': getconn,
+                }
             }
-        }
+        except ImportError:
+            # Fall back to DATABASE_URL if cloud-sql-python-connector not installed
+            DATABASES = {
+                'default': dj_database_url.config(
+                    default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
+                    conn_max_age=600,
+                    conn_health_checks=True,
+                )
+            }
     else:
         # Fallback to DATABASE_URL if available
         DATABASES = {

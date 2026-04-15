@@ -1,0 +1,157 @@
+Setting up Workload Identity Federation for GitHub Actions...
+Project: pavilion-ai-agentic
+Repository: nisarp1/pavilion-ai-agentic
+
+[1/5] Creating Workload Identity Pool...
+ERROR: (gcloud.iam.workload-identity-pools.create) argument --disabled: ignored explicit argument 'false'
+Usage: gcloud iam workload-identity-pools create (WORKLOAD_IDENTITY_POOL : --location=LOCATION) [optional flags]
+  optional flags may be  --description | --disabled | --display-name | --help |
+                         --inline-certificate-issuance-config-file |
+                         --inline-trust-config-file | --location | --mode
+
+For detailed information on this command and its flags, run:
+  gcloud iam workload-identity-pools create --help
+[2/5] Creating GitHub provider...
+ERROR: (gcloud.iam.workload-identity-pools.providers.create-oidc) argument --disabled: ignored explicit argument 'false'
+Usage: gcloud iam workload-identity-pools providers create-oidc (PROVIDER : --location=LOCATION --workload-identity-pool=WORKLOAD_IDENTITY_POOL) --attribute-mapping=[KEY=VALUE,...] --issuer-uri=ISSUER_URI [optional flags]
+  optional flags may be  --allowed-audiences | --attribute-condition |
+                         --description | --disabled | --display-name | --help |
+                         --jwk-json-path | --location | --workload-identity-pool
+
+For detailed information on this command and its flags, run:
+  gcloud iam workload-identity-pools providers create-oidc --help
+[3/5] Getting provider resource name...
+ERROR: (gcloud.iam.workload-identity-pools.providers.describe) There was a problem refreshing your current auth tokens: Reauthentication failed. cannot prompt during non-interactive execution.
+Please run:
+
+  $ gcloud auth login
+
+to obtain new credentials.
+
+If you have already logged in with a different account, run:
+
+  $ gcloud config set account ACCOUNT
+
+to select an already authenticated account to use.
+WIF Provider: 
+[4/5] Setting up service account...
+ERROR: (gcloud.iam.service-accounts.create) There was a problem refreshing your current auth tokens: Reauthentication failed. cannot prompt during non-interactive execution.
+Please run:
+
+  $ gcloud auth login
+
+to obtain new credentials.
+
+If you have already logged in with a different account, run:
+
+  $ gcloud config set account ACCOUNT
+
+to select an already authenticated account to use.
+[5/5] Granting IAM roles...
+ERROR: (gcloud.projects.add-iam-policy-binding) There was a problem refreshing your current auth tokens: Reauthentication failed. cannot prompt during non-interactive execution.
+Please run:
+
+  $ gcloud auth login
+
+to obtain new credentials.
+
+If you have already logged in with a different account, run:
+
+  $ gcloud config set account ACCOUNT
+
+to select an already authenticated account to use.
+ERROR: (gcloud.projects.add-iam-policy-binding) There was a problem refreshing your current auth tokens: Reauthentication failed. cannot prompt during non-interactive execution.
+Please run:
+
+  $ gcloud auth login
+
+to obtain new credentials.
+
+If you have already logged in with a different account, run:
+
+  $ gcloud config set account ACCOUNT
+
+to select an already authenticated account to use.
+ERROR: (gcloud.projects.add-iam-policy-binding) There was a problem refreshing your current auth tokens: Reauthentication failed. cannot prompt during non-interactive execution.
+Please run:
+
+  $ gcloud auth login
+
+to obtain new credentials.
+
+If you have already logged in with a different account, run:
+
+  $ gcloud config set account ACCOUNT
+
+to select an already authenticated account to use.
+ERROR: (gcloud.projects.add-iam-policy-binding) There was a problem refreshing your current auth tokens: Reauthentication failed. cannot prompt during non-interactive execution.
+Please run:
+
+  $ gcloud auth login
+
+to obtain new credentials.
+
+If you have already logged in with a different account, run:
+
+  $ gcloud config set account ACCOUNT
+
+to select an already authenticated account to use.
+ERROR: (gcloud.projects.add-iam-policy-binding) There was a problem refreshing your current auth tokens: Reauthentication failed. cannot prompt during non-interactive execution.
+Please run:
+
+  $ gcloud auth login
+
+to obtain new credentials.
+
+If you have already logged in with a different account, run:
+
+  $ gcloud config set account ACCOUNT
+
+to select an already authenticated account to use.
+ERROR: (gcloud.projects.add-iam-policy-binding) There was a problem refreshing your current auth tokens: Reauthentication failed. cannot prompt during non-interactive execution.
+Please run:
+
+  $ gcloud auth login
+
+to obtain new credentials.
+
+If you have already logged in with a different account, run:
+
+  $ gcloud config set account ACCOUNT
+
+to select an already authenticated account to use.
+ERROR: (gcloud.projects.add-iam-policy-binding) There was a problem refreshing your current auth tokens: Reauthentication failed. cannot prompt during non-interactive execution.
+Please run:
+
+  $ gcloud auth login
+
+to obtain new credentials.
+
+If you have already logged in with a different account, run:
+
+  $ gcloud config set account ACCOUNT
+
+to select an already authenticated account to use.
+Setting up Workload Identity binding...
+ERROR: (gcloud.iam.service-accounts.add-iam-policy-binding) unrecognized arguments: --principal=principalSet://iam.googleapis.com/projects/pavilion-ai-agentic/locations/us-central1/workloadIdentityPools/github-pool/attribute.repository/nisarp1/pavilion-ai-agentic (did you mean '--member'?) 
+
+To search the help text of gcloud commands, run:
+  gcloud help -- SEARCH_TERMS
+
+============================================================
+GitHub Secrets Setup
+============================================================
+
+Add these 3 secrets to GitHub repository:
+https://github.com/nisarp1/pavilion-ai-agentic/settings/secrets/actions
+
+1. GOOGLE_PROJECT_ID
+   Value: pavilion-ai-agentic
+
+2. WIF_PROVIDER
+   Value: 
+
+3. WIF_SERVICE_ACCOUNT
+   Value: pavilion-agentic@pavilion-ai-agentic.iam.gserviceaccount.com
+
+============================================================

@@ -89,14 +89,53 @@ WSGI_APPLICATION = 'pavilion_gemini.wsgi.application'
 import dj_database_url
 
 # Database
-# Automatically configured using DATABASE_URL env var (supported by Railway, Heroku, etc.)
-DATABASES = {
-    'default': dj_database_url.config(
-        default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
-}
+# Cloud SQL with unix socket via cloud-sql-python-connector
+if ENVIRONMENT == 'production':
+    from cloud_sql_python_connector import Connector
+
+    # Get database credentials from environment
+    db_instance = env('CLOUD_SQL_INSTANCE', default='')
+    db_user = env('DB_USER', default='pavilion_app')
+    db_password = env('DB_PASSWORD', default='')
+    db_name = env('DB_NAME', default='pavilion_agentic')
+
+    if db_instance:
+        # Using Cloud SQL Connector for unix socket support
+        connector = Connector()
+
+        def getconn():
+            return connector.connect(
+                db_instance,
+                "postgresql",
+                user=db_user,
+                password=db_password,
+                db=db_name
+            )
+
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'CREATOR': getconn,
+            }
+        }
+    else:
+        # Fallback to DATABASE_URL if available
+        DATABASES = {
+            'default': dj_database_url.config(
+                default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
+                conn_max_age=600,
+                conn_health_checks=True,
+            )
+        }
+else:
+    # Development: Use DATABASE_URL or sqlite
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
+    }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

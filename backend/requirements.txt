@@ -11,7 +11,10 @@ dj-database-url==3.0.1
 # Server
 gunicorn>=21.0.0
 whitenoise>=6.0.0
+
+# Database
 psycopg[binary]>=3.1.0
+cloud-sql-python-connector>=1.4.0
 
 # Async / Task Queue
 celery==5.3.4

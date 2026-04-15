@@ -32,6 +32,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
     postgresql-client \
     curl \
     ca-certificates \
@@ -65,8 +66,8 @@ RUN chown -R root:root /app
 # Run as root (safe in containerized environment)
 USER root
 
-# Health check (start-period=60s to allow time for migrations and startup)
-HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
+# Health check (start-period=120s to allow time for migrations and database connection)
+HEALTHCHECK --interval=10s --timeout=5s --start-period=120s --retries=5 \
     CMD curl -f http://localhost:${PORT}/health/ || exit 1
 
 # Expose port

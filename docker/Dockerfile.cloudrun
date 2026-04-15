@@ -31,11 +31,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080
 
 # Install runtime dependencies only
+# Including libssl3 for cryptography (required by cloud-sql-python-connector)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     postgresql-client \
     curl \
     ca-certificates \
+    libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python packages from builder

@@ -21,6 +21,9 @@ SECRET_KEY = env('SECRET_KEY', default='django-insecure-change-me-in-production'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env('DEBUG', default=True)
 
+# Environment (development, staging, production)
+ENVIRONMENT = env('ENVIRONMENT', default='development')
+
 # Allow all Railway domains + configured hosts
 _default_allowed_hosts = ['localhost', '127.0.0.1', '.railway.app', '.up.railway.app']
 if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DATABASE_URL'):

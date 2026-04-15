@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/local /usr/local
 
 # Verify critical packages are installed
-RUN python3 -c "import celery; import redis; print('✓ Celery and Redis imported successfully')"
+RUN python3 -c "import celery; import redis; from cloud_sql_python_connector import Connector; print('✓ Celery, Redis, and cloud-sql-python-connector imported successfully')"
 
 # Copy application code
 COPY backend ./backend/

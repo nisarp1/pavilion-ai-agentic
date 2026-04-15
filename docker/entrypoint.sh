@@ -1,29 +1,21 @@
 #!/bin/bash
 set -e
 
-echo "Starting Django application..."
+# Ensure we're in the backend directory
+cd /app/backend || exit 1
 
-# Wait for database to be ready (with timeout)
-echo "Waiting for database to be ready..."
-for i in {1..30}; do
-    if python manage.py dbshell < /dev/null 2>/dev/null; then
-        echo "✓ Database is ready"
-        break
-    fi
-    if [ $i -eq 30 ]; then
-        echo "✗ Database did not become ready in time"
-        exit 1
-    fi
-    echo "Attempt $i/30 - Waiting for database..."
-    sleep 2
-done
+echo "Starting Django application..."
+echo "Working directory: $(pwd)"
+echo "Python version: $(python --version)"
+echo "Checking environment: DATABASE_URL is $([ -z "$DATABASE_URL" ] && echo "NOT SET" || echo "SET")"
+
+# Small delay to allow Cloud SQL Proxy to fully establish connection
+echo "Waiting for cloud resources to be ready..."
+sleep 5
 
 # Run migrations
 echo "Running database migrations..."
-python manage.py migrate --noinput || {
-    echo "✗ Migrations failed"
-    exit 1
-}
+python manage.py migrate --noinput
 
 # Collect static files (if needed)
 if [ "$DEBUG" = "False" ]; then

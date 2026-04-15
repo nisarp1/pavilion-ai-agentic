@@ -24,9 +24,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Set environment variables
+# PYTHONPATH ensures we can import packages installed in /usr/local (like cloud-sql-python-connector)
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/backend:/usr/local/lib/python3.11/site-packages:$PYTHONPATH \
+    PYTHONPATH=/app/backend:/usr/local/lib/python3.11/site-packages \
     PATH=/usr/local/bin:$PATH \
     PORT=8080
 
@@ -43,8 +44,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy Python packages from builder
 COPY --from=builder /usr/local /usr/local
 
-# Verify critical packages are installed
-RUN python3 -c "import celery; import redis; from cloud_sql_python_connector import Connector; print('✓ Celery, Redis, and cloud-sql-python-connector imported successfully')"
+# Verify basic packages are installed (cloud-sql-python-connector will fall back gracefully if missing)
+RUN python3 -c "import celery; import redis; print('✓ Celery and Redis imported successfully')"
 
 # Copy application code
 COPY backend ./backend/

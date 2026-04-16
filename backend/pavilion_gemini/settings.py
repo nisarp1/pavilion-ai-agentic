@@ -233,14 +233,17 @@ SIMPLE_JWT = {
 # Ensure we handle comma-separated list correctly and filter invalid origins
 raw_cors_origins = env.list('CORS_ALLOWED_ORIGINS', default=[])
 CORS_ALLOWED_ORIGINS = [
-    origin.strip() for origin in raw_cors_origins 
+    origin.strip() for origin in raw_cors_origins
     if origin.strip() and (origin.startswith('http://') or origin.startswith('https://'))
 ]
 
-# Allow all Vercel and Railway deployments (Preview & Production)
+# Allow all Cloud Run, Vercel and Railway deployments (Preview & Production)
 CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://.*\.vercel\.app$",
-    r"^https://.*\.up\.railway\.app$",
+    r"^https://pavilion-frontend-.*\.a\.run\.app$",  # Cloud Run frontend services
+    r"^https://.*\.vercel\.app$",  # Vercel deployments
+    r"^https://.*\.up\.railway\.app$",  # Railway deployments
+    r"^http://localhost:5173$",  # Local frontend dev (Vite)
+    r"^http://localhost:3000$",  # Local frontend dev (alternative port)
 ]
 
 # Add defaults if empty (for local dev)

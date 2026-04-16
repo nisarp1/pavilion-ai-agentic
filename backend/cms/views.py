@@ -29,6 +29,11 @@ from .serializers import (
     WebStoryListSerializer,
 )
 from cms.video_generator import generate_script
+from tenants.permissions import (
+    IsAdminOfTenant,
+    IsEditorOrAdminOfTenant,
+    HasReadAccessToTenant,
+)
 
 
 class ArticleViewSet(viewsets.ModelViewSet):
@@ -39,10 +44,17 @@ class ArticleViewSet(viewsets.ModelViewSet):
     
     def get_permissions(self):
         """
-        Allow public read access (list, retrieve) but require authentication for write operations.
+        RBAC-based permissions:
+        - list, retrieve: HasReadAccessToTenant (user must be tenant member)
+        - create, update, partial_update: IsEditorOrAdminOfTenant
+        - destroy: IsAdminOfTenant
         """
         if self.action in ['list', 'retrieve']:
-            return [permissions.AllowAny()]
+            return [HasReadAccessToTenant()]
+        elif self.action in ['create', 'update', 'partial_update']:
+            return [IsEditorOrAdminOfTenant()]
+        elif self.action == 'destroy':
+            return [IsAdminOfTenant()]
         return [permissions.IsAuthenticated()]
     
     def get_serializer_class(self):
@@ -825,13 +837,20 @@ class CategoryViewSet(viewsets.ModelViewSet):
     ViewSet for managing categories and subcategories.
     """
     queryset = Category.objects.all()
-    
+
     def get_permissions(self):
         """
-        Allow public read access (list, retrieve, tree) but require authentication for write operations.
+        RBAC-based permissions:
+        - list, retrieve, tree, children: HasReadAccessToTenant
+        - create, update, partial_update: IsEditorOrAdminOfTenant
+        - destroy: IsAdminOfTenant
         """
         if self.action in ['list', 'retrieve', 'tree', 'children']:
-            return [permissions.AllowAny()]
+            return [HasReadAccessToTenant()]
+        elif self.action in ['create', 'update', 'partial_update']:
+            return [IsEditorOrAdminOfTenant()]
+        elif self.action == 'destroy':
+            return [IsAdminOfTenant()]
         return [permissions.IsAuthenticated()]
     
     def get_serializer_class(self):
@@ -917,10 +936,22 @@ class CategoryViewSet(viewsets.ModelViewSet):
 class MediaViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing media library.
+    RBAC-based:
+    - list, retrieve: HasReadAccessToTenant
+    - create, update, partial_update: IsEditorOrAdminOfTenant
+    - destroy: IsAdminOfTenant
     """
     queryset = Media.objects.all()
     serializer_class = MediaSerializer
-    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [HasReadAccessToTenant()]
+        elif self.action in ['create', 'update', 'partial_update']:
+            return [IsEditorOrAdminOfTenant()]
+        elif self.action == 'destroy':
+            return [IsAdminOfTenant()]
+        return [permissions.IsAuthenticated()]
     
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -1131,12 +1162,20 @@ class MediaViewSet(viewsets.ModelViewSet):
 class WebStoryViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing web stories.
+    RBAC-based:
+    - list, retrieve: HasReadAccessToTenant
+    - create, update, partial_update: IsEditorOrAdminOfTenant
+    - destroy: IsAdminOfTenant
     """
     queryset = WebStory.objects.all().prefetch_related('slides')
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
-            return [permissions.AllowAny()]
+            return [HasReadAccessToTenant()]
+        elif self.action in ['create', 'update', 'partial_update']:
+            return [IsEditorOrAdminOfTenant()]
+        elif self.action == 'destroy':
+            return [IsAdminOfTenant()]
         return [permissions.IsAuthenticated()]
 
     def get_serializer_class(self):

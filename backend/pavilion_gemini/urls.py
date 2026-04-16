@@ -39,20 +39,8 @@ def health_check(request):
     # Return plain text 200 OK - minimal response to avoid any parsing issues
     return HttpResponse('OK', status=200, content_type='text/plain')
 
-from django.http import HttpResponse
-from django.contrib.auth.models import User
-
-def reset_admin_password(request):
-    try:
-        u = User.objects.get(username='admin')
-        u.set_password('password123')
-        u.save()
-        return HttpResponse("Password reset to 'password123'")
-    except User.DoesNotExist:
-        User.objects.create_superuser('admin', 'admin@example.com', 'password123')
-        return HttpResponse("Created admin with 'password123'")
-
 from rss_fetcher.views import debug_media_view
+from tenants.views import GoogleOAuthCallbackView
 
 urlpatterns = [
     path('health/', health_check, name='health_check'),
@@ -62,10 +50,10 @@ urlpatterns = [
     path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/verify/', TokenVerifyView.as_view(), name='token_verify'),
+    path('api/auth/google/callback/', GoogleOAuthCallbackView.as_view(), name='google_oauth_callback'),
     path('api/', include('cms.urls')),
     path('api/rss/', include('rss_fetcher.urls')),
     path('api/tenants/', include('tenants.urls')),
-    path('reset-admin/', reset_admin_password),
 ]
 
 from django.views.static import serve

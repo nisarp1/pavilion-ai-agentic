@@ -47,6 +47,8 @@ class TenantUser(models.Model):
     ROLE_CHOICES = [
         ('admin', 'Admin'),
         ('editor', 'Editor'),
+        ('viewer', 'Viewer'),
+        ('viewer-only', 'Viewer Only'),
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tenant_memberships')

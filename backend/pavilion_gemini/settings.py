@@ -65,6 +65,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'tenants.middleware.TenantMiddleware',
     'pavilion_gemini.media_middleware.MediaCacheMiddleware',
+    'pavilion_gemini.spa_middleware.SPAFallbackMiddleware',  # SPA routing - must be last
 ]
 
 ROOT_URLCONF = 'pavilion_gemini.urls'

@@ -1,0 +1,48 @@
+# Dockerfile for frontend Cloud Run service (OPTION B - Separate Service)
+# Build and serve React frontend independently from backend API
+
+# Build stage
+FROM node:18-slim as builder
+
+WORKDIR /app
+
+# Copy package files
+COPY frontend/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy application code
+COPY frontend .
+
+# Build frontend
+ARG VITE_API_BASE_URL=https://pavilion-api-prod-lrr233iikq-uc.a.run.app/api
+ARG VITE_GOOGLE_CLIENT_ID=placeholder
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}
+
+RUN npm run build
+
+# Production stage - serve with simple HTTP server
+FROM node:18-slim
+
+WORKDIR /app
+
+# Install serve package to serve static files
+RUN npm install -g serve
+
+# Copy built frontend from builder
+COPY --from=builder /app/dist ./dist
+
+# Set environment variables
+ENV PORT=8080
+EXPOSE ${PORT}
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health/ || exit 1
+
+# Serve frontend
+# -s flag: rewrite all requests to /index.html (SPA routing)
+# This allows React Router to handle all routes client-side
+CMD ["serve", "-s", "dist", "-l", "8080", "--cors"]

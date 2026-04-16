@@ -1,4 +1,4 @@
-name: Deploy to Cloud Run
+name: Deploy Frontend to Cloud Run (Separate Service)
 
 on:
   push:
@@ -6,13 +6,15 @@ on:
       - main
       - staging
       - develop
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-frontend-cloudrun.yml'
   workflow_dispatch:
 
 env:
   REGISTRY: us-central1-docker.pkg.dev
-  IMAGE_NAME: pavilion-api
+  IMAGE_NAME: pavilion-frontend
   REPOSITORY: pavilion-agentic-app
-
   PROJECT_ID: ${{ secrets.GOOGLE_PROJECT_ID }}
 
 jobs:
@@ -46,32 +48,33 @@ jobs:
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "ENVIRONMENT=production" >> $GITHUB_OUTPUT
-            echo "SERVICE_NAME=pavilion-api-prod" >> $GITHUB_OUTPUT
+            echo "SERVICE_NAME=pavilion-frontend-prod" >> $GITHUB_OUTPUT
             echo "REGION=us-central1" >> $GITHUB_OUTPUT
+            echo "API_URL=https://pavilion-api-prod-lrr233iikq-uc.a.run.app/api" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
             echo "ENVIRONMENT=staging" >> $GITHUB_OUTPUT
-            echo "SERVICE_NAME=pavilion-api-staging" >> $GITHUB_OUTPUT
+            echo "SERVICE_NAME=pavilion-frontend-staging" >> $GITHUB_OUTPUT
             echo "REGION=us-central1" >> $GITHUB_OUTPUT
+            echo "API_URL=https://pavilion-api-staging-lrr233iikq-uc.a.run.app/api" >> $GITHUB_OUTPUT
           else
             echo "ENVIRONMENT=development" >> $GITHUB_OUTPUT
-            echo "SERVICE_NAME=pavilion-api-dev" >> $GITHUB_OUTPUT
+            echo "SERVICE_NAME=pavilion-frontend-dev" >> $GITHUB_OUTPUT
             echo "REGION=us-central1" >> $GITHUB_OUTPUT
+            echo "API_URL=https://pavilion-api-dev-lrr233iikq-uc.a.run.app/api" >> $GITHUB_OUTPUT
           fi
 
       - name: Build Docker image
         run: |
-          # Strip any whitespace/newlines from PROJECT_ID
           PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
           IMAGE_TAG="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           IMAGE_TAG_LATEST="${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:latest"
 
           docker build \
-            --build-arg ENVIRONMENT=${{ steps.env.outputs.ENVIRONMENT }} \
-            --build-arg VITE_API_BASE_URL=https://pavilion-api-${{ steps.env.outputs.ENVIRONMENT }}-lrr233iikq-uc.a.run.app/api \
+            --build-arg VITE_API_BASE_URL=${{ steps.env.outputs.API_URL }} \
             --build-arg VITE_GOOGLE_CLIENT_ID=${{ secrets.VITE_GOOGLE_CLIENT_ID }} \
             -t "${IMAGE_TAG}" \
             -t "${IMAGE_TAG_LATEST}" \
-            -f docker/Dockerfile.cloudrun \
+            -f docker/Dockerfile.frontend \
             .
 
       - name: Push Docker image
@@ -83,9 +86,8 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           PROJECT_ID="$(echo -n "${{ env.PROJECT_ID }}" | tr -d '[:space:]')"
-          DB_INSTANCE="${PROJECT_ID}:us-central1:pavilion-db-${{ steps.env.outputs.ENVIRONMENT }}"
 
-          echo "Deploying to ${{ steps.env.outputs.SERVICE_NAME }} in ${{ steps.env.outputs.REGION }}"
+          echo "Deploying frontend to ${{ steps.env.outputs.SERVICE_NAME }} in ${{ steps.env.outputs.REGION }}"
 
           gcloud run deploy ${{ steps.env.outputs.SERVICE_NAME }} \
             --image "${{ env.REGISTRY }}/${PROJECT_ID}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" \
@@ -93,14 +95,12 @@ jobs:
             --region ${{ steps.env.outputs.REGION }} \
             --project ${PROJECT_ID} \
             --allow-unauthenticated \
-            --memory 2Gi \
+            --memory 512Mi \
             --cpu 1 \
-            --timeout 3600 \
-            --max-instances 100 \
+            --timeout 60 \
+            --max-instances 50 \
             --min-instances 1 \
-            --set-env-vars "ENVIRONMENT=${{ steps.env.outputs.ENVIRONMENT }},DEBUG=False,SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }},CLOUD_SQL_INSTANCE=${DB_INSTANCE},DB_USER=pavilion_app,DB_PASSWORD=${{ secrets.DB_PASSWORD }},DB_NAME=pavilion_agentic" \
-            --set-cloudsql-instances="${DB_INSTANCE}" \
-            --service-account=pavilion-agentic@${PROJECT_ID}.iam.gserviceaccount.com
+            --set-env-vars "NODE_ENV=${{ steps.env.outputs.ENVIRONMENT }}"
 
       - name: Get service URL
         run: |
@@ -110,26 +110,9 @@ jobs:
             --region ${{ steps.env.outputs.REGION }} \
             --project ${PROJECT_ID} \
             --format='value(status.url)')
-          echo "Service deployed at: $SERVICE_URL"
+          echo "Frontend deployed at: $SERVICE_URL"
 
       - name: Deployment complete
         run: |
-          echo "✓ Service deployment verified by gcloud"
+          echo "✓ Frontend deployment verified by gcloud"
           echo "Service is now serving 100% of traffic"
-          echo "Note: Health check endpoint may be warming up"
-
-  notify:
-    needs: build-and-deploy
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Send notification
-        if: failure()
-        run: |
-          echo "Deployment failed! Check the logs above for details."
-          exit 1
-
-      - name: Success notification
-        if: success()
-        run: |
-          echo "✓ Successfully deployed to Cloud Run!"

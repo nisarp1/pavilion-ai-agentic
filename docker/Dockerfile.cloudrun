@@ -1,5 +1,18 @@
 # Multi-stage Dockerfile for Cloud Run deployment
-# Build stage: Compile dependencies
+# Build stage 1: Build frontend
+FROM node:18-slim as frontend-builder
+
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend .
+ARG VITE_API_BASE_URL=/api
+ARG VITE_GOOGLE_CLIENT_ID=placeholder
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}
+RUN npm run build
+
+# Build stage 2: Compile Python dependencies
 FROM python:3.11-slim as builder
 
 WORKDIR /build
@@ -47,15 +60,19 @@ COPY --from=builder /usr/local /usr/local
 # Verify basic packages are installed (cloud-sql-python-connector will fall back gracefully if missing)
 RUN python3 -c "import celery; import redis; print('✓ Celery and Redis imported successfully')"
 
+# Copy frontend build artifacts
+COPY --from=frontend-builder /frontend/dist ./frontend/dist
+
 # Copy application code
 COPY backend ./backend/
 COPY docker/entrypoint.sh ./docker/entrypoint.sh
 
-# Create frontend directory (dist artifacts optional)
-RUN mkdir -p ./frontend/dist
-
 # Create necessary directories
 RUN mkdir -p /app/media /app/static /app/logs
+
+# Copy frontend static files to Django static directory for serving
+RUN mkdir -p /app/backend/staticfiles && \
+    cp -r /app/frontend/dist/* /app/backend/staticfiles/ || true
 
 # Make entrypoint executable
 RUN chmod +x ./docker/entrypoint.sh

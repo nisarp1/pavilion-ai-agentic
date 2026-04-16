@@ -24,9 +24,9 @@ DEBUG = env('DEBUG', default=True)
 # Environment (development, staging, production)
 ENVIRONMENT = env('ENVIRONMENT', default='development')
 
-# Allow all Railway domains + configured hosts
-_default_allowed_hosts = ['localhost', '127.0.0.1', '.railway.app', '.up.railway.app']
-if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DATABASE_URL'):
+# Allow all Railway domains + configured hosts + Cloud Run
+_default_allowed_hosts = ['localhost', '127.0.0.1', '.railway.app', '.up.railway.app', '.run.app']
+if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DATABASE_URL') or os.environ.get('CLOUD_SQL_INSTANCE'):
     ALLOWED_HOSTS = ['*']
 else:
     ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=_default_allowed_hosts)

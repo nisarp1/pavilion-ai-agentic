@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useSelector } from 'react-redux'
+import { useSelector, useDispatch } from 'react-redux'
+import { useEffect } from 'react'
 import Login from './components/Auth/Login'
 import Dashboard from './components/Dashboard/Dashboard'
 import ArticleList from './components/Articles/ArticleList'
@@ -13,12 +14,44 @@ import WebStoryCreate from './components/WebStories/WebStoryCreate'
 import WebStoryEdit from './components/WebStories/WebStoryEdit'
 import InviteUser from './components/Auth/InviteUser'
 import AcceptInvite from './components/Auth/AcceptInvite'
+import {
+  fetchBrandingRequest,
+  fetchBrandingSuccess,
+  fetchBrandingFailure,
+} from './store/slices/brandingSlice'
+import { loadBrandingForTenant, setTenantContext } from './utils/brandingLoader'
 
 function App() {
   const { isAuthenticated } = useSelector((state) => state.auth)
+  const dispatch = useDispatch()
+
+  // Load branding configuration on app mount
+  useEffect(() => {
+    const loadBranding = async () => {
+      try {
+        await loadBrandingForTenant(dispatch, {
+          fetchBrandingRequest,
+          fetchBrandingSuccess,
+          fetchBrandingFailure,
+        })
+      } catch (error) {
+        console.warn('Failed to load branding, using defaults:', error)
+      }
+    }
+
+    loadBranding()
+
+    // Set tenant context if authenticated
+    if (isAuthenticated) {
+      const tenantId = localStorage.getItem('tenant_id')
+      if (tenantId) {
+        setTenantContext(tenantId)
+      }
+    }
+  }, [dispatch, isAuthenticated])
 
   // Debug log to confirm deployment
-  console.log('Pavilion AI Frontend - Environment Check')
+  console.log('Pavilion AI Frontend - Branding & OAuth Initialized')
 
 
   return (

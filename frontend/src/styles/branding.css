@@ -1,0 +1,233 @@
+/**
+ * Branding CSS Variables
+ *
+ * These CSS variables are dynamically updated based on tenant branding configuration.
+ * They control colors, fonts, and other visual aspects of the UI.
+ */
+
+:root {
+  /* Primary Color: Main brand color used for buttons, links, active states */
+  --primary-color: #1f2937;
+
+  /* Secondary Color: Used for secondary actions, hover states */
+  --secondary-color: #10b981;
+
+  /* Accent Color: Used for highlights, notifications, emphasis */
+  --accent-color: #3b82f6;
+
+  /* Header Colors */
+  --header-bg: #ffffff;
+  --header-text: #1f2937;
+
+  /* Typography */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Derived Colors (automatically calculated from primary) */
+  --primary-dark: #0f172a;
+  --primary-light: #f3f4f6;
+  --primary-lighter: #f9fafb;
+
+  --secondary-dark: #059669;
+  --secondary-light: #d1fae5;
+  --secondary-lighter: #f0fdf4;
+
+  --accent-dark: #1e40af;
+  --accent-light: #dbeafe;
+  --accent-lighter: #f0f9ff;
+}
+
+/* Apply CSS variables globally */
+body {
+  font-family: var(--font-family);
+  color: var(--primary-color);
+}
+
+/* Blueprint Component Theming */
+.bp5-button {
+  background-color: var(--primary-color) !important;
+  color: white !important;
+}
+
+.bp5-button:hover {
+  background-color: var(--primary-dark) !important;
+}
+
+.bp5-button.bp5-intent-primary {
+  background-color: var(--primary-color) !important;
+}
+
+.bp5-button.bp5-intent-primary:hover {
+  background-color: var(--primary-dark) !important;
+}
+
+.bp5-button.bp5-intent-success {
+  background-color: var(--secondary-color) !important;
+}
+
+.bp5-button.bp5-intent-success:hover {
+  background-color: var(--secondary-dark) !important;
+}
+
+.bp5-button.bp5-intent-warning {
+  background-color: var(--accent-color) !important;
+}
+
+.bp5-button.bp5-intent-warning:hover {
+  background-color: var(--accent-dark) !important;
+}
+
+/* Links */
+a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--primary-dark);
+}
+
+a.active {
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+/* Input Fields */
+.bp5-input {
+  border-color: var(--primary-light) !important;
+}
+
+.bp5-input:focus {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 2px rgba(31, 41, 55, 0.1) !important;
+}
+
+/* Navigation */
+.header {
+  background-color: var(--header-bg);
+  color: var(--header-text);
+  border-bottom: 1px solid var(--primary-light);
+}
+
+.sidebar {
+  background-color: var(--primary-lighter);
+}
+
+.sidebar-item.active {
+  background-color: var(--primary-light);
+  color: var(--primary-color);
+  border-left: 3px solid var(--accent-color);
+}
+
+.sidebar-item:hover {
+  background-color: var(--primary-light);
+}
+
+/* Cards */
+.bp5-card {
+  border: 1px solid var(--primary-light);
+  box-shadow: 0 1px 3px rgba(31, 41, 55, 0.1);
+}
+
+.bp5-card:hover {
+  box-shadow: 0 4px 6px rgba(31, 41, 55, 0.1);
+}
+
+/* Badges & Tags */
+.bp5-tag {
+  background-color: var(--primary-light);
+  color: var(--primary-color);
+}
+
+.bp5-tag.bp5-intent-primary {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.bp5-tag.bp5-intent-success {
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+/* Alerts */
+.bp5-alert.bp5-intent-primary {
+  background-color: var(--primary-light);
+  border-color: var(--primary-color);
+}
+
+.bp5-alert.bp5-intent-success {
+  background-color: var(--secondary-lighter);
+  border-color: var(--secondary-color);
+}
+
+.bp5-alert.bp5-intent-warning {
+  background-color: var(--accent-lighter);
+  border-color: var(--accent-color);
+}
+
+/* Spinners & Progress */
+.bp5-spinner {
+  color: var(--primary-color);
+}
+
+/* Tables */
+.bp5-html-table tbody tr:hover {
+  background-color: var(--primary-lighter);
+}
+
+.bp5-html-table thead th {
+  background-color: var(--primary-light);
+  color: var(--primary-color);
+  border-color: var(--primary-light);
+}
+
+/* Utility Classes for Branding */
+.text-primary {
+  color: var(--primary-color);
+}
+
+.text-secondary {
+  color: var(--secondary-color);
+}
+
+.text-accent {
+  color: var(--accent-color);
+}
+
+.bg-primary {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.bg-primary-light {
+  background-color: var(--primary-light);
+}
+
+.bg-secondary {
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+.bg-secondary-light {
+  background-color: var(--secondary-light);
+}
+
+.bg-accent {
+  background-color: var(--accent-color);
+  color: white;
+}
+
+.bg-accent-light {
+  background-color: var(--accent-light);
+}
+
+.border-primary {
+  border-color: var(--primary-color);
+}
+
+.border-secondary {
+  border-color: var(--secondary-color);
+}
+
+.border-accent {
+  border-color: var(--accent-color);
+}

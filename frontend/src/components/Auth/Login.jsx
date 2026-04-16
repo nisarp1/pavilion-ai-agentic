@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
 import { login, clearError } from '../../store/slices/authSlice'
+import GoogleLoginComponent from './GoogleLogin'
 
 function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [googleAuthError, setGoogleAuthError] = useState(null)
   const dispatch = useDispatch()
   const navigate = useNavigate()
   const { loading, error, isAuthenticated } = useSelector((state) => state.auth)
@@ -31,6 +33,32 @@ function Login() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800">PavilionEnd</h1>
           <p className="text-gray-600 mt-2">Content Management System</p>
+        </div>
+
+        {/* Google OAuth Login */}
+        <div className="mb-6">
+          <div className="flex items-center mb-4">
+            <div className="flex-1 border-t border-gray-300"></div>
+            <span className="px-2 text-sm text-gray-500">Or continue with</span>
+            <div className="flex-1 border-t border-gray-300"></div>
+          </div>
+          <GoogleLoginComponent
+            onLoginSuccess={() => {
+              // Redirect happens automatically in GoogleLoginComponent
+            }}
+          />
+        </div>
+
+        {googleAuthError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+            {googleAuthError}
+          </div>
+        )}
+
+        <div className="flex items-center mb-6">
+          <div className="flex-1 border-t border-gray-300"></div>
+          <span className="px-2 text-sm text-gray-500">Or use password</span>
+          <div className="flex-1 border-t border-gray-300"></div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -75,7 +103,7 @@ function Login() {
             disabled={loading}
             className="w-full bg-primary-600 text-white py-2 px-4 rounded-lg hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? 'Logging in...' : 'Login with Password'}
           </button>
         </form>
       </div>

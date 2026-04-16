@@ -17,7 +17,7 @@ import { useNavigate } from 'react-router-dom'
 import { GoogleLogin } from '@react-oauth/google'
 import { Card, Button, Spinner, Alert } from '@blueprintjs/core'
 import api from '../../services/api'
-import { setTokens, setUser, setActiveTenant, fetchTenants } from '../../store/slices/authSlice'
+import { setActiveTenant, fetchTenants } from '../../store/slices/authSlice'
 
 export function GoogleLoginComponent({ tenantId, onLoginSuccess }) {
   const dispatch = useDispatch()
@@ -49,14 +49,12 @@ export function GoogleLoginComponent({ tenantId, onLoginSuccess }) {
 
       const { access, refresh, user, tenant } = response.data
 
-      // Store tokens
+      // Store tokens in localStorage
       localStorage.setItem('access_token', access)
       localStorage.setItem('refresh_token', refresh)
       localStorage.setItem('tenant_id', tenant.id)
 
-      // Update Redux state
-      dispatch(setTokens({ access, refresh }))
-      dispatch(setUser(user))
+      // Update Redux state with active tenant
       dispatch(setActiveTenant({ id: tenant.id, name: tenant.name, role: tenant.role }))
 
       // Fetch all user's tenants

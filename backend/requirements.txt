@@ -24,9 +24,10 @@ amqp>=5.1.0
 vine>=5.1.0
 billiard>=4.1.0
 
-# Google AI
-google-generativeai>=0.5.0
+# Google AI & Cloud
+google-generativeai>=0.8.0
 google-cloud-texttospeech>=2.14.0
+google-cloud-storage>=2.14.0
 google-api-python-client>=2.100.0
 google-auth>=2.20.0
 google-auth-httplib2>=0.2.0
@@ -64,3 +65,4 @@ sgmllib3k>=1.0.0
 
 # JWT
 PyJWT>=2.6.0
+async-timeout>=4.0.2

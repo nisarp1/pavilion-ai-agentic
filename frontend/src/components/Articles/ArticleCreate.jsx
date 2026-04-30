@@ -5,6 +5,7 @@ import { createArticle, fetchArticle } from '../../store/slices/articleSlice'
 import ArticleForm from './ArticleForm'
 import api from '../../services/api'
 import MediaLibrary from '../MediaLibrary/MediaLibrary'
+import { showSuccess, showError } from '../../utils/toast'
 import { FiCpu, FiEdit3, FiImage, FiCheck, FiRefreshCw } from 'react-icons/fi'
 
 function ArticleCreate() {
@@ -33,7 +34,7 @@ function ArticleCreate() {
 
   const handleAiGenerate = async (e) => {
     e.preventDefault()
-    if (!aiTopic) return alert("Please enter a topic or headline keywords")
+    if (!aiTopic) { showError("Please enter a topic or headline keywords"); return }
 
     setSaving(true)
     try {
@@ -76,7 +77,7 @@ function ArticleCreate() {
         errorMessage = JSON.stringify(error)
       }
 
-      alert(`Failed to start AI generation:\n${errorMessage}`)
+      showError(`Failed to start AI generation: ${errorMessage}`)
     } finally {
       setSaving(false)
     }

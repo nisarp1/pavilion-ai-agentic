@@ -63,10 +63,14 @@ export async function loadBrandingForTenant(dispatch, actions) {
         params: { domain: tenantInfo.value },
       })
     } else if (tenantInfo.type === 'localStorage') {
-      // Development: use stored tenant ID
-      response = await api.get('/tenants/lookup/', {
-        params: { tenant_id: tenantInfo.value },
-      })
+      if (!tenantInfo.value) {
+        // No tenant in storage yet (unauthenticated) — use defaults
+        dispatch(fetchBrandingSuccess({ branding: {}, tenant: null }))
+        applyBrandingStyles({})
+        return null
+      }
+      // Development: use stored tenant ID — fetch actual branding from tenant detail
+      response = await api.get(`/tenants/${tenantInfo.value}/`)
     } else {
       throw new Error('Could not determine tenant')
     }

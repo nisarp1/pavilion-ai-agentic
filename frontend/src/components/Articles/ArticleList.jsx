@@ -1,10 +1,11 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { Link } from 'react-router-dom'
 import { fetchArticles, generateArticle, publishArticle, archiveArticle, deleteArticle, updateArticle, clearError, addGeneratingId, removeGeneratingId, addPublishingId, removePublishingId, fetchArticleStatus, fetchAllFeeds, fetchTrends, fetchArticle } from '../../store/slices/articleSlice'
+import { showSuccess, showError } from '../../utils/toast'
 import { fetchCategories } from '../../store/slices/categorySlice'
 import { format } from 'date-fns'
-import { FiEdit, FiPlay, FiCheck, FiArchive, FiRefreshCw, FiMoreVertical, FiEye, FiTrash2, FiClock, FiExternalLink, FiFilter } from 'react-icons/fi'
+import { FiEdit, FiPlay, FiCheck, FiArchive, FiRefreshCw, FiMoreVertical, FiEye, FiTrash2, FiClock, FiExternalLink, FiFilter, FiSearch, FiX } from 'react-icons/fi'
 import GoogleTrendsWidget from './GoogleTrendsWidget'
 import BulkEditModal from './BulkEditModal'
 import QuickEditModal from './QuickEditModal'
@@ -23,6 +24,9 @@ function ArticleList() {
   const [pageSize, setPageSize] = useState(20)
   const [showBulkEditModal, setShowBulkEditModal] = useState(false)
   const [quickEditArticle, setQuickEditArticle] = useState(null)
+  const [searchInput, setSearchInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchDebounceRef = useRef(null)
 
   // Fetch categories on component mount
   useEffect(() => {
@@ -103,27 +107,34 @@ function ArticleList() {
   }
 
   useEffect(() => {
-    setCurrentPage(1) // Reset to first page when tab changes
+    setCurrentPage(1)
   }, [activeTab, selectedCategory])
 
+  // Debounce search input — fires query 300ms after user stops typing
   useEffect(() => {
-    // Build query params
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+    searchDebounceRef.current = setTimeout(() => {
+      setSearchQuery(searchInput)
+      setCurrentPage(1)
+    }, 300)
+    return () => clearTimeout(searchDebounceRef.current)
+  }, [searchInput])
+
+  useEffect(() => {
     const params = { page: currentPage, page_size: pageSize }
 
-    // Priority: selectedCategory > activeTab category > status
-    if (selectedCategory) {
-      // If a category is selected, use it (overrides tab-based category)
+    if (searchQuery) {
+      params.search = searchQuery
+    } else if (selectedCategory) {
       params.category = selectedCategory
     } else if (activeTab === 'all') {
-      // No additional filters for 'all'
+      // no filter
     } else if (activeTab === 'reliable_sources' || activeTab === 'trends' || activeTab === 'subscriptions') {
       params.category = activeTab
     } else {
-      // Status-based tabs
       params.status = activeTab
     }
 
-    console.log('Fetching articles with params:', params)
     dispatch(fetchArticles(params))
       .then((result) => {
         if (fetchArticles.fulfilled.match(result)) {
@@ -182,7 +193,7 @@ function ArticleList() {
       await dispatch(fetchArticles(params))
     } catch (error) {
       console.error('Refresh error:', error)
-      alert('Error refreshing articles: ' + (error.message || 'Unknown error'))
+      showError('Error refreshing articles: ' + (error.message || 'Unknown error'))
     } finally {
       setRefreshing(false)
     }
@@ -230,21 +241,21 @@ function ArticleList() {
     refreshList()
   }
 
-  const refreshList = () => {
+  const refreshList = useCallback(() => {
     const params = { page: currentPage, page_size: pageSize }
-
-    if (selectedCategory) {
+    if (searchQuery) {
+      params.search = searchQuery
+    } else if (selectedCategory) {
       params.category = selectedCategory
     } else if (activeTab === 'all') {
-      // No additional filters
+      // no filter
     } else if (activeTab === 'reliable_sources' || activeTab === 'trends' || activeTab === 'subscriptions') {
       params.category = activeTab
     } else {
       params.status = activeTab
     }
-
     dispatch(fetchArticles(params))
-  }
+  }, [dispatch, currentPage, pageSize, searchQuery, selectedCategory, activeTab])
 
   const handleCategoryChange = (e) => {
     setSelectedCategory(e.target.value)
@@ -384,6 +395,33 @@ function ArticleList() {
             Add New
           </Link>
         </div>
+      </div>
+
+      {/* Search */}
+      <div className="mb-4">
+        <div className="relative max-w-sm">
+          <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            placeholder="Search articles…"
+            className="w-full pl-9 pr-8 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          />
+          {searchInput && (
+            <button
+              onClick={() => { setSearchInput(''); setSearchQuery('') }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <FiX size={14} />
+            </button>
+          )}
+        </div>
+        {searchQuery && (
+          <p className="mt-1 text-xs text-gray-500">
+            Showing results for "<span className="font-medium">{searchQuery}</span>"
+          </p>
+        )}
       </div>
 
       {/* Category Filter */}
@@ -548,7 +586,7 @@ function ArticleList() {
                 const actionName = isTrash ? 'delete permanently' : 'move to trash'
                 const actionFunc = isTrash ? deleteArticle : archiveArticle
 
-                if (confirm(`Are you sure you want to ${actionName} ${selectedArticles.size} article(s)?`)) {
+                if (window.confirm(`Are you sure you want to ${actionName} ${selectedArticles.size} article(s)?`)) {
                   const ids = Array.from(selectedArticles)
                   await Promise.all(ids.map(id => dispatch(actionFunc(id))))
                   setSelectedArticles(new Set())

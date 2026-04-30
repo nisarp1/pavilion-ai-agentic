@@ -112,13 +112,15 @@ class ArticleSerializer(serializers.ModelSerializer):
             'og_title', 'og_description', 'og_image', 'og_image_url',
             'source_url', 'source_feed', 'trend_data',
             'newsroomx_dna', 'newsroomx_status', 'newsroomx_video_url', 'newsroomx_error',
-            'created_at', 'updated_at', 'published_at',
+            'created_at', 'updated_at', 'published_at', 'publish_at',
             'generation_started_at', 'generation_completed_at',
+            'celery_task_id',
         ]
         read_only_fields = [
             'id', 'slug', 'created_at', 'updated_at',
             'generation_started_at', 'generation_completed_at',
             'video_error', 'newsroomx_status', 'newsroomx_error', 'newsroomx_video_url',
+            'celery_task_id',
         ]
     
     def create(self, validated_data):

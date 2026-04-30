@@ -380,8 +380,12 @@ class Article(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     published_at = models.DateTimeField(null=True, blank=True)
+    publish_at = models.DateTimeField(null=True, blank=True, help_text="Schedule future publishing at this datetime")
     generation_started_at = models.DateTimeField(null=True, blank=True)
     generation_completed_at = models.DateTimeField(null=True, blank=True)
+
+    # Celery task tracking
+    celery_task_id = models.CharField(max_length=255, blank=True, default='', help_text="Celery task ID for the active background task")
     
     class Meta:
         ordering = ['-created_at']
@@ -556,3 +560,24 @@ class WebStorySlide(models.Model):
         if self.external_image_url:
             return self.external_image_url
         return None
+
+
+class ArticleVersion(models.Model):
+    """Snapshot of an article saved before each update for version history."""
+
+    article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='versions')
+    version_number = models.PositiveIntegerField(default=1)
+    title = models.CharField(max_length=500, blank=True)
+    body = models.TextField(blank=True)
+    summary = models.TextField(blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['article', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.article.title} v{self.version_number}"

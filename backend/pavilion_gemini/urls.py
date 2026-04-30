@@ -35,25 +35,59 @@ from django.http import HttpResponse
 
 @csrf_exempt
 def health_check(request):
-    """Health check endpoint for load balancers and monitoring."""
-    # Return plain text 200 OK - minimal response to avoid any parsing issues
-    return HttpResponse('OK', status=200, content_type='text/plain')
+    """Comprehensive health check: DB + Redis connectivity."""
+    checks = {}
+    overall = 'healthy'
+
+    try:
+        from django.db import connection
+        connection.ensure_connection()
+        checks['database'] = 'ok'
+    except Exception as e:
+        checks['database'] = f'error: {e}'
+        overall = 'degraded'
+
+    try:
+        import subprocess
+        result = subprocess.run(['redis-cli', 'ping'], capture_output=True, text=True, timeout=3)
+        if result.stdout.strip() == 'PONG':
+            checks['redis'] = 'ok'
+        else:
+            checks['redis'] = 'error: no response'
+            overall = 'degraded'
+    except Exception as e:
+        checks['redis'] = f'error: {e}'
+        overall = 'degraded'
+
+    http_status = 200 if overall == 'healthy' else 503
+    return JsonResponse({'status': overall, 'checks': checks}, status=http_status)
 
 from rss_fetcher.views import debug_media_view
-from tenants.views import GoogleOAuthCallbackView
+from tenants.views import GoogleOAuthCallbackView, RegisterView, UserProfileView, ChangePasswordView
+from tenants.password_reset import PasswordResetRequestView, PasswordResetConfirmView
 
 urlpatterns = [
     path('health/', health_check, name='health_check'),
     path('', api_root, name='api_root'),
     path('debug-media/', debug_media_view),
     path('admin/', admin.site.urls),
+
+    # Auth endpoints
     path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/verify/', TokenVerifyView.as_view(), name='token_verify'),
+    path('api/auth/register/', RegisterView.as_view(), name='register'),
     path('api/auth/google/callback/', GoogleOAuthCallbackView.as_view(), name='google_oauth_callback'),
+    path('api/auth/profile/', UserProfileView.as_view(), name='user_profile'),
+    path('api/auth/change-password/', ChangePasswordView.as_view(), name='change_password'),
+    path('api/auth/password-reset/', PasswordResetRequestView.as_view(), name='password_reset_request'),
+    path('api/auth/password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
+
+    # App URLs
     path('api/', include('cms.urls')),
     path('api/rss/', include('rss_fetcher.urls')),
     path('api/tenants/', include('tenants.urls')),
+    path('api/video/', include('video_studio.urls')),
 ]
 
 from django.views.static import serve

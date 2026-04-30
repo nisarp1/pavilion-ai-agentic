@@ -1,5 +1,10 @@
 
-from playwright.async_api import async_playwright
+try:
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+
 import google.generativeai as genai
 import os
 import json
@@ -11,86 +16,81 @@ logger = logging.getLogger(__name__)
 
 async def fetch_trends_visually():
     """
-    Launches a headless browser, screenshots Google Trends, and uses Gemini to extract topics.
-    Returns a list of trend strings.
+    Launches a headless browser to scrape Google Trends (IN Sports Realtime) directly from the DOM.
+    URL: https://trends.google.com/trending?geo=IN&category=17&hours=4&status=active&sort=recency
+    Returns a list of EXACT trend strings (Topic Names) as shown on the page.
     """
-    screenshot_path = "/tmp/google_trends_visual.png"
+    if not PLAYWRIGHT_AVAILABLE:
+        logger.warning("Playwright not installed, skipping visual fetch.")
+        return []
+
     trends = []
-    
     try:
-        logger.info("Starting Visual Trend Fetch (Playwright + Gemini)...")
+        logger.info("Starting High-Accuracy DOM Fetch (Playwright) for Google Trends Sports...")
         async with async_playwright() as p:
-            # Launch with specific args for container/cloud environments
             browser = await p.chromium.launch(
                 headless=True,
                 args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
             )
-            
             context = await browser.new_context(
                 viewport={'width': 1280, 'height': 800},
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             )
             page = await context.new_page()
             
-            # Navigate to Google Trends Realtime Sports (India)
-            # category 17 = Sports
-            url = "https://trends.google.com/trending?geo=IN&hl=en-US&category=17"
+            # The exact URL for Realtime Sports (IN) sorted by recency
+            url = "https://trends.google.com/trending?geo=IN&category=17&hours=4&status=active&sort=recency"
             logger.info(f"Navigating to {url}...")
             await page.goto(url, wait_until="networkidle", timeout=30000)
             
-            # Wait a bit for dynamic content
-            await page.wait_for_timeout(3000)
+            # Wait for the specific topic elements to load
+            # mZ3RIc is the class for the main topic name div
+            try:
+                await page.wait_for_selector('div.mZ3RIc', timeout=15000)
+                elements = await page.query_selector_all('div.mZ3RIc')
+                for el in elements:
+                    text = await el.inner_text()
+                    clean_text = text.strip()
+                    if clean_text:
+                        trends.append(clean_text)
+            except Exception as e:
+                logger.warning(f"Selector div.mZ3RIc not found or timeout: {e}")
+                # Fallback: maybe the page structure changed, try another common selector
+                elements = await page.query_selector_all('div.title')
+                for el in elements:
+                    text = await el.inner_text()
+                    clean_text = text.strip()
+                    if clean_text:
+                        trends.append(clean_text)
             
-            # Take Screenshot
-            await page.screenshot(path=screenshot_path)
-            logger.info("Screenshot captured.")
             await browser.close()
+            logger.info(f"DOM Fetch found {len(trends)} exact topics from Google Trends.")
             
-        # Send to Gemini
-        api_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
-        if not api_key:
-            logger.error("No Gemini API Key found for visual analysis.")
-            return []
-
-        genai.configure(api_key=api_key)
-        # Use gemini-2.0-flash or gemini-1.5-flash as available
-        model_name = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')
-        model = genai.GenerativeModel(model_name)
-        
-        logger.info(f"Sending screenshot to {model_name}...")
-        
-        with open(screenshot_path, "rb") as f:
-            image_data = f.read()
-            
-        prompt = """
-        You are a sports data analyst. Look at this screenshot of the Google Trends 'Realtime Search Trends' page.
-        Identified the list of trending topics (athletes, matches, teams, sport names) visible in the list.
-        Igore non-sports topics if any.
-        
-        Return the result as a raw JSON list of strings. Example: ["India vs Australia", "Virat Kohli", "NBA"]
-        Do not use markdown formatting. Just the JSON list.
-        """
-        
-        response = model.generate_content([
-            {'mime_type': 'image/png', 'data': image_data},
-            prompt
-        ])
-        
-        text = response.text.strip()
-        # Clean markdown if present
-        if text.startswith('```json'):
-            text = text.replace('```json', '').replace('```', '')
-        elif text.startswith('```'):
-            text = text.replace('```', '')
-            
-        trends = json.loads(text)
-        logger.info(f"Visually identified trends: {trends}")
-        
     except Exception as e:
-        logger.error(f"Visual Trend Fetch failed: {e}")
+        logger.error(f"High-Accuracy DOM Fetch failed: {e}")
         
     return trends
 
 def run_visual_fetch():
-    """Synchronous wrapper for Celery"""
-    return asyncio.run(fetch_trends_visually())
+    """Synchronous wrapper for Celery and other sync contexts"""
+    try:
+        # If we are already in an event loop, we can't use asyncio.run
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # This is tricky in a sync wrapper. 
+            # In production (Celery), the loop shouldn't be running yet.
+            # For testing in an async environment, the test should await the async function.
+            logger.warning("Event loop is already running. run_visual_fetch may fail if not awaited.")
+            # We'll try to run it in a separate thread to avoid nested loop error
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor() as executor:
+                return executor.submit(asyncio.run, fetch_trends_visually()).result()
+        else:
+            return asyncio.run(fetch_trends_visually())
+    except Exception as e:
+        # Fallback for environments where get_event_loop fails or other issues
+        try:
+            return asyncio.run(fetch_trends_visually())
+        except Exception as e2:
+            logger.error(f"run_visual_fetch critical failure: {e2}")
+            return []

@@ -33,6 +33,7 @@ import {
   FiTag,
   FiMove,
 } from 'react-icons/fi'
+import { showSuccess, showError } from '../../utils/toast'
 
 // Sortable Category Item Component
 function SortableCategoryItem({ category, level, onEdit, onDelete, onToggle, isExpanded }) {
@@ -260,7 +261,7 @@ function CategoryManager() {
       }
 
       if (isDescendant(overCategory, active.id)) {
-        alert('Cannot make a category a subcategory of its own descendant.')
+        showError('Cannot make a category a subcategory of its own descendant.')
         return
       }
 
@@ -392,7 +393,7 @@ function CategoryManager() {
       }
     } catch (error) {
       console.error('Error updating category order:', error)
-      alert('Error updating category order: ' + (error?.payload || error?.message || 'Unknown error'))
+      showError('Error updating category order: ' + (error?.payload || error?.message || 'Unknown error'))
     }
   }
 
@@ -458,7 +459,7 @@ function CategoryManager() {
         errorMessage = error.message
       }
 
-      alert('Error saving category:\n' + errorMessage)
+      showError('Error saving category: ' + errorMessage)
     }
   }
 

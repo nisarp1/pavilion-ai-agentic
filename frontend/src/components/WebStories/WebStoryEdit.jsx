@@ -10,6 +10,7 @@ import {
   clearCurrentStory,
 } from '../../store/slices/webstorySlice'
 import { FiCheckCircle, FiTrash2 } from 'react-icons/fi'
+import { showSuccess, showError } from '../../utils/toast'
 
 function WebStoryEdit() {
   const { id } = useParams()
@@ -33,7 +34,7 @@ function WebStoryEdit() {
       navigate('/webstories')
     } catch (error) {
       console.error('Failed to save story', error)
-      alert('Failed to save story. Please try again.')
+      showError('Failed to save story. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -43,23 +44,23 @@ function WebStoryEdit() {
     setPublishing(true)
     try {
       await dispatch(publishWebStory(id)).unwrap()
-      alert('Story published successfully.')
+      showSuccess('Story published successfully.')
       navigate('/webstories')
     } catch (error) {
       console.error('Failed to publish story', error)
-      alert('Publishing failed. Please try again.')
+      showError('Publishing failed. Please try again.')
     } finally {
       setPublishing(false)
     }
   }
 
   const handleDelete = async () => {
-    if (!confirm('Delete this story permanently?')) return
+    if (!window.confirm('Delete this story permanently?')) return
     try {
       await dispatch(deleteWebStory(id)).unwrap()
       navigate('/webstories')
     } catch (error) {
-      alert('Failed to delete story. Please try again.')
+      showError('Failed to delete story. Please try again.')
     }
   }
 

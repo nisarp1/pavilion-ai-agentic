@@ -49,6 +49,8 @@ services:
       DATABASE_URL: postgresql://pavilion_user:dev-password-change-in-production@postgres:5432/pavilion_agentic_local
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/0
+      REDIS_CACHE_URL: redis://redis:6379/1
       GOOGLE_APPLICATION_CREDENTIALS: /app/.gcp-secrets/service-account-key.json
       ENVIRONMENT: development
       DEBUG: 'true'
@@ -75,6 +77,8 @@ services:
       DATABASE_URL: postgresql://pavilion_user:dev-password-change-in-production@postgres:5432/pavilion_agentic_local
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/0
+      REDIS_CACHE_URL: redis://redis:6379/1
       GOOGLE_APPLICATION_CREDENTIALS: /app/.gcp-secrets/service-account-key.json
       ENVIRONMENT: development
       DEBUG: 'true'
@@ -103,11 +107,13 @@ services:
       DATABASE_URL: postgresql://pavilion_user:dev-password-change-in-production@postgres:5432/pavilion_agentic_local
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/0
+      REDIS_CACHE_URL: redis://redis:6379/1
       GOOGLE_APPLICATION_CREDENTIALS: /app/.gcp-secrets/service-account-key.json
       ENVIRONMENT: development
       DEBUG: 'true'
       ALLOWED_HOSTS: '*'
-      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:8000
     ports:
       - "8000:8000"
     volumes:
@@ -123,6 +129,28 @@ services:
     stdin_open: true
     tty: true
 
+  # Flower — Celery monitoring UI
+  flower:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: pavilion-flower-dev
+    command: celery -A pavilion_gemini flower --port=5555
+    environment:
+      DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
+      DATABASE_URL: postgresql://pavilion_user:dev-password-change-in-production@postgres:5432/pavilion_agentic_local
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      ENVIRONMENT: development
+    ports:
+      - "5555:5555"
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+    networks:
+      - pavilion-network
+
   # React Frontend (optional)
   frontend:
     build:
@@ -130,10 +158,10 @@ services:
       dockerfile: Dockerfile.dev
     container_name: pavilion-frontend-dev
     environment:
-      REACT_APP_API_URL: http://localhost:8000/api
-      REACT_APP_ENVIRONMENT: development
+      VITE_API_BASE_URL: /api
+      VITE_ENVIRONMENT: development
     ports:
-      - "3000:3000"
+      - "3001:3001"
     volumes:
       - ./frontend:/app
       - /app/node_modules

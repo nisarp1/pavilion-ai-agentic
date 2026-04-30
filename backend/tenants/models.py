@@ -76,3 +76,38 @@ class TenantInvitation(models.Model):
 
     def __str__(self):
         return f"Invite to {self.email} for {self.tenant.name}"
+
+
+class UserProfile(models.Model):
+    """Extended profile for each Django User."""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
+    bio = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Profile of {self.user.email}"
+
+
+class UsageRecord(models.Model):
+    """Tracks per-tenant usage for billing and limit enforcement."""
+    METRIC_TYPES = [
+        ('article_generated', 'Article Generated'),
+        ('audio_generated', 'Audio Generated'),
+        ('video_generated', 'Video Generated'),
+        ('rss_fetched', 'RSS Fetched'),
+    ]
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='usage_records')
+    metric_type = models.CharField(max_length=30, choices=METRIC_TYPES)
+    created_at = models.DateTimeField(auto_now_add=True)
+    meta = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['tenant', 'metric_type', '-created_at']),
+            models.Index(fields=['tenant', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.tenant.name} – {self.metric_type} at {self.created_at}"

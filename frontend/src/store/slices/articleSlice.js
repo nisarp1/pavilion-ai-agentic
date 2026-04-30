@@ -3,15 +3,13 @@ import api from '../../services/api'
 
 export const fetchArticles = createAsyncThunk(
   'articles/fetchArticles',
-  async ({ status, category, page = 1, page_size }, { rejectWithValue }) => {
+  async ({ status, category, page = 1, page_size, search } = {}, { rejectWithValue }) => {
     try {
-      const params = {
-        page,
-        _t: Date.now() // Prevent caching
-      }
+      const params = { page, _t: Date.now() }
       if (status) params.status = status
       if (category) params.category = category
       if (page_size) params.page_size = page_size
+      if (search) params.search = search
       const response = await api.get('/articles/', { params })
       return response.data
     } catch (error) {

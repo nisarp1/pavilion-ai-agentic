@@ -182,3 +182,4 @@ django-cachalot==2.6.1  # ORM caching
 # Async support:
 # - For async Vertex AI: use vertexai 0.1.1+
 # - For async database: use psycopg (not psycopg2)
+async-timeout>=4.0.2

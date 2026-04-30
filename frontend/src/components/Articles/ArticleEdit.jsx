@@ -1,10 +1,12 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import PosterEditor from './PosterEditor'
+import ArticlePreview from './ArticlePreview'
 import { useDispatch, useSelector } from 'react-redux'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { fetchArticle, updateArticle, publishArticle } from '../../store/slices/articleSlice'
 import api from '../../services/api'
 import { fetchCategoryTree } from '../../store/slices/categorySlice'
+import { showSuccess, showError, showInfo } from '../../utils/toast'
 
 import MediaLibrary from '../MediaLibrary/MediaLibrary'
 import ReactQuill from 'react-quill'
@@ -67,6 +69,7 @@ function ArticleEdit() {
   const [showMediaLibrary, setShowMediaLibrary] = useState(false)
   const [generatingAudio, setGeneratingAudio] = useState({})
   const [showPosterEditor, setShowPosterEditor] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
   const [voiceAudioUrls, setVoiceAudioUrls] = useState({})
   const [formData, setFormData] = useState({
     title: '',
@@ -401,14 +404,11 @@ function ArticleEdit() {
       }
 
       await dispatch(updateArticle({ id, data: dataToSave })).unwrap()
-
-      // Removed redundant publishArticle dispatch which was checking current time
-      // The updateArticle call above already handles status changes and published_at dates
-
+      showSuccess(status === 'published' ? 'Article published' : 'Draft saved')
       navigate('/articles')
     } catch (error) {
       console.error('Error saving article:', error)
-      alert('Error saving article: ' + (error.message || 'Unknown error'))
+      showError('Error saving article: ' + (error.message || 'Unknown error'))
     } finally {
       setSaving(false)
     }
@@ -426,15 +426,13 @@ function ArticleEdit() {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file')
+      showError('Please select an image file')
       return
     }
 
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      alert('Image size must be less than 5MB')
+      showError('Image size must be less than 5MB')
       return
     }
 
@@ -452,7 +450,7 @@ function ArticleEdit() {
       dispatch(fetchArticle(id))
     } catch (error) {
       console.error('Error uploading image:', error)
-      alert('Failed to upload image. Please try again.')
+      showError('Failed to upload image. Please try again.')
     } finally {
       setUploadingImage(false)
       // Reset file input
@@ -534,7 +532,7 @@ function ArticleEdit() {
       dispatch(fetchArticle(id))
     } catch (error) {
       console.error('Error setting featured image:', error)
-      alert('Failed to set featured image. Please try again.')
+      showError('Failed to set featured image. Please try again.')
     } finally {
       setUploadingImage(false)
     }
@@ -542,7 +540,7 @@ function ArticleEdit() {
 
   const handleGenerateAudio = async (voiceName) => {
     if (!currentArticle.body || !currentArticle.body.trim()) {
-      alert('Article must have content to generate audio.')
+      showError('Article must have content to generate audio.')
       return
     }
 
@@ -564,7 +562,7 @@ function ArticleEdit() {
     } catch (error) {
       console.error(`Error generating audio with ${voiceName}:`, error)
       const errorMsg = error.response?.data?.error || error.message
-      alert(`Failed to generate audio with ${voiceName} voice: ${errorMsg}`)
+      showError(`Failed to generate audio with ${voiceName} voice: ${errorMsg}`)
     } finally {
       setGeneratingAudio(prev => ({ ...prev, [voiceName]: false }))
     }
@@ -572,7 +570,7 @@ function ArticleEdit() {
 
   const handleGenerateReelAudio = async (voiceName) => {
     if (!formData.instagram_reel_script || !formData.instagram_reel_script.trim()) {
-      alert('Reel script cannot be empty.')
+      showError('Reel script cannot be empty.')
       return
     }
 
@@ -586,14 +584,13 @@ function ArticleEdit() {
       })
 
       if (response.data.reel_audio_url) {
-        // Refresh article
         dispatch(fetchArticle(id))
+        showSuccess('Reel audio generated successfully!')
       }
-      alert('Reel audio generated successfully!')
     } catch (error) {
       console.error(`Error generating reel audio:`, error)
       const errorMsg = error.response?.data?.error || error.message
-      alert(`Failed to generate reel audio: ${errorMsg}`)
+      showError(`Failed to generate reel audio: ${errorMsg}`)
     } finally {
       setGeneratingAudio(prev => ({ ...prev, [`reel_${voiceName}`]: false }))
     }
@@ -615,13 +612,13 @@ function ArticleEdit() {
       const response = await api.post(`/articles/${id}/generate_poster/`)
 
       if (response.data.poster_url) {
-        dispatch(fetchArticle(id)) // Refresh to show new poster
-        alert('Poster generated successfully!')
+        dispatch(fetchArticle(id))
+        showSuccess('Poster generated successfully!')
       }
     } catch (error) {
       console.error('Error generating poster:', error)
       const errorMsg = error.response?.data?.error || error.message
-      alert(`Failed to generate poster: ${errorMsg}`)
+      showError(`Failed to generate poster: ${errorMsg}`)
     } finally {
       setGeneratingAudio(prev => ({ ...prev, poster: false }))
     }
@@ -643,11 +640,11 @@ function ArticleEdit() {
       })
       if (response.data.script) {
         setFormData(prev => ({ ...prev, video_script: response.data.script }))
-        alert('Script generated successfully!')
+        showSuccess('Script generated successfully!')
       }
     } catch (error) {
       console.error('Error generating video script:', error)
-      alert('Failed to generate script: ' + (error.response?.data?.error || error.message))
+      showError('Failed to generate script: ' + (error.response?.data?.error || error.message))
     } finally {
       setGeneratingAudio(prev => ({ ...prev, video_script: false }))
     }
@@ -655,7 +652,7 @@ function ArticleEdit() {
 
   const handleGenerateVideoContent = async () => {
     if (!formData.video_script) {
-      alert('Please generate or write a video script first.')
+      showError('Please generate or write a video script first.')
       return
     }
 
@@ -667,12 +664,12 @@ function ArticleEdit() {
       })
       
       if (response.data.status === 'generating_video') {
-        dispatch(fetchArticle(id)) // Start polling
-        alert('Video generation started! This will take about 1-2 minutes.')
+        dispatch(fetchArticle(id))
+        showInfo('Video generation started — this takes 1–2 minutes.')
       }
     } catch (error) {
       console.error('Error generating video:', error)
-      alert('Failed to start video generation: ' + (error.response?.data?.error || error.message))
+      showError('Failed to start video generation: ' + (error.response?.data?.error || error.message))
     } finally {
       setGeneratingAudio(prev => ({ ...prev, video_content: false }))
     }
@@ -683,7 +680,7 @@ function ArticleEdit() {
     try {
       parsedDna = JSON.parse(dnaText);
     } catch (err) {
-      alert("Invalid JSON in DNA field. Please fix before running.");
+      showError("Invalid JSON in DNA field. Please fix before running.");
       return;
     }
 
@@ -699,12 +696,12 @@ function ArticleEdit() {
       })
 
       if (response.data.status) {
-        dispatch(fetchArticle(id)) // Start polling
-        alert('NewsroomX Programmatic Pipeline started!')
+        dispatch(fetchArticle(id))
+        showInfo('NewsroomX Programmatic Pipeline started!')
       }
     } catch (error) {
       console.error('Error triggering NewsroomX:', error)
-      alert('Failed to start NewsroomX pipeline: ' + (error.response?.data?.error || error.message))
+      showError('Failed to start NewsroomX pipeline: ' + (error.response?.data?.error || error.message))
     } finally {
       setGeneratingAudio(prev => ({ ...prev, newsroomx: false }))
     }
@@ -1075,8 +1072,8 @@ function ArticleEdit() {
               <p className="font-bold text-[10px] uppercase tracking-wider">Generation failed</p>
               <p>{formData.video_error || "Check logs or try again with a different script."}</p>
               {formData.video_error && (
-                <button 
-                  onClick={() => alert("Diagnostic Info: \n" + formData.video_error)}
+                <button
+                  onClick={() => showError(formData.video_error)}
                   className="text-left underline mt-1 opacity-70 hover:opacity-100"
                 >
                   View full error detail
@@ -1373,6 +1370,13 @@ function ArticleEdit() {
         </div>
         <div className="flex gap-3">
           <button
+            onClick={() => setShowPreview(true)}
+            className="px-4 py-2 border border-gray-300 bg-white text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium flex items-center gap-1"
+            title="Preview article"
+          >
+            Preview
+          </button>
+          <button
             onClick={handleSaveDraft}
             disabled={saving}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${formData.status === 'draft'
@@ -1474,12 +1478,12 @@ function ArticleEdit() {
               </label>
               <button
                 type="button"
-                onClick={() => handleGenerateReelAudio('chirp')}
-                disabled={generatingAudio.reel_chirp || !formData.instagram_reel_script}
-                className="px-3 py-1.5 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                onClick={() => handleGenerateReelAudio('elevenlabs')}
+                disabled={generatingAudio.reel_elevenlabs || !formData.instagram_reel_script}
+                className="px-3 py-1.5 text-xs bg-black text-white rounded hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shadow-sm font-medium"
               >
                 <FiVolume2 />
-                {generatingAudio.reel_chirp ? 'Generating Audio...' : 'Generate Voiceover'}
+                {generatingAudio.reel_elevenlabs ? 'Generating (ElevenLabs)...' : '🎙️ Generate Voice (ElevenLabs)'}
               </button>
             </div>
 
@@ -1645,9 +1649,17 @@ function ArticleEdit() {
           onClose={() => setShowPosterEditor(false)}
           onSaveSuccess={(newUrl) => {
             dispatch(fetchArticle(id));
-            alert("Poster updated successfully!");
+            showSuccess("Poster updated successfully!");
             setShowPosterEditor(false);
           }}
+        />
+      )}
+
+      {showPreview && (
+        <ArticlePreview
+          article={currentArticle}
+          formData={formData}
+          onClose={() => setShowPreview(false)}
         />
       )}
     </div >

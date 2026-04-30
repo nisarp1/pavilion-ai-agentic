@@ -16,7 +16,7 @@ from django.db.models import Q
 from django.utils import timezone
 from django.http import HttpResponse, HttpResponseBadRequest, Http404
 from django.conf import settings
-from .models import Article, Category, Media, WebStory, PosterTemplate
+from .models import Article, ArticleVersion, Category, Media, WebStory, PosterTemplate
 from .utils import process_image_to_webp, generate_cutout_image
 from .serializers import (
     ArticleSerializer,
@@ -104,72 +104,184 @@ class ArticleViewSet(viewsets.ModelViewSet):
             queryset = queryset.order_by('-updated_at')
         
         if category_filter:
-            # Try to filter by categories (many-to-many) using slug first
-            # This handles category slugs like 'cricket', 'football', etc.
             try:
                 category_obj = Category.objects.filter(slug=category_filter, is_active=True).first()
                 if category_obj:
                     queryset = queryset.filter(categories=category_obj)
                 else:
-                    # Fallback: filter by source category (for backward compatibility)
-                    # This handles source categories like 'reliable_sources', 'trends', etc.
                     queryset = queryset.filter(category=category_filter)
-            except Exception as e:
-                # If category lookup fails, fallback to source category
+            except Exception:
                 queryset = queryset.filter(category=category_filter)
-        
+
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            queryset = queryset.filter(
+                Q(title__icontains=search) |
+                Q(summary__icontains=search) |
+                Q(body__icontains=search)
+            )
+
         return queryset
     
     def perform_create(self, serializer):
         serializer.save(author=self.request.user, tenant=self.request.tenant)
-    
+
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """Dashboard stats: article counts, recent publishes, RSS health."""
+        from django.db.models import Count
+        from datetime import timedelta
+        from rss_fetcher.models import RSSFeed
+
+        tenant = request.tenant
+        now = timezone.now()
+
+        by_status = (
+            Article.objects.filter(tenant=tenant)
+            .values('status')
+            .annotate(count=Count('id'))
+        )
+        status_map = {row['status']: row['count'] for row in by_status}
+
+        recent_published = Article.objects.filter(
+            tenant=tenant, status='published'
+        ).order_by('-published_at')[:5]
+
+        from .serializers import ArticleListSerializer
+        rss_feeds = list(
+            RSSFeed.objects.filter(tenant=tenant)
+            .values('id', 'name', 'url', 'last_fetched_at', 'is_active')
+        )
+
+        return Response({
+            'articles_by_status': status_map,
+            'total': sum(status_map.values()),
+            'published_last_7_days': Article.objects.filter(
+                tenant=tenant, status='published',
+                published_at__gte=now - timedelta(days=7)
+            ).count(),
+            'published_last_30_days': Article.objects.filter(
+                tenant=tenant, status='published',
+                published_at__gte=now - timedelta(days=30)
+            ).count(),
+            'pending_generation': status_map.get('fetched', 0),
+            'currently_generating': status_map.get('generating', 0),
+            'rss_feeds': rss_feeds,
+            'recent_published': ArticleListSerializer(
+                recent_published, many=True, context={'request': request}
+            ).data,
+        })
+
+    def perform_update(self, serializer):
+        """Save a version snapshot before each update."""
+        instance = self.get_object()
+        if instance.body or instance.title:
+            next_version = instance.versions.count() + 1
+            ArticleVersion.objects.create(
+                article=instance,
+                version_number=next_version,
+                title=instance.title,
+                body=instance.body,
+                summary=instance.summary or '',
+                created_by=self.request.user,
+            )
+        serializer.save()
+
+    @action(detail=True, methods=['get'])
+    def versions(self, request, pk=None):
+        """List version history for an article."""
+        article = self.get_object()
+        vers = article.versions.select_related('created_by').all()
+        data = [
+            {
+                'id': v.id,
+                'version_number': v.version_number,
+                'title': v.title,
+                'created_by': v.created_by.get_full_name() if v.created_by else None,
+                'created_at': v.created_at,
+            }
+            for v in vers
+        ]
+        return Response(data)
+
+    @action(detail=True, methods=['post'], url_path='versions/(?P<version_id>[0-9]+)/restore')
+    def restore_version(self, request, pk=None, version_id=None):
+        """Restore article content from a specific version."""
+        article = self.get_object()
+        try:
+            version = ArticleVersion.objects.get(id=version_id, article=article)
+        except ArticleVersion.DoesNotExist:
+            return Response({'error': 'Version not found'}, status=status.HTTP_404_NOT_FOUND)
+        article.title = version.title
+        article.body = version.body
+        article.summary = version.summary
+        article.save(update_fields=['title', 'body', 'summary', 'updated_at'])
+        return Response({'message': f'Restored to version {version.version_number}'})
+
+    @action(detail=True, methods=['get'])
+    def task_status(self, request, pk=None):
+        """Return the Celery task state for the article's active background task."""
+        article = self.get_object()
+        if not article.celery_task_id:
+            return Response({'status': 'no_task', 'task_id': None})
+        try:
+            from celery.result import AsyncResult
+            result = AsyncResult(article.celery_task_id)
+            return Response({
+                'task_id': article.celery_task_id,
+                'state': result.state,
+                'info': str(result.info) if result.info else None,
+            })
+        except Exception as e:
+            return Response({'status': 'error', 'message': str(e)})
+
     @action(detail=True, methods=['post'])
     def generate(self, request, pk=None):
-        """
-        Trigger article generation for a fetched article.
-        Uses threading to avoid blocking the main server process.
-        """
+        """Trigger article generation via Celery (falls back to thread if broker is down)."""
         article = self.get_object()
-        
+
         if article.status != 'fetched':
             return Response(
                 {'error': "Article must be in 'fetched' status to generate."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # Use threading to run generation in background without blocking the server
-        import threading
-        
-        def run_generation_task(article_id):
-            # Close any old connections before starting to ensure clean state
-            from django.db import close_old_connections
-            close_old_connections()
-            
-            try:
-                from workers.tasks import _generate_article_task_impl
-                import logging
-                logger = logging.getLogger(__name__)
-                
-                logger.info(f"Starting threaded generation for article {article_id}")
-                _generate_article_task_impl(article_id)
-                logger.info(f"Threaded generation completed for article {article_id}")
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Threaded generation failed: {e}", exc_info=True)
-            finally:
-                # IMPORTANT: Close the connection for this thread to prevent leaks/locking
-                close_old_connections()
 
-        # Start generation in a background thread
-        thread = threading.Thread(target=run_generation_task, args=(article.id,))
-        thread.daemon = True
-        thread.start()
-        
+        # Enforce subscription tier generation limits
+        try:
+            from tenants.limits import check_generation_limit
+            allowed, msg = check_generation_limit(request.tenant)
+            if not allowed:
+                return Response({'error': msg}, status=status.HTTP_402_PAYMENT_REQUIRED)
+        except Exception:
+            pass
+
+        article.status = 'generating'
+        article.generation_started_at = timezone.now()
+        article.save(update_fields=['status', 'generation_started_at'])
+
+        try:
+            from workers.tasks import generate_article_task
+            task = generate_article_task.delay(article.id)
+            article.celery_task_id = str(task.id)
+            article.save(update_fields=['celery_task_id'])
+        except Exception:
+            import threading
+            from django.db import close_old_connections
+            from workers.tasks import _generate_article_task_impl
+
+            def _fallback(article_id):
+                close_old_connections()
+                try:
+                    _generate_article_task_impl(article_id)
+                finally:
+                    close_old_connections()
+
+            threading.Thread(target=_fallback, args=(article.id,), daemon=True).start()
+
         return Response({
             'message': 'Article generation started',
             'article_id': article.id,
-            'status': 'generating'
+            'status': 'generating',
         }, status=status.HTTP_202_ACCEPTED)
     
     @action(detail=True, methods=['post'])
@@ -364,8 +476,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def generate_video_content(self, request, pk=None):
         """
-        Trigger asynchronous video generation in a background thread (TTS + D-ID).
-        Uses threading instead of Celery so it works without a Redis broker.
+        Trigger asynchronous video generation via Celery (falls back to thread if broker down).
         Optional payload: {"video_script": "custom script", "format": "portrait/landscape"}
         """
         article = self.get_object()
@@ -378,115 +489,78 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Save script and mark as generating before spinning up the thread
         article.video_status = 'generating_video'
         article.video_script = video_script
         article.video_format = video_format
-        article.save()
+        article.save(update_fields=['video_status', 'video_script', 'video_format'])
 
-        import threading
-        import logging
-        logger = logging.getLogger(__name__)
-
-        def run_video_generation(article_id, fmt, script):
+        try:
+            from workers.tasks import task_generate_sports_video
+            task = task_generate_sports_video.delay(article.id, video_format, video_script)
+            article.celery_task_id = str(task.id)
+            article.save(update_fields=['celery_task_id'])
+        except Exception:
+            import threading
             from django.db import close_old_connections
-            close_old_connections()
-            try:
-                from cms.video_generator import generate_sports_video, upload_to_blob, get_did_status
-                from cms.models import Article as ArticleModel
-                import requests as req_lib
-                import time
+            import logging
+            logger = logging.getLogger(__name__)
 
-                art = ArticleModel.objects.get(id=article_id)
-                logger.info(f"Background thread: Starting video generation for article {article_id}")
+            def _fallback_video(article_id, fmt, script):
+                close_old_connections()
+                try:
+                    from workers.tasks import _generate_article_task_impl
+                    from cms.video_generator import generate_sports_video, upload_to_blob, get_did_status
+                    from cms.models import Article as ArticleModel
+                    import requests as req_lib
+                    import time
 
-                result = generate_sports_video(
-                    f"{art.title}. {art.summary or ''}",
-                    format=fmt,
-                    post_id=article_id,
-                    script_content=script
-                )
-
-                if 'error' in result:
-                    error_msg = result.get('error')
-                    logger.error(f"Video generation failed for article {article_id}: {error_msg}")
-                    art.video_status = 'failed'
-                    art.video_error = str(error_msg)
-                    art.save()
-                    return
-
-                talk_id = result.get('talk_id')
-                art.video_audio_url = result.get('audio_url', '')
-                art.save()
-
-                # Poll D-ID for up to 5 minutes
-                max_attempts = 30
-                video_url = None
-                logger.info(f"Background thread: Polling D-ID for talk_id {talk_id}")
-                
-                for attempt in range(max_attempts):
-                    status_data = get_did_status(talk_id)
-                    if not status_data:
-                        logger.error(f"Failed to get D-ID status for talk_id {talk_id}")
-                        break
-                        
-                    did_status = status_data.get('status')
-                    if did_status == 'done':
-                        video_url = status_data.get('result_url')
-                        break
-                    elif did_status == 'error':
-                        error_detail = status_data.get('error', {})
-                        logger.error(f"D-ID error for article {article_id}: {error_detail}")
+                    art = ArticleModel.objects.get(id=article_id)
+                    result = generate_sports_video(
+                        f"{art.title}. {art.summary or ''}",
+                        format=fmt, post_id=article_id, script_content=script
+                    )
+                    if 'error' in result:
                         art.video_status = 'failed'
-                        art.video_error = f"D-ID Error: {error_detail.get('message', 'Unknown D-ID error')}"
+                        art.video_error = str(result.get('error'))
                         art.save()
                         return
-                    
-                    time.sleep(10)
-
-                if not video_url:
-                    logger.error(f"D-ID polling timed out or failed for article {article_id}")
-                    art.video_status = 'failed'
-                    art.video_error = "D-ID polling timed out or failed to return a result URL."
+                    talk_id = result.get('talk_id')
+                    art.video_audio_url = result.get('audio_url', '')
                     art.save()
-                    return
-
-                # Try to upload to Vercel Blob for persistence
-                try:
-                    logger.info(f"Background thread: Uploading final video to Vercel Blob for article {article_id}")
-                    vid_response = req_lib.get(video_url, timeout=60)
-                    if vid_response.status_code == 200:
-                        blob_url = upload_to_blob(vid_response.content, f"video_{article_id}_{fmt}.mp4")
-                        if blob_url:
-                            video_url = blob_url
-                except Exception as up_err:
-                    logger.warning(f"Blob upload failed for article {article_id}: {up_err}. Using D-ID URL.")
-
-                art.video_url = video_url
-                art.video_status = 'completed'
-                art.video_error = "" # Clear any previous error
-                art.save()
-                logger.info(f"Video generation completed for article {article_id}: {video_url}")
-
-            except Exception as e:
-                logger.error(f"Video generation thread error for article {article_id}: {str(e)}", exc_info=True)
-                try:
-                    from cms.models import Article as ArticleModel
-                    art = ArticleModel.objects.get(id=article_id)
+                    for _ in range(30):
+                        status_data = get_did_status(talk_id)
+                        if not status_data:
+                            break
+                        if status_data.get('status') == 'done':
+                            video_url = status_data.get('result_url')
+                            art.video_url = video_url
+                            art.video_status = 'completed'
+                            art.video_error = ''
+                            art.save()
+                            return
+                        if status_data.get('status') == 'error':
+                            art.video_status = 'failed'
+                            art.video_error = str(status_data.get('error', {}))
+                            art.save()
+                            return
+                        time.sleep(10)
                     art.video_status = 'failed'
-                    art.video_error = f"Exception: {str(e)}"
+                    art.video_error = 'D-ID polling timed out'
                     art.save()
-                except Exception:
-                    pass
-            finally:
-                close_old_connections()
+                except Exception as e:
+                    logger.error(f"Video fallback thread error: {e}", exc_info=True)
+                    try:
+                        from cms.models import Article as ArticleModel
+                        art = ArticleModel.objects.get(id=article_id)
+                        art.video_status = 'failed'
+                        art.video_error = str(e)
+                        art.save()
+                    except Exception:
+                        pass
+                finally:
+                    close_old_connections()
 
-        thread = threading.Thread(
-            target=run_video_generation,
-            args=(article.id, video_format, video_script),
-            daemon=True
-        )
-        thread.start()
+            threading.Thread(target=_fallback_video, args=(article.id, video_format, video_script), daemon=True).start()
 
         return Response({'message': 'Video generation started', 'status': 'generating_video'})
 
@@ -571,8 +645,6 @@ class ArticleViewSet(viewsets.ModelViewSet):
         did_key = os.getenv("D_ID_API_KEY")
         if did_key:
             diag["D_ID_KEY_FORMAT"] = "BASIC_AUTH (username:password)" if ":" in did_key else "TOKEN_ONLY"
-
-        return Response(diag)
 
         return Response(diag)
 
@@ -830,6 +902,44 @@ class ArticleViewSet(viewsets.ModelViewSet):
             'success': True, 
             'url': request.build_absolute_uri(article.generated_poster.url)
         })
+
+    @action(detail=False, methods=['post'])
+    def recreate_reel_agentic(self, request):
+        """
+        Trigger the Agentic Pipeline to deconstruct a reference reel URL
+        and generate a Pavilion-branded Malayalam reel script and JSON props.
+        """
+        reference_url = request.data.get('url')
+        
+        if not reference_url:
+            return Response(
+                {'error': 'No reference URL provided.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            from workers.tasks import task_recreate_reel_agentic
+            
+            # ഇവിടെ നമ്മൾ ടാസ്ക് നേരിട്ട് (Synchronous) വിളിക്കുകയാണ്.
+            # കാരണം ഫ്രണ്ട്എൻഡിന് ഉടനടി JSON ലഭിക്കാനും പ്രിവ്യൂ കാണിക്കാനും ഇത് സഹായിക്കും!
+            result = task_recreate_reel_agentic(reference_url)
+            
+            if result.get('status') == 'success':
+                return Response(result)
+            else:
+                return Response(
+                    {'error': result.get('error', 'Unknown error occurred')},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+                
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Agentic Pipeline API error: {str(e)}", exc_info=True)
+            return Response(
+                {'error': f"Pipeline error: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class CategoryViewSet(viewsets.ModelViewSet):

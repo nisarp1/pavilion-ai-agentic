@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { FiSearch, FiUpload, FiX, FiImage, FiCheck, FiGlobe, FiDownload, FiCrop, FiZoomIn, FiZoomOut } from 'react-icons/fi'
 import Cropper from 'react-easy-crop'
 import api from '../../services/api'
+import { showSuccess, showError } from '../../utils/toast'
 
 function MediaLibrary({ isOpen, onClose, onSelect, initialMediaId, initialUrl }) {
   const [activeTab, setActiveTab] = useState('library') // 'library' or 'search'
@@ -106,7 +107,7 @@ function MediaLibrary({ isOpen, onClose, onSelect, initialMediaId, initialUrl })
       setSearchResults(response.data.results || [])
     } catch (error) {
       console.error('Error searching external images:', error)
-      alert('Failed to search for images.')
+      showError('Failed to search for images.')
     } finally {
       setLoading(false)
     }
@@ -132,7 +133,7 @@ function MediaLibrary({ isOpen, onClose, onSelect, initialMediaId, initialUrl })
       }
     } catch (error) {
       console.error('Error saving external image:', error)
-      alert(`Failed to import image: ${error.response?.data?.error || error.message}`)
+      showError(`Failed to import image: ${error.response?.data?.error || error.message}`)
     } finally {
       setUploading(false)
     }
@@ -158,7 +159,7 @@ function MediaLibrary({ isOpen, onClose, onSelect, initialMediaId, initialUrl })
         error.response?.data?.file?.[0] ||
         error.message ||
         'Failed to upload image(s). Please try again.'
-      alert(`Upload failed: ${errorMessage}`)
+      showError(`Upload failed: ${errorMessage}`)
     } finally {
       setUploading(false)
     }
@@ -257,7 +258,7 @@ function MediaLibrary({ isOpen, onClose, onSelect, initialMediaId, initialUrl })
 
     } catch (error) {
       console.error('Error saving cropped image:', error)
-      alert(`Failed to save cropped image: ${error.response?.data?.error || error.message}`)
+      showError(`Failed to save cropped image: ${error.response?.data?.error || error.message}`)
     } finally {
       setUploading(false)
     }

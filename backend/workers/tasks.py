@@ -150,8 +150,8 @@ def auto_assign_categories(article):
     Also considers subcategories for more precise matching.
     """
     try:
-        # Get all active categories (including subcategories)
-        all_categories = Category.objects.filter(is_active=True).select_related('parent').prefetch_related('children')
+        # Get all active categories for this tenant only
+        all_categories = Category.objects.filter(is_active=True, tenant=article.tenant).select_related('parent').prefetch_related('children')
         
         if not all_categories.exists():
             logger.debug("No categories available for auto-assignment")
@@ -244,24 +244,21 @@ def auto_assign_categories(article):
         # ALWAYS ADD "Featured" CATEGORY IF IT EXISTS
         # This is a specific business rule
         try:
-             featured_cat = Category.objects.filter(name__iexact='Featured').first()
+             featured_cat = Category.objects.filter(name__iexact='Featured', tenant=article.tenant).first()
              if featured_cat:
-                 # Check if not already in list to avoid duplicates
                  if featured_cat not in categories_to_assign:
-                     categories_to_assign.insert(0, featured_cat) # Add to top
+                     categories_to_assign.insert(0, featured_cat)
                  logger.info("Added 'Featured' category by default")
         except Exception as e:
              logger.warning(f"Could not add Featured category: {e}")
 
         if categories_to_assign:
-            # Clear existing categories and assign new ones
             article.categories.clear()
             article.categories.add(*categories_to_assign)
             logger.info(f"Auto-assigned {len(categories_to_assign)} categories to article {article.id} ({article.title[:50]}): {[c.name for c in categories_to_assign]}")
         else:
-            # Fallback: Assign to 'Featured' if nothing else matches, ensuring at least one category
             try:
-                 featured_cat = Category.objects.filter(name__iexact='Featured').first()
+                 featured_cat = Category.objects.filter(name__iexact='Featured', tenant=article.tenant).first()
                  if featured_cat:
                      article.categories.add(featured_cat)
                      logger.info(f"No content matches, assigned 'Featured' fallback to article {article.id}")
@@ -1151,6 +1148,45 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
         client = texttospeech.TextToSpeechClient()
         text_content = article.instagram_reel_script.strip()
         
+        # 1. Try ElevenLabs First (Highest Quality for Malayalam)
+        elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
+        if elevenlabs_key and voice_name.lower() in ['elevenlabs', 'george', 'chirp', 'best']:
+            try:
+                logger.info("ElevenLabs API key found. Attempting ElevenLabs for highest quality Malayalam.")
+                # Use the environment variable for voice ID, fallback to standard Malayalam Voice ID
+                voice_id = os.getenv("ELEVENLABS_MALAYALAM_VOICE_ID", "pFZP5JQG7iQjIQuC4Bku") 
+                
+                url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+                headers = {
+                    "Accept": "audio/mpeg",
+                    "Content-Type": "application/json",
+                    "xi-api-key": elevenlabs_key
+                }
+                data = {
+                    "text": text_content,
+                    "model_id": "eleven_multilingual_v2",
+                    "voice_settings": {
+                        "stability": 0.5,
+                        "similarity_boost": 0.75,
+                        "style": 0.3,
+                        "use_speaker_boost": True
+                    }
+                }
+                el_response = requests.post(url, json=data, headers=headers)
+                if el_response.status_code == 200:
+                    audio_filename = f'reel_{article.id}_audio_elevenlabs.mp3'
+                    article.instagram_reel_audio.save(
+                        audio_filename,
+                        ContentFile(el_response.content),
+                        save=True
+                    )
+                    logger.info(f"ElevenLabs Reel audio saved successfully to {audio_filename}")
+                    return True
+                else:
+                    logger.warning(f"ElevenLabs failed ({el_response.status_code}): {el_response.text}. Falling back to Google TTS.")
+            except Exception as el_e:
+                logger.error(f"ElevenLabs connection error: {el_e}. Falling back to Google TTS.")
+
         # Map voice names
         voice_mapping = {
             'chirp': 'ml-IN-Chirp3-HD-Despina',
@@ -1256,11 +1292,41 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
 
 @shared_task
 def generate_article_task(article_id):
-    """
-    Celery task wrapper for article generation.
-    Calls the internal implementation.
-    """
-    return _generate_article_task_impl(article_id)
+    """Celery task wrapper for article generation."""
+    result = _generate_article_task_impl(article_id)
+    # Track usage
+    try:
+        article = Article.objects.get(id=article_id)
+        from tenants.models import UsageRecord
+        UsageRecord.objects.create(
+            tenant=article.tenant,
+            metric_type='article_generated',
+            meta={'article_id': article_id},
+        )
+    except Exception:
+        pass
+    return result
+
+
+@shared_task
+def publish_scheduled_articles():
+    """Run every minute; publish articles whose publish_at <= now."""
+    articles = Article.objects.filter(
+        status='draft',
+        publish_at__lte=timezone.now(),
+        publish_at__isnull=False,
+    )
+    count = 0
+    for article in articles:
+        try:
+            article.status = 'published'
+            article.published_at = timezone.now()
+            article.save(update_fields=['status', 'published_at'])
+            count += 1
+            logger.info(f"Scheduled publish: article {article.id} '{article.title[:50]}'")
+        except Exception as e:
+            logger.error(f"Failed to publish scheduled article {article.id}: {e}")
+    return {'published': count}
 
 
 @shared_task(bind=True, max_retries=20)
@@ -1377,3 +1443,58 @@ def task_generate_sports_video(self, article_id, format="portrait", script_conte
             article.save()
         return {"error": str(e)}
 
+
+@shared_task
+def run_agentic_trends_celery():
+    """Celery beat task: refresh the agentic trends cache every 5 minutes."""
+    try:
+        from rss_fetcher.agents.coordinator import run_trends_pipeline
+        result = run_trends_pipeline(force_refresh=True)
+        logger.info(f"Agentic trends refreshed: {result.get('count', 0)} topics cached")
+        return {"status": "ok", "count": result.get("count", 0)}
+    except Exception as exc:
+        logger.error(f"run_agentic_trends_celery failed: {exc}", exc_info=True)
+        return {"status": "error", "error": str(exc)}
+
+
+@shared_task(bind=True)
+def task_recreate_reel_agentic(self, reference_url):
+    """
+    Stage 1 & 2: Agentic Pipeline to deconstruct a reference reel
+    and generate a Pavilion-branded Malayalam reel script and JSON props.
+    """
+    try:
+        logger.info(f"Starting Agentic Reel Recreation for URL: {reference_url}")
+        
+        # Import the CrewAI orchestrator from the agents folder
+        from agents.reel_agents import ReelRecreationCrew
+        
+        # Initialize and run the CrewAI pipeline
+        crew = ReelRecreationCrew()
+        result = crew.run_pipeline(reference_url)
+        
+        # Safely extract JSON from the LLM's output
+        result_str = str(result)
+        modular_props = {}
+        
+        # Try to find JSON block if LLM wrapped it in markdown (e.g., ```json ... ```)
+        json_match = re.search(r'\{.*\}', result_str, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(0)
+            try:
+                modular_props = json.loads(json_str)
+            except json.JSONDecodeError:
+                logger.error("Agent returned invalid JSON format.")
+                modular_props = {"error": "Failed to parse JSON", "raw": result_str}
+        
+        logger.info("Agentic Pipeline successfully generated modular JSON.")
+        
+        return {
+            "status": "success",
+            "reference_url": reference_url,
+            "modular_props": modular_props,
+        }
+
+    except Exception as e:
+        logger.error(f"Error in Agentic Recreation Pipeline: {str(e)}", exc_info=True)
+        return {"status": "error", "error": str(e)}

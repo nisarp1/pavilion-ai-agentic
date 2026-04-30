@@ -17,6 +17,7 @@ import {
   FiClock,
 } from 'react-icons/fi'
 import { format } from 'date-fns'
+import { showSuccess, showError } from '../../utils/toast'
 
 const statusTabs = [
   { value: 'all', label: 'All' },
@@ -61,17 +62,19 @@ function WebStoryList() {
   const handlePublish = async (id) => {
     try {
       await dispatch(publishWebStory(id)).unwrap()
+      showSuccess('Story published successfully')
     } catch (error) {
-      alert('Failed to publish story. Please try again.')
+      showError('Failed to publish story. Please try again.')
     }
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this story? This cannot be undone.')) return
+    if (!window.confirm('Delete this story? This cannot be undone.')) return
     try {
       await dispatch(deleteWebStory(id)).unwrap()
+      showSuccess('Story deleted')
     } catch (error) {
-      alert('Failed to delete story. Please try again.')
+      showError('Failed to delete story. Please try again.')
     }
   }
 

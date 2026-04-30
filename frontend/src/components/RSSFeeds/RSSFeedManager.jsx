@@ -9,6 +9,7 @@ import {
   fetchAllRSSFeeds,
   clearError,
 } from '../../store/slices/rssSlice'
+import { showSuccess, showError } from '../../utils/toast'
 import { FiPlus, FiTrash2, FiRefreshCw, FiCheck, FiX, FiPlay } from 'react-icons/fi'
 
 function RSSFeedManager() {
@@ -67,7 +68,7 @@ function RSSFeedManager() {
     )
 
     if (validInputs.length === 0) {
-      alert('Please add at least one valid feed with name and URL')
+      showError('Please add at least one valid feed with name and URL')
       return
     }
 
@@ -79,20 +80,18 @@ function RSSFeedManager() {
         if (createRSSFeed.fulfilled.match(result)) {
           results.push(result.payload)
         } else {
-          alert(`Error adding feed "${input.name}": ${result.payload?.error || result.payload?.url?.[0] || 'Unknown error'}`)
+          showError(`Error adding feed "${input.name}": ${result.payload?.error || result.payload?.url?.[0] || 'Unknown error'}`)
         }
       } catch (err) {
-        alert(`Error adding feed "${input.name}": ${err.message}`)
+        showError(`Error adding feed "${input.name}": ${err.message}`)
       }
     }
 
     if (results.length > 0) {
-      // Reset form
       setFeedInputs([{ name: '', url: '', is_active: true, fetch_interval: 60 }])
       setShowAddForm(false)
-      // Refresh feeds list
       dispatch(fetchRSSFeeds())
-      alert(`Successfully added ${results.length} feed(s)!`)
+      showSuccess(`Successfully added ${results.length} feed(s)!`)
     }
   }
 
@@ -108,14 +107,12 @@ function RSSFeedManager() {
     try {
       const result = await dispatch(fetchRSSFeed(feedId))
       if (fetchRSSFeed.fulfilled.match(result)) {
-        alert(
-          `Feed fetched successfully! ${result.payload.articles_created || 0} article(s) created.`
-        )
+        showSuccess(`Feed fetched! ${result.payload.articles_created || 0} article(s) created.`)
       } else {
-        alert(`Error fetching feed: ${result.payload?.error || 'Unknown error'}`)
+        showError(`Error fetching feed: ${result.payload?.error || 'Unknown error'}`)
       }
     } catch (err) {
-      alert(`Error fetching feed: ${err.message}`)
+      showError(`Error fetching feed: ${err.message}`)
     } finally {
       setFetchingFeedId(null)
     }
@@ -125,14 +122,12 @@ function RSSFeedManager() {
     try {
       const result = await dispatch(fetchAllRSSFeeds())
       if (fetchAllRSSFeeds.fulfilled.match(result)) {
-        alert(
-          `All feeds fetched successfully! ${result.payload.articles_created || 0} article(s) created.`
-        )
+        showSuccess(`All feeds fetched! ${result.payload.articles_created || 0} article(s) created.`)
       } else {
-        alert(`Error fetching feeds: ${result.payload?.error || 'Unknown error'}`)
+        showError(`Error fetching feeds: ${result.payload?.error || 'Unknown error'}`)
       }
     } catch (err) {
-      alert(`Error fetching feeds: ${err.message}`)
+      showError(`Error fetching feeds: ${err.message}`)
     }
   }
 

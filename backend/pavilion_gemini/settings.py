@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'cms',
     'rss_fetcher',
     'workers',
+    'video_studio',
 ]
 
 MIDDLEWARE = [
@@ -73,7 +74,7 @@ ROOT_URLCONF = 'pavilion_gemini.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -218,6 +219,7 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    'EXCEPTION_HANDLER': 'pavilion_gemini.exceptions.pavilion_exception_handler',
 }
 
 # JWT Settings
@@ -274,17 +276,38 @@ RSS_FETCH_INTERVAL_MINUTES = env.int('RSS_FETCH_INTERVAL_MINUTES', default=5)
 CELERY_BEAT_SCHEDULE = {
     'fetch-rss-feeds': {
         'task': 'rss_fetcher.tasks.fetch_rss_feeds',
-        'schedule': timedelta(minutes=RSS_FETCH_INTERVAL_MINUTES),  # Configurable interval
+        'schedule': timedelta(minutes=RSS_FETCH_INTERVAL_MINUTES),
     },
     'fetch-trends-sports': {
         'task': 'rss_fetcher.tasks.fetch_google_trends_sports',
-        'schedule': timedelta(hours=1),  # Fetch trends every hour (gets last 1 hour articles)
+        'schedule': timedelta(hours=1),
     },
     'enhance-with-google-trends': {
         'task': 'rss_fetcher.tasks.enhance_articles_with_google_trends',
-        'schedule': timedelta(hours=1),  # Enhance articles every hour with Google Trends data
+        'schedule': timedelta(hours=1),
+    },
+    'publish-scheduled-articles': {
+        'task': 'workers.tasks.publish_scheduled_articles',
+        'schedule': timedelta(minutes=1),
+    },
+    'refresh-agentic-trends': {
+        'task': 'workers.tasks.run_agentic_trends_celery',
+        'schedule': timedelta(minutes=5),
     },
 }
+
+# Django cache backend (Redis DB 1 — separate from Celery broker DB 0)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': env('REDIS_CACHE_URL', default='redis://localhost:6379/1'),
+    }
+}
+
+# Agentic Trends configuration
+TRENDS_CACHE_TTL = 300  # seconds (5 min)
+TRENDS_MAX_TOPICS = 15
+TRENDS_SPORTS = ['cricket', 'football', 'kabaddi', 'tennis', 'hockey', 'badminton']
 
 # AWS S3 Settings (Optional)
 AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID', default='')
@@ -329,4 +352,60 @@ if GOOGLE_APPLICATION_CREDENTIALS:
 
 # News API
 NEWS_API_KEY = env('NEWS_API_KEY', default='')
+
+# ── Video Studio ──────────────────────────────────────────────────────────────
+# GCS bucket used for rendered videos and fallback ZIP exports
+GCS_BUCKET_NAME = env('GCS_BUCKET_NAME', default='')
+# Cloud Run URL of the Remotion renderer service (Track A)
+CLOUD_RUN_RENDERER_URL = env('CLOUD_RUN_RENDERER_URL', default='')
+# GCS path (gs://bucket/path or blob-name) to the base After Effects .aep template (Track B)
+AEP_TEMPLATE_GCS_PATH = env('AEP_TEMPLATE_GCS_PATH', default='')
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Frontend URL (used for invite links, password reset emails)
+FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:3001')
+
+# Email Configuration
+EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = env('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = env.int('EMAIL_PORT', default=587)
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@pavilion.local')
+ADMIN_EMAIL = env('ADMIN_EMAIL', default='admin@pavilion.local')
+
+# Logging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{levelname}] {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '[{levelname}] {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose' if DEBUG else 'simple',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': env('LOG_LEVEL', default='INFO'),
+    },
+    'loggers': {
+        'django': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},
+        'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
+        'cms': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
+        'workers': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
+        'tenants': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
+        'rss_fetcher': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
+    },
+}
 

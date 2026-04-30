@@ -148,90 +148,47 @@ class RSSFeedViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'], url_path='realtime-trends')
     def realtime_trends(self, request):
-        """
-        Get real-time Google Trends data for display.
-        Returns trending topics without creating articles.
-        """
-        logger = logging.getLogger(__name__)
-        
-        try:
-            # Get trending topics
-            trending_topics = _get_trending_topics_from_google_trends()
-            
-            # Ensure we always return a list
-            if not isinstance(trending_topics, list):
-                trending_topics = list(trending_topics) if trending_topics else []
-            
-            # Ensure we have at least fallback topics
-            if not trending_topics:
-                from .tasks import _get_fallback_trends
-                trending_topics = _get_fallback_trends()
-            
-            logger.info(f"Returning {len(trending_topics)} trending topics")
-            
-            # Format response
-            return Response({
-                'trending_topics': trending_topics,
-                'count': len(trending_topics),
-                'timestamp': timezone.now().isoformat()
-            }, status=status.HTTP_200_OK)
-        except Exception as e:
-            logger.error(f"Error fetching real-time trends: {str(e)}")
-            import traceback
-            logger.debug(traceback.format_exc())
-            # Return fallback topics even on error
-            from .tasks import _get_fallback_trends
-            fallback = _get_fallback_trends()
-            return Response({
-                'error': str(e),
-                'trending_topics': fallback,
-                'count': len(fallback),
-                'timestamp': timezone.now().isoformat()
-            }, status=status.HTTP_200_OK)  # Still return 200 with fallback data
-    
+        """Real-time trending sports topics via the agentic Gemini pipeline."""
+        from .agents.coordinator import run_trends_pipeline
+        payload = run_trends_pipeline()
+        return Response(payload, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=['get'], url_path='twitter-trends')
     def twitter_trends(self, request):
-        """
-        Get real-time Twitter trends for sports in India.
-        Returns trending topics without creating articles.
-        """
-        logger = logging.getLogger(__name__)
-        
+        """Sports trends (replaces broken Twitter/pytrends with agentic pipeline)."""
+        from .agents.coordinator import run_trends_pipeline
+        payload = run_trends_pipeline()
+        return Response(payload, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], url_path='agentic-trends')
+    def agentic_trends(self, request):
+        """Full enriched agentic trends — always returns enriched_trends array."""
+        force = request.query_params.get('refresh', '').lower() == 'true'
+        from .agents.coordinator import run_trends_pipeline
+        payload = run_trends_pipeline(force_refresh=force)
+        return Response(payload, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='trend-click',
+            permission_classes=[permissions.IsAuthenticated])
+    def trend_click(self, request):
+        """Record a user click on a trend card to power the self-training boost."""
+        topic = request.data.get('topic', '').strip()
+        if not topic:
+            return Response({'error': 'topic required'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            # Get Twitter trending topics for sports in India
-            from .tasks import _get_twitter_trends_sports_india
-            trending_topics = _get_twitter_trends_sports_india()
-            
-            # Ensure we always return a list
-            if not isinstance(trending_topics, list):
-                trending_topics = list(trending_topics) if trending_topics else []
-            
-            # Ensure we have at least fallback topics
-            if not trending_topics:
-                from .tasks import _get_twitter_fallback_trends
-                trending_topics = _get_twitter_fallback_trends()
-            
-            logger.info(f"Returning {len(trending_topics)} Twitter trending topics")
-            
-            # Format response
-            return Response({
-                'trending_topics': trending_topics,
-                'count': len(trending_topics),
-                'timestamp': timezone.now().isoformat()
-            }, status=status.HTTP_200_OK)
-        except Exception as e:
-            logger.error(f"Error fetching Twitter trends: {str(e)}")
-            import traceback
-            logger.debug(traceback.format_exc())
-            # Return fallback topics even on error
-            from .tasks import _get_twitter_fallback_trends
-            fallback = _get_twitter_fallback_trends()
-            return Response({
-                'error': str(e),
-                'trending_topics': fallback,
-                'count': len(fallback),
-                'timestamp': timezone.now().isoformat()
-            }, status=status.HTTP_200_OK)  # Still return 200 with fallback data
+            from cms.models import Article
+            article = Article.objects.filter(
+                trend_data__trending_topic__icontains=topic[:40]
+            ).order_by('-created_at').first()
+            if article:
+                td = article.trend_data or {}
+                td['click_count'] = int(td.get('click_count', 0)) + 1
+                Article.objects.filter(pk=article.pk).update(trend_data=td)
+                return Response({'success': True, 'click_count': td['click_count']})
+            return Response({'success': True, 'click_count': 0})
+        except Exception as exc:
+            logging.getLogger(__name__).error('trend_click error: %s', exc)
+            return Response({'error': str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 from django.http import JsonResponse
 from rest_framework.decorators import api_view, permission_classes

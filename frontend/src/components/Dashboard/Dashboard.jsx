@@ -12,12 +12,19 @@ import {
   FiBookOpen,
   FiLayers,
   FiUserPlus,
+  FiHome,
+  FiUser,
+  FiSettings,
+  FiVideo,
 } from 'react-icons/fi'
 import { useState } from 'react'
 import TenantSwitcher from '../Auth/TenantSwitcher'
 
 function Dashboard() {
-  const { currentRole } = useSelector((state) => state.auth)
+  const { currentRole, generatingIds = [] } = useSelector((state) => ({
+    currentRole: state.auth.currentRole,
+    generatingIds: state.articles?.generatingIds || [],
+  }))
   const dispatch = useDispatch()
   const navigate = useNavigate()
   const location = useLocation()
@@ -29,14 +36,24 @@ function Dashboard() {
   }
 
   const navItems = [
+    { path: '/', label: 'Dashboard', icon: FiHome, exact: true },
     { path: '/articles', label: 'Articles', icon: FiFileText, matchStart: true },
     { path: '/articles/create', label: 'Create Article', icon: FiPlus },
     { path: '/webstories', label: 'Web Stories', icon: FiBookOpen, matchStart: true },
     { path: '/webstories/create', label: 'Create Web Story', icon: FiLayers },
     { path: '/categories', label: 'Categories', icon: FiTag },
     { path: '/rss-feeds', label: 'RSS Feeds', icon: FiRss },
-    { path: '/invite', label: 'Invite Member', icon: FiUserPlus },
+    { path: '/video-studio', label: 'Video Studio', icon: FiVideo },
+    { path: '/invite', label: 'Invite Member', icon: FiUserPlus, adminOnly: true },
+    { path: '/profile', label: 'My Profile', icon: FiUser },
+    { path: '/settings', label: 'Settings', icon: FiSettings, adminOnly: true },
   ]
+
+  const isActive = (item) => {
+    if (item.exact) return location.pathname === item.path
+    if (item.matchStart) return location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
+    return location.pathname === item.path
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -68,28 +85,30 @@ function Dashboard() {
 
             <TenantSwitcher />
 
-            <nav className="flex-1 p-4 space-y-2">
+            <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
               {navItems.map((item) => {
-                if (item.path === '/invite' && currentRole !== 'admin') {
-                  return null
-                }
+                if (item.adminOnly && currentRole !== 'admin') return null
                 const Icon = item.icon
-                const isActive = item.matchStart
-                  ? location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
-                  : location.pathname === item.path
+                const active = isActive(item)
                 return (
                   <Link
                     key={item.path}
                     to={item.path}
                     onClick={() => setSidebarOpen(false)}
-                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                      isActive
+                    className={`flex items-center space-x-3 px-4 py-2.5 rounded-lg transition-colors ${
+                      active
                         ? 'bg-primary-50 text-primary-700 font-medium'
                         : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >
-                    <Icon size={20} />
-                    <span>{item.label}</span>
+                    <Icon size={18} />
+                    <span className="flex-1">{item.label}</span>
+                    {item.path === '/articles' && generatingIds.length > 0 && (
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                        <span className="text-xs text-blue-600 font-medium">{generatingIds.length}</span>
+                      </span>
+                    )}
                   </Link>
                 )
               })}
@@ -98,9 +117,9 @@ function Dashboard() {
             <div className="p-4 border-t border-gray-200">
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
+                className="w-full flex items-center space-x-3 px-4 py-2.5 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
               >
-                <FiLogOut size={20} />
+                <FiLogOut size={18} />
                 <span>Logout</span>
               </button>
             </div>
@@ -116,7 +135,7 @@ function Dashboard() {
         )}
 
         {/* Main content */}
-        <main className="flex-1 lg:ml-0">
+        <main className="flex-1 lg:ml-0 min-w-0">
           <div className="p-6">
             <Outlet />
           </div>
@@ -127,4 +146,3 @@ function Dashboard() {
 }
 
 export default Dashboard
-

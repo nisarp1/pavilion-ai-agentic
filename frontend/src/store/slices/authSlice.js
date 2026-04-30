@@ -11,10 +11,10 @@ export const login = createAsyncThunk(
       localStorage.setItem('refresh_token', refresh)
       
       // Fetch tenants after login
-      const tenantsResponse = await api.get('/api/tenants/')
+      const tenantsResponse = await api.get('/tenants/my_tenants/')
       const tenants = tenantsResponse.data
       if (tenants.length > 0) {
-        localStorage.setItem('tenant_id', tenants[0].id)
+        localStorage.setItem('tenant_id', tenants[0].tenant.id)
       }
       
       return { access, refresh, tenants }
@@ -28,7 +28,7 @@ export const fetchTenants = createAsyncThunk(
   'auth/fetchTenants',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get('/api/tenants/')
+      const response = await api.get('/tenants/my_tenants/')
       return response.data
     } catch (error) {
       return rejectWithValue(error.response?.data || error.message)
@@ -74,6 +74,16 @@ const authSlice = createSlice({
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
       localStorage.removeItem('tenant_id')
+    },
+    loginWithGoogle: (state, action) => {
+      const { access, refresh, tenant } = action.payload
+      state.token = access
+      state.isAuthenticated = true
+      state.activeTenant = tenant.id
+      state.currentRole = tenant.role
+      localStorage.setItem('access_token', access)
+      localStorage.setItem('refresh_token', refresh)
+      localStorage.setItem('tenant_id', tenant.id)
     },
     setActiveTenant: (state, action) => {
       state.activeTenant = action.payload
@@ -136,6 +146,6 @@ const authSlice = createSlice({
   },
 })
 
-export const { logout, setActiveTenant, clearError } = authSlice.actions
+export const { logout, loginWithGoogle, setActiveTenant, clearError } = authSlice.actions
 export default authSlice.reducer
 

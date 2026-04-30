@@ -6,6 +6,8 @@ import categoryReducer from './slices/categorySlice'
 import trendsReducer from './slices/trendsSlice'
 import webstoriesReducer from './slices/webstorySlice'
 import brandingReducer from './slices/brandingSlice'
+import dashboardReducer from './slices/dashboardSlice'
+import videoStudioReducer from './slices/videoStudioSlice'
 
 export const store = configureStore({
   reducer: {
@@ -16,6 +18,8 @@ export const store = configureStore({
     trends: trendsReducer,
     webstories: webstoriesReducer,
     branding: brandingReducer,
+    dashboard: dashboardReducer,
+    videoStudio: videoStudioReducer,
   },
 })
 

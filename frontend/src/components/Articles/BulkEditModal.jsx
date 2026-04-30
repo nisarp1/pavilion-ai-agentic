@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux'
 import { FiX, FiTag } from 'react-icons/fi'
 import { bulkUpdateArticles } from '../../store/slices/articleSlice'
 import { fetchCategoryTree } from '../../store/slices/categorySlice'
+import { showSuccess, showError } from '../../utils/toast'
 
 function BulkEditModal({ isOpen, onClose, selectedArticleIds, onSuccess }) {
   const dispatch = useDispatch()
@@ -53,7 +54,7 @@ function BulkEditModal({ isOpen, onClose, selectedArticleIds, onSuccess }) {
       }
 
       if (Object.keys(updates).length === 0) {
-        alert('Please select at least one field to update')
+        showError('Please select at least one field to update')
         setSaving(false)
         return
       }
@@ -63,13 +64,12 @@ function BulkEditModal({ isOpen, onClose, selectedArticleIds, onSuccess }) {
         updates
       })).unwrap()
 
-      if (onSuccess) {
-        onSuccess()
-      }
+      showSuccess(`${selectedArticleIds.length} article(s) updated`)
+      if (onSuccess) onSuccess()
       onClose()
     } catch (error) {
       console.error('Error updating articles:', error)
-      alert('Error updating articles: ' + (error.message || 'Unknown error'))
+      showError('Error updating articles: ' + (error.message || 'Unknown error'))
     } finally {
       setSaving(false)
     }

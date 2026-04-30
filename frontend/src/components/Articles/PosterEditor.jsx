@@ -7,6 +7,7 @@ import { SidePanel } from 'polotno/side-panel';
 import { Workspace } from 'polotno/canvas/workspace';
 import { createStore } from 'polotno/model/store';
 import api from '../../services/api';
+import { showSuccess, showError } from '../../utils/toast';
 import { FaSpinner, FaTimes, FaSave } from 'react-icons/fa';
 
 import '@blueprintjs/core/lib/css/blueprint.css';
@@ -128,7 +129,7 @@ const PosterEditor = ({ articleId, onClose, onSaveSuccess }) => {
 
         } catch (e) {
             console.error("Save failed", e);
-            alert("Failed to save poster.");
+            showError("Failed to save poster.");
         } finally {
             setSaving(false);
         }

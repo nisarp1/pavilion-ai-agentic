@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux'
 import { FiX, FiTag } from 'react-icons/fi'
 import { updateArticle } from '../../store/slices/articleSlice'
 import { fetchCategoryTree } from '../../store/slices/categorySlice'
+import { showSuccess, showError } from '../../utils/toast'
 
 function QuickEditModal({ isOpen, onClose, article, onSuccess }) {
     const dispatch = useDispatch()
@@ -51,13 +52,12 @@ function QuickEditModal({ isOpen, onClose, article, onSuccess }) {
                 }
             })).unwrap()
 
-            if (onSuccess) {
-                onSuccess()
-            }
+            showSuccess('Article updated')
+            if (onSuccess) onSuccess()
             onClose()
         } catch (error) {
             console.error('Error updating article:', error)
-            alert('Error updating article: ' + (error.message || 'Unknown error'))
+            showError('Error updating article: ' + (error.message || 'Unknown error'))
         } finally {
             setSaving(false)
         }

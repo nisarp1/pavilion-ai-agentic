@@ -69,13 +69,17 @@ api.interceptors.response.use(
     console.error('API Error:', error.config?.method?.toUpperCase(), error.config?.url, error.response?.status, error.response?.data || error.message)
     const originalRequest = error.config
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Don't attempt token refresh for auth endpoints — prevents refresh loops
+    const skipRefreshUrls = ['auth/login', 'auth/refresh', 'auth/google']
+    const isAuthEndpoint = skipRefreshUrls.some(u => originalRequest?.url?.includes(u))
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       originalRequest._retry = true
 
       try {
         const refreshToken = localStorage.getItem('refresh_token')
         if (refreshToken) {
-        const response = await axios.post(`${API_BASE_URL}auth/refresh/`, {
+          const response = await axios.post(`${API_BASE_URL}auth/refresh/`, {
             refresh: refreshToken,
           })
           const { access } = response.data
@@ -86,7 +90,10 @@ api.interceptors.response.use(
       } catch (refreshError) {
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')
-        window.location.href = '/login'
+        localStorage.removeItem('tenant_id')
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
         return Promise.reject(refreshError)
       }
     }

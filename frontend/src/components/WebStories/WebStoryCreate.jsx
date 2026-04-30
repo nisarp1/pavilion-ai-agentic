@@ -3,6 +3,7 @@ import { useDispatch } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
 import WebStoryForm from './WebStoryForm'
 import { createWebStory } from '../../store/slices/webstorySlice'
+import { showError } from '../../utils/toast'
 
 const extractErrorMessage = (error) => {
   if (typeof error === 'string') {
@@ -39,7 +40,7 @@ function WebStoryCreate() {
     } catch (error) {
       console.error('Failed to create story', error)
       const message = extractErrorMessage(error)
-      alert(`Failed to create story: ${message}`)
+      showError(`Failed to create story: ${message}`)
     } finally {
       setSaving(false)
     }

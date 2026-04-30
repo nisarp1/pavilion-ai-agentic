@@ -18,13 +18,8 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# Google Trends (optional - will fail gracefully if not available)
-try:
-    from pytrends.request import TrendReq
-    PYTRENDS_AVAILABLE = True
-except ImportError:
-    PYTRENDS_AVAILABLE = False
-    logger.warning("pytrends not available. Google Trends integration disabled.")
+from .visual_trends import run_visual_fetch
+from .agents.trends_hunter import TrendsHunterAgent
 
 
 @shared_task
@@ -275,48 +270,16 @@ def fetch_google_trends_sports():
 def _get_trending_topics_from_google_trends():
     """
     Get sports-related trending topics from Google Trends for India.
-    Uses Google Trends RSS feed for sports category (category=17) to get actual trending data.
+    Uses the agentic TrendsHunterAgent for high-accuracy discovery.
     """
-    trending_topics = []
-    
-    # Strategy 1: Pytrends Realtime (Primary)
-    if PYTRENDS_AVAILABLE:
-        try:
-            pytrends = TrendReq(hl='en-US', tz=330, retries=2, backoff_factor=0.5)
-            logger.info("Fetching Google Trends Realtime (IN)...")
-            
-            df = pytrends.realtime_trending_searches(pn='IN')
-            
-            if not df.empty:
-                titles = df['title'].tolist()
-                logger.info(f"Pytrends Realtime found: {titles[:5]}")
-                trending_topics.extend(titles)
-                
-        except Exception as e:
-            logger.error(f"Pytrends Realtime failed: {e}")
-
-    # Strategy 2: Visual Screenshot + AI (New Robust Method)
     try:
-        visual_topics = run_visual_fetch()
-        if visual_topics:
-            logger.info(f"Visual AI found topics: {visual_topics}")
-            trending_topics.extend(visual_topics)
+        agent = TrendsHunterAgent()
+        results = agent.run()
+        # Return only the topic names
+        return [res['topic'] for res in results]
     except Exception as e:
-        logger.error(f"Visual Strategy failed: {e}")
-    
-    # Strategy 2 was here (old pytrends), now merged into Strategy 1 above for cleaner flow.
-    pass
-    
-    # Strategy 3: Try web scraping Google Trends sports page
-    logger.info("Trying to scrape Google Trends sports page...")
-    scraped_topics = _scrape_google_trends_sports()
-    if scraped_topics:
-        logger.info(f"Found {len(scraped_topics)} sports trending topics from scraping: {scraped_topics[:10]}")
-        return scraped_topics[:10]
-    
-    # Final fallback
-    logger.warning("No sports trending topics found, returning fallback topics")
-    return _get_fallback_trends()
+        logger.error(f"TrendsHunterAgent failed in task: {e}")
+        return _get_fallback_trends()
 
 
 def _scrape_google_trends_sports():
@@ -802,11 +765,11 @@ def _get_trends24_sports_trends():
                 return final_trends
                 
             # 3. Fallback to Keyword Matching if AI fails
-            logger.warning("AI classification returned empty or failed, falling back to keywords")
+            logger.warning("AI classification returned empty or failed, falling back to robust keyword matching")
+            from .agents.tools import classify_sport
             keyword_filtered = []
             for text in raw_candidates:
-                text_lower = text.lower()
-                if any(keyword in text_lower for keyword in sports_keywords):
+                if classify_sport(text) != 'general':
                     keyword_filtered.append(text)
             
             return keyword_filtered
@@ -1482,176 +1445,58 @@ def enhance_articles_with_google_trends():
 
 def _fetch_articles_for_topic_task(topic, tenant=None):
     """
-    Fetch 2-3 most relevant articles for a specific trend topic from Google News on-demand.
-    Used when a user clicks a trend card.
+    Uses NewsWriterAgent to autonomously write a detailed, publication-ready article on a selected topic.
     """
-    logger.info(f"On-demand fetching articles for topic: {topic} (tenant: {tenant})")
+    import logging
+    from django.utils import timezone
+    from django.utils.text import slugify
+    from cms.models import Article
+    from .agents.news_writer import NewsWriterAgent
 
-    articles_created = 0
-    created_articles = []
-    
-    # Pre-calculate URLs for use in logic and fallbacks
-    from urllib.parse import quote_plus
-    encoded_topic = quote_plus(topic)
-    # Human-Readable Link to Google News Tab (for clickable source)
-    human_news_url = f"https://www.google.com/search?q={encoded_topic}+sports&tbm=nws&tbs=qdr:d"
-    
+    logger = logging.getLogger(__name__)
+    logger.info(f"Agentic article writing for topic: {topic} (tenant: {tenant})")
+
     try:
-        # RSS Feed URL (machine readable)
-        google_news_url = f"https://news.google.com/rss/search?q={encoded_topic}+sports+when:24h&hl=en&gl=IN&ceid=IN:en"
+        agent = NewsWriterAgent()
+        result = agent.write_article(topic)
+
+        title = result.get("title", topic)
+        summary = result.get("summary", "")
+        body = result.get("body", "")
+        sport = result.get("sport", "general")
         
-        # Use requests with User-Agent to avoid 403/Blocking
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/rss+xml, application/xml, */*'
+        # Ensure unique slug
+        base_slug = slugify(title)
+        slug = base_slug
+        counter = 1
+        while Article.objects.filter(slug=slug).exists():
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+
+        article = Article.objects.create(
+            title=title,
+            slug=slug,
+            summary=summary[:500],
+            body=body,
+            status="generated",
+            source_feed="Agentic News Writer",
+            category="trends",
+            trend_data={"trending_topic": topic, "sport": sport, "tags": result.get("tags", [])},
+            tenant=tenant,
+            generation_completed_at=timezone.now(),
+        )
+        
+        logger.info(f"Successfully generated agentic article: {article.title}")
+
+        return {
+            "success": True,
+            "articles_created": 1,
+            "articles": [{"id": article.id, "title": article.title}]
         }
-        
-        response = requests.get(google_news_url, headers=headers, timeout=10)
-        
-        if response.status_code != 200:
-            logger.error(f"Google News returned status {response.status_code}")
-            return {'success': False, 'error': f"Google News API returned {response.status_code}"}
-            
-        feed = feedparser.parse(response.content)
-        
-        if not feed.entries:
-             logger.warning(f"No entries found for topic: {topic}. Trying broader search.")
-             # Fallback: Try searching without 'sports' or date restriction if too strict
-             fallback_url = f"https://news.google.com/rss/search?q={encoded_topic}&hl=en&gl=IN&ceid=IN:en"
-             response = requests.get(fallback_url, headers=headers, timeout=10)
-             if response.status_code == 200:
-                feed = feedparser.parse(response.content)
 
-        if not feed.entries:
-             return {'success': False, 'error': f"No recent articles found for '{topic}'."}
-             
-        # We only want the top 3 most relevant (RSS is usually sorted by relevance/date)
-        for entry in feed.entries[:3]:
-            try:
-                url = entry.get('link', '')
-                if not url:
-                    continue
-                
-                # Check if article already exists
-                existing = Article.objects.filter(source_url=url).first()
-                if existing:
-                    created_articles.append(existing)
-                    continue
-                
-                # Determine sport
-                title = entry.get('title', 'Untitled').lower()
-                if any(word in title for word in ['cricket', 'ipl', 'bcci']):
-                    sport = 'Cricket'
-                elif any(word in title for word in ['football', 'soccer', 'premier league']):
-                    sport = 'Football'
-                else:
-                    sport = 'Sports'
-                
-                trend_data = {
-                    'title': entry.get('title', ''),
-                    'link': url,
-                    'published': entry.get('published', ''),
-                    'sport': sport,
-                    'trending_topic': topic,
-                    'source': 'Google News (On-Demand)',
-                    'from_google_trends': True,
-                }
-                
-                summary = entry.get('summary', '') or entry.get('description', '')
-                
-                slug = slugify(entry.get('title', 'Untitled'))
-                base_slug = slug
-                counter = 1
-                while Article.objects.filter(slug=slug).exists():
-                    slug = f"{base_slug}-{counter}"
-                    counter += 1
-                
-                article = Article.objects.create(
-                    title=entry.get('title', 'Untitled'),
-                    slug=slug,
-                    summary=summary[:500],
-                    status='fetched',
-                    source_url=url,
-                    source_feed='Google News (On-Demand)',
-                    category='trends',
-                    trend_data=trend_data,
-                    tenant=tenant,
-                )
-                
-                articles_created += 1
-                created_articles.append(article)
-                logger.info(f"Created on-demand article: {article.title}")
-                
-            except Exception as e:
-                logger.error(f"Error processing entry: {e}")
-                continue
-                
     except Exception as e:
-        logger.error(f"Error in on-demand fetch: {e}")
-        # FALLBACK: Create a stub article if scraping fails completely
-        # This ensures the user always gets an actionable item.
-        try:
-             stub_title = f"{topic}: Latest Updates"
-             slug = slugify(stub_title)
-             if not Article.objects.filter(slug=slug).exists():
-                 stub_article = Article.objects.create(
-                    title=stub_title,
-                    slug=slug,
-                    summary=f"Automated stub for trending topic: {topic}. Click Generate to fetch real content.",
-                    status='fetched',
-                    source_url=f"https://www.google.com/search?q={quote_plus(topic)}",
-                    source_feed='Trends Stub',
-                    category='trends',
-                    trend_data={'trending_topic': topic, 'sport': 'Sports'},
-                    tenant=tenant,
-                 )
-                 articles_created += 1
-                 created_articles.append(stub_article)
-                 return {
-                    'success': True,
-                    'articles_created': 1,
-                    'articles': [{'id': stub_article.id, 'title': stub_article.title, 'url': stub_article.source_url}]
-                 }
-        except Exception as ex:
-             logger.error(f"Failed to create stub: {ex}")
-             
-        return {'success': False, 'error': str(e)}
-
-    # If we have created articles OR found existing ones, it's a success
-    if articles_created == 0 and len(created_articles) == 0:
-         # FALLBACK: Create a stub article if valid RSS entries were not found
-         try:
-             stub_title = f"{topic}: Latest News"
-             slug = slugify(stub_title)
-             
-             # Avoid dupe
-             base_slug = slug
-             counter = 1
-             while Article.objects.filter(slug=slug).exists():
-                 slug = f"{base_slug}-{counter}"
-                 counter += 1
-             # Create a "Stub Article" so the user sees something in the list
-             # We use the Human-Readable News URL so clicking "View Source" goes to the News tab
-             stub_article = Article.objects.create(
-                 title=f"{topic}: Latest Updates",
-                 slug=slugify(f"{topic}-latest-updates-{timezone.now().strftime('%Y%m%d-%H%M')}"),
-                 summary=f"Automated stub for trending topic: {topic}. Click Generate to fetch real content.",
-                 source_url=human_news_url,
-                 source_feed="Trends Stub",
-                 category='trends',
-                 trend_data={'trending_topic': topic, 'sport': 'Sports'},
-                 status='fetched',
-                 published_at=timezone.now(),
-                 tenant=tenant,
-             )
-             articles_created += 1
-             created_articles.append(stub_article)
-         except Exception as ex:
-             logger.error(f"Failed to create stub: {ex}")
-             return {'success': False, 'error': "No relevant articles could be saved."}
-
-    return {
-        'success': True,
-        'articles_created': articles_created,
-        'articles': [{'id': a.id, 'title': a.title, 'url': a.source_url} for a in created_articles]
-    }
+        logger.error(f"Error in agentic article generation for {topic}: {str(e)}", exc_info=True)
+        return {
+            "success": False,
+            "error": f"Failed to generate article: {str(e)}"
+        }

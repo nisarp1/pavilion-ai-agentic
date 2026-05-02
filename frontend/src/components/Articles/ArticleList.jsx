@@ -1,21 +1,31 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { fetchArticles, generateArticle, publishArticle, archiveArticle, deleteArticle, updateArticle, clearError, addGeneratingId, removeGeneratingId, addPublishingId, removePublishingId, fetchArticleStatus, fetchAllFeeds, fetchTrends, fetchArticle } from '../../store/slices/articleSlice'
 import { showSuccess, showError } from '../../utils/toast'
 import { fetchCategories } from '../../store/slices/categorySlice'
 import { format } from 'date-fns'
-import { FiEdit, FiPlay, FiCheck, FiArchive, FiRefreshCw, FiMoreVertical, FiEye, FiTrash2, FiClock, FiExternalLink, FiFilter, FiSearch, FiX } from 'react-icons/fi'
+import { FiEdit, FiPlay, FiCheck, FiArchive, FiRefreshCw, FiMoreVertical, FiEye, FiTrash2, FiClock, FiExternalLink, FiFilter, FiSearch, FiX, FiFilm, FiVideo } from 'react-icons/fi'
 import GoogleTrendsWidget from './GoogleTrendsWidget'
 import BulkEditModal from './BulkEditModal'
 import QuickEditModal from './QuickEditModal'
 
 function ArticleList() {
   const dispatch = useDispatch()
+  const location = useLocation()
   const { items, loading, pagination, error, generatingIds = [], publishingIds = [] } = useSelector((state) => state.articles)
   const { categories = [] } = useSelector((state) => state.categories || {})
   const activePolls = useRef(new Set())
   const [activeTab, setActiveTab] = useState('published')
+
+  // Handle category query param from URL
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const category = params.get('category')
+    if (category) {
+      setActiveTab(category)
+    }
+  }, [location.search])
   const [selectedCategory, setSelectedCategory] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [selectedArticles, setSelectedArticles] = useState(new Set())
@@ -129,7 +139,7 @@ function ArticleList() {
       params.category = selectedCategory
     } else if (activeTab === 'all') {
       // no filter
-    } else if (activeTab === 'reliable_sources' || activeTab === 'trends' || activeTab === 'subscriptions') {
+    } else if (activeTab === 'reliable_sources' || activeTab === 'trends' || activeTab === 'subscriptions' || activeTab === 'video_project') {
       params.category = activeTab
     } else {
       params.status = activeTab
@@ -249,7 +259,7 @@ function ArticleList() {
       params.category = selectedCategory
     } else if (activeTab === 'all') {
       // no filter
-    } else if (activeTab === 'reliable_sources' || activeTab === 'trends' || activeTab === 'subscriptions') {
+    } else if (activeTab === 'reliable_sources' || activeTab === 'trends' || activeTab === 'subscriptions' || activeTab === 'video_project') {
       params.category = activeTab
     } else {
       params.status = activeTab
@@ -302,6 +312,7 @@ function ArticleList() {
       reliable_sources: 'Reliable Sources',
       trends: 'Trends',
       subscriptions: 'Subscriptions',
+      video_project: 'Video Project',
     }
     return labels[category] || category
   }
@@ -318,6 +329,24 @@ function ArticleList() {
         className={`px-2 py-1 text-xs font-medium rounded border ${badges[status] || badges.fetched}`}
       >
         {status.charAt(0).toUpperCase() + status.slice(1)}
+      </span>
+    )
+  }
+
+  const getReelStatusBadge = (reelStatus) => {
+    if (!reelStatus || reelStatus === 'idle') return null
+    const map = {
+      queued:   { cls: 'bg-blue-50 text-blue-600 border-blue-200',    label: '⏳ Queued' },
+      running:  { cls: 'bg-amber-50 text-amber-700 border-amber-200', label: '⚡ Generating' },
+      review:   { cls: 'bg-purple-50 text-purple-700 border-purple-200', label: '🎬 Ready' },
+      approved: { cls: 'bg-green-50 text-green-700 border-green-200', label: '✅ Rendered' },
+      failed:   { cls: 'bg-red-50 text-red-600 border-red-200',       label: '❌ Failed' },
+    }
+    const badge = map[reelStatus]
+    if (!badge) return null
+    return (
+      <span className={`px-2 py-0.5 text-[10px] font-semibold rounded border ${badge.cls}`}>
+        {badge.label}
       </span>
     )
   }
@@ -510,7 +539,15 @@ function ArticleList() {
           >
             Trash
           </button>
-          <div className="ml-auto flex gap-2">
+            <button
+              onClick={() => setActiveTab('video_project')}
+              className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors ${activeTab === 'video_project'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+            >
+              Video Projects
+            </button>
             <button
               onClick={() => setActiveTab('reliable_sources')}
               className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors ${activeTab === 'reliable_sources'
@@ -540,7 +577,6 @@ function ArticleList() {
             </button>
           </div>
         </div>
-      </div>
 
       {/* Google Trends Widget - Show only on Trends tab */}
       {activeTab === 'trends' && <GoogleTrendsWidget onArticleCreated={refreshList} />}
@@ -686,7 +722,7 @@ function ArticleList() {
                           />
                         )}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <Link
                               to={`/articles/${article.id}/edit`}
                               className="font-medium text-gray-900 hover:text-primary-600"
@@ -694,6 +730,18 @@ function ArticleList() {
                               {article.title || '(No title)'}
                             </Link>
                             {getStatusBadge(article.status)}
+                            {getReelStatusBadge(article.reel_generation_status)}
+                            {(article.reel_video_url || article.video_url) && (
+                              <a
+                                href={article.reel_video_url || article.video_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded border bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                                title="View rendered reel"
+                              >
+                                <FiVideo size={10} /> Reel
+                              </a>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-gray-500">
                             <Link
@@ -709,6 +757,18 @@ function ArticleList() {
                             >
                               Quick Edit
                             </button>
+                            {article.category === 'video_project' && (
+                              <>
+                                <span>|</span>
+                                <Link
+                                  to={`/video-studio?article=${article.id}`}
+                                  className="hover:text-violet-600 flex items-center gap-1 font-medium text-violet-500"
+                                  title="Open in Video Studio"
+                                >
+                                  <FiFilm size={12} /> Studio
+                                </Link>
+                              </>
+                            )}
                             {article.status === 'published' && (
                               <>
                                 <span>|</span>

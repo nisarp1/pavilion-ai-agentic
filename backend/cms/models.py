@@ -242,6 +242,7 @@ class Article(models.Model):
         ('reliable_sources', 'Reliable Sources'),
         ('trends', 'Trends'),
         ('subscriptions', 'Subscriptions'),
+        ('video_project', 'Video Project'),
     ]
     
     title = models.CharField(max_length=255)
@@ -333,6 +334,41 @@ class Article(models.Model):
     )
     video_error = models.TextField(blank=True, help_text="Error message if the video generation failed")
     video_format = models.CharField(max_length=20, default='portrait', choices=[('portrait', 'Portrait'), ('landscape', 'Landscape')])
+    
+    # AI Video Production Plan (full pipeline output as JSON)
+    video_production_plan = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Complete AI-generated VideoProductionPlan JSON — includes scenes, clips, props, voiceover, assets"
+    )
+
+    # ── Phase 0+1: New reel pipeline tracking ────────────────────────────────
+    reel_generation_status = models.CharField(
+        max_length=20,
+        default='idle',
+        choices=[
+            ('idle',     'Idle'),
+            ('queued',   'Queued'),
+            ('running',  'Running'),
+            ('review',   'Needs Review'),
+            ('approved', 'Approved'),
+            ('failed',   'Failed'),
+        ],
+        help_text="Status of the new multi-agent reel pipeline"
+    )
+    reel_video_url = models.URLField(
+        max_length=2000, blank=True, default='',
+        help_text="Final rendered MP4 GCS URL written back by render task"
+    )
+    reel_audio_url = models.URLField(
+        max_length=2000, blank=True, default='',
+        help_text="TTS-generated Malayalam voiceover GCS URL"
+    )
+    reel_pipeline_log = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Per-agent execution log from the reel pipeline"
+    )
     
     # Social Media Content
     social_media_poster_text = models.TextField(blank=True, help_text="Short, punchy text for social media poster")

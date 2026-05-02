@@ -29,7 +29,19 @@ def render_video_task(self, job_id: str):
         if job.audio_url:
             props['audioSrc'] = job.audio_url
 
-        result = trigger_render(props, job_id, output_blob)
+        # ── Try Cloud Run renderer; fallback to manifest JSON if not configured ─
+        try:
+            result = trigger_render(props, job_id, output_blob)
+        except ValueError as cfg_err:
+            # Cloud Run not configured — upload props as a manifest JSON to GCS
+            logger.warning(f"[VideoJob {job_id}] Cloud Run not configured: {cfg_err}. Uploading manifest fallback.")
+            from .cloud_run import upload_plan_as_manifest
+            result = upload_plan_as_manifest(props, job_id, output_blob)
+            if not result:
+                raise RuntimeError(
+                    "CLOUD_RUN_RENDERER_URL is not set and GCS_BUCKET_NAME is also missing. "
+                    "Configure at least one of these in your .env to get a video URL."
+                )
 
         video_url = result.get('videoUrl') or result.get('gcsUrl', '')
         if not video_url:
@@ -39,12 +51,28 @@ def render_video_task(self, job_id: str):
         job.output_url = video_url
         job.save(update_fields=['status', 'output_url', 'updated_at'])
         logger.info(f"[VideoJob {job_id}] Render complete: {video_url}")
+
+        # ── Backfill video URL to Article ───────────────────────────────────
+        if job.article_id:
+            try:
+                from cms.models import Article
+                Article.objects.filter(pk=job.article_id).update(
+                    reel_video_url=video_url,
+                    video_url=video_url,
+                    reel_generation_status='approved',
+                    video_status='completed',
+                )
+                logger.info(f"[VideoJob {job_id}] Backfilled Article {job.article_id} with video URL")
+            except Exception as backfill_err:
+                logger.warning(f"[VideoJob {job_id}] Article backfill failed (non-fatal): {backfill_err}")
+
         return {'job_id': job_id, 'video_url': video_url}
 
     except Exception as exc:
         logger.error(f"[VideoJob {job_id}] render_video_task failed: {exc}", exc_info=True)
         _mark_failed(job_id, str(exc))
         raise self.retry(exc=exc)
+
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)

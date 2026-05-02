@@ -54,6 +54,10 @@ google-generativeai==0.5.3
 vertexai==1.71.1  # Vertex AI SDK
 anthropic==0.7.1  # If using Claude API
 openai==1.3.9  # OpenAI (for compatibility/migration)
+crewai==0.80.0
+langchain-google-genai==2.0.0
+yt-dlp>=2024.1.0  # YouTube metadata extraction
+litellm>=1.80.0  # LLM provider routing (Vertex AI, etc.)
 
 # ============================================================================
 # LLM & Vector Database
@@ -183,3 +187,4 @@ django-cachalot==2.6.1  # ORM caching
 # - For async Vertex AI: use vertexai 0.1.1+
 # - For async database: use psycopg (not psycopg2)
 async-timeout>=4.0.2
+google-cloud-storage

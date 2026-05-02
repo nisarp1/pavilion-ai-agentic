@@ -88,6 +88,12 @@ urlpatterns = [
     path('api/rss/', include('rss_fetcher.urls')),
     path('api/tenants/', include('tenants.urls')),
     path('api/video/', include('video_studio.urls')),
+
+    # Reel Pipeline API
+    path('api/pipeline/', include('agents.urls')),
+
+    # Style Library API
+    path('api/style-library/', include('style_library.urls')),
 ]
 
 from django.views.static import serve

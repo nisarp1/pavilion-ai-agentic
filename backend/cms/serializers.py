@@ -84,7 +84,8 @@ class ArticleSerializer(serializers.ModelSerializer):
     featured_image_url = serializers.SerializerMethodField()
     og_image_url = serializers.SerializerMethodField()
     audio_url = serializers.SerializerMethodField()
-    reel_audio_url = serializers.SerializerMethodField()
+    reel_audio_url = serializers.SerializerMethodField()   # from instagram_reel_audio file field
+    instagram_reel_audio_url = serializers.SerializerMethodField()  # same, friendlier name
     poster_url = serializers.SerializerMethodField()
     categories = CategoryListSerializer(many=True, read_only=True)
     category_ids = serializers.PrimaryKeyRelatedField(
@@ -105,13 +106,17 @@ class ArticleSerializer(serializers.ModelSerializer):
             'author', 'author_name', 'editor', 'editor_name',
             'featured_image', 'featured_image_url', 'featured_media_id', 'featured_media_id_write',
             'audio', 'audio_url',
-            'instagram_reel_script', 'instagram_reel_audio', 'reel_audio_url',
+            'instagram_reel_script', 'instagram_reel_audio', 'reel_audio_url', 'instagram_reel_audio_url',
             'video_script', 'video_url', 'video_audio_url', 'video_status', 'video_error', 'video_format',
             'social_media_poster_text', 'social_media_caption', 'generated_poster', 'poster_url',
             'meta_title', 'meta_description',
             'og_title', 'og_description', 'og_image', 'og_image_url',
             'source_url', 'source_feed', 'trend_data',
             'newsroomx_dna', 'newsroomx_status', 'newsroomx_video_url', 'newsroomx_error',
+            # ── Reel pipeline fields ──────────────────────────────────────────
+            'video_production_plan',
+            'reel_generation_status', 'reel_video_url',
+            # ─────────────────────────────────────────────────────────────────
             'created_at', 'updated_at', 'published_at', 'publish_at',
             'generation_started_at', 'generation_completed_at',
             'celery_task_id',
@@ -168,19 +173,22 @@ class ArticleSerializer(serializers.ModelSerializer):
     
     def get_audio_url(self, obj):
         if obj.audio:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.audio.url)
             return obj.audio.url
         return None
 
     def get_reel_audio_url(self, obj):
+        """URL built from the instagram_reel_audio file field (relative/local storage)."""
         if obj.instagram_reel_audio:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.instagram_reel_audio.url)
+            # Return relative path (/media/...) so the Vite dev proxy can forward it.
+            # build_absolute_uri uses the Host header which is pavilion-django-dev in Docker,
+            # producing a URL the browser can't resolve.
             return obj.instagram_reel_audio.url
-        return None
+        # Fall back to the dedicated GCS URLField (already an absolute public URL)
+        return obj.reel_audio_url or None
+
+    def get_instagram_reel_audio_url(self, obj):
+        """Alias of get_reel_audio_url for backwards compatibility."""
+        return self.get_reel_audio_url(obj)
 
     def get_poster_url(self, obj):
         if obj.generated_poster:
@@ -204,6 +212,8 @@ class ArticleListSerializer(serializers.ModelSerializer):
             'categories',
             'author_name', 'created_at', 'updated_at', 'published_at',
             'source_url', 'featured_image_url', 'trend_data',
+            'video_format', 'video_production_plan',
+            'reel_generation_status', 'reel_video_url',
         ]
     
     def get_featured_image_url(self, obj):

@@ -21,7 +21,7 @@ import { convertUrlToEmbed } from '../../utils/embedUtils'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { FiImage, FiUser, FiLink, FiTag, FiExternalLink, FiVolume2, FiDownload, FiMove, FiVideo } from 'react-icons/fi'
+import { FiImage, FiUser, FiLink, FiTag, FiExternalLink, FiVolume2, FiDownload, FiMove, FiVideo, FiFilm } from 'react-icons/fi'
 
 function SortableSidebarItem(props) {
   const {
@@ -71,6 +71,10 @@ function ArticleEdit() {
   const [showPosterEditor, setShowPosterEditor] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [voiceAudioUrls, setVoiceAudioUrls] = useState({})
+  // ── Phase 0: Reel pipeline state ──────────────────────────────────────────
+  const [reelPipelineStatus, setReelPipelineStatus] = useState(null)  // server-polled status
+  const [reelPipelineLoading, setReelPipelineLoading] = useState(false)
+  const reelPollRef = useRef(null)
   const [formData, setFormData] = useState({
     title: '',
     slug: '',
@@ -102,6 +106,7 @@ function ArticleEdit() {
 
   const [sidebarOrder, setSidebarOrder] = useState([
     'status',
+    'reel_pipeline',
     'newsroomx',
     'audio',
     'video_generation',
@@ -134,7 +139,7 @@ function ArticleEdit() {
     if (savedOrder) {
       try {
         const parsed = JSON.parse(savedOrder)
-        const defaultKeys = ['status', 'audio', 'video_generation', 'social_poster', 'featured_image', 'author', 'slug', 'reference_link', 'source', 'categories']
+        const defaultKeys = ['status', 'reel_pipeline', 'audio', 'video_generation', 'social_poster', 'featured_image', 'author', 'slug', 'reference_link', 'source', 'categories']
         const merged = [...new Set([...parsed, ...defaultKeys])]
         setSidebarOrder(merged)
       } catch (e) { }
@@ -675,6 +680,52 @@ function ArticleEdit() {
     }
   }
 
+  // ── Phase 0: Reel Pipeline handlers ─────────────────────────────────
+  const handleGenerateReel = async (videoFormat = 'reel') => {
+    setReelPipelineLoading(true)
+    try {
+      const res = await api.post('/api/pipeline/generate/', {
+        article_id: id,
+        video_format: videoFormat,
+        reference_url: currentArticle.source_url || '',
+      })
+      if (res.data.status === 'queued') {
+        showInfo('Reel pipeline started — generating script, audio & scenes...')
+        startReelPolling()
+      }
+    } catch (err) {
+      showError('Failed to start reel pipeline: ' + (err.response?.data?.error || err.message))
+    } finally {
+      setReelPipelineLoading(false)
+    }
+  }
+
+  const startReelPolling = () => {
+    if (reelPollRef.current) clearInterval(reelPollRef.current)
+    reelPollRef.current = setInterval(async () => {
+      try {
+        const res = await api.get(`/api/pipeline/status/${id}/`)
+        setReelPipelineStatus(res.data)
+        // Also refresh article to pick up field changes
+        const terminalStates = ['approved', 'failed', 'review']
+        if (terminalStates.includes(res.data.reel_generation_status)) {
+          clearInterval(reelPollRef.current)
+          dispatch(fetchArticle(id))
+        }
+      } catch (e) {
+        // non-fatal, keep polling
+      }
+    }, 3000)
+  }
+
+  // Start polling on mount if already running/queued
+  useEffect(() => {
+    if (currentArticle && ['queued', 'running'].includes(currentArticle.reel_generation_status)) {
+      startReelPolling()
+    }
+    return () => { if (reelPollRef.current) clearInterval(reelPollRef.current) }
+  }, [currentArticle?.id])
+
   const handleTriggerNewsroomX = async () => {
     let parsedDna;
     try {
@@ -973,6 +1024,129 @@ function ArticleEdit() {
               </a>
             </div>
           )}
+        </div>
+      </div>
+    ),
+    reel_pipeline: (
+      <div className="bg-white rounded-lg shadow p-6 border-l-4 border-violet-600">
+        <h3 className="text-sm font-semibold text-gray-700 mb-1 uppercase tracking-wide flex items-center gap-2">
+          <FiVideo size={16} className="text-violet-600" />
+          Generate Reel
+          <span className="ml-auto text-[10px] font-normal text-gray-400">AI Pipeline</span>
+        </h3>
+
+        {/* Status badge */}
+        {(() => {
+          const st = reelPipelineStatus?.reel_generation_status || currentArticle?.reel_generation_status || 'idle'
+          const map = {
+            idle:     null,
+            queued:   <span className="inline-flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">⏳ Queued in pipeline</span>,
+            running:  <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded animate-pulse">⚡ Generating…</span>,
+            review:   <span className="inline-flex items-center gap-1 text-xs text-purple-700 bg-purple-50 px-2 py-1 rounded">🎬 Plan ready — open Studio to review</span>,
+            approved: <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-1 rounded">✅ Rendered</span>,
+            failed:   <span className="inline-flex items-center gap-1 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">❌ Failed</span>,
+          }
+          return map[st] ? <div className="mb-3">{map[st]}</div> : null
+        })()}
+
+        {/* Plan summary */}
+        {reelPipelineStatus?.plan_summary && reelPipelineStatus.plan_summary.scene_count > 0 && (
+          <div className="mb-3 p-2 bg-gray-50 rounded text-xs text-gray-600 space-y-1">
+            <div className="flex justify-between">
+              <span>Scenes</span>
+              <strong>{reelPipelineStatus.plan_summary.scene_count}</strong>
+            </div>
+            <div className="flex justify-between">
+              <span>Duration</span>
+              <strong>{reelPipelineStatus.plan_summary.duration_s}s</strong>
+            </div>
+            <div className="flex justify-between">
+              <span>Assets</span>
+              <strong>{reelPipelineStatus.plan_summary.assets_filled}/{reelPipelineStatus.plan_summary.assets_needed} filled</strong>
+            </div>
+            {reelPipelineStatus.plan_summary.quality_score != null && (
+              <div className="flex justify-between">
+                <span>Quality Score</span>
+                <strong className={reelPipelineStatus.plan_summary.quality_score >= 70 ? 'text-green-600' : 'text-amber-600'}>
+                  {reelPipelineStatus.plan_summary.quality_score}/100
+                </strong>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Agent log */}
+        {reelPipelineStatus?.pipeline_log?.length > 0 && (
+          <details className="mb-3">
+            <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Agent log ({reelPipelineStatus.pipeline_log.length} entries)</summary>
+            <div className="mt-1 max-h-32 overflow-y-auto space-y-0.5">
+              {reelPipelineStatus.pipeline_log.map((entry, i) => (
+                <div key={i} className="text-[10px] text-gray-500 font-mono leading-relaxed">
+                  <span className="text-violet-500">[{entry.stage}]</span> {entry.message}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+
+        {/* Audio preview */}
+        {(reelPipelineStatus?.reel_audio_url || currentArticle?.reel_audio_url || currentArticle?.video_audio_url) && (
+          <div className="mb-3 bg-violet-50 p-2 rounded">
+            <p className="text-[10px] text-violet-600 font-bold mb-1 uppercase">Voiceover (Chirp3 HD)</p>
+            <audio
+              controls
+              src={reelPipelineStatus?.reel_audio_url || currentArticle?.reel_audio_url || currentArticle?.video_audio_url}
+              className="w-full h-8"
+            />
+          </div>
+        )}
+
+        {/* Video preview */}
+        {(reelPipelineStatus?.reel_video_url || currentArticle?.reel_video_url || currentArticle?.video_url) && (
+          <div className="mb-3 bg-gray-50 p-2 rounded">
+            <p className="text-[10px] text-gray-500 font-bold mb-1 uppercase">Rendered Reel</p>
+            <video
+              controls
+              src={reelPipelineStatus?.reel_video_url || currentArticle?.reel_video_url || currentArticle?.video_url}
+              className="w-full rounded shadow-sm bg-black"
+            />
+            <a
+              href={reelPipelineStatus?.reel_video_url || currentArticle?.reel_video_url || currentArticle?.video_url}
+              target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 mt-1 text-xs text-primary-600 hover:underline"
+            >
+              <FiDownload size={11} /> Download MP4
+            </a>
+          </div>
+        )}
+
+        {/* Format selector + action buttons */}
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <button
+              id="btn-generate-reel"
+              onClick={() => handleGenerateReel('reel')}
+              disabled={reelPipelineLoading || ['queued','running'].includes(reelPipelineStatus?.reel_generation_status || currentArticle?.reel_generation_status)}
+              className="flex-1 flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
+            >
+              <FiVideo size={13} />
+              {reelPipelineLoading ? 'Starting…' : 'Generate Reel'}
+            </button>
+            <Link
+              to={`/video-studio?article=${id}`}
+              className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-bold text-violet-700 border border-violet-300 bg-violet-50 hover:bg-violet-100 transition-all"
+              title="Open in Video Studio"
+            >
+              <FiFilm size={13} /> Studio
+            </Link>
+          </div>
+          <button
+            onClick={() => handleGenerateReel('short')}
+            disabled={reelPipelineLoading || ['queued','running'].includes(reelPipelineStatus?.reel_generation_status || currentArticle?.reel_generation_status)}
+            className="w-full px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 border border-gray-200 bg-gray-50 hover:bg-gray-100 disabled:opacity-50"
+          >
+            Generate Short (3 min)
+          </button>
         </div>
       </div>
     ),

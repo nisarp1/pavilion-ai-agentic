@@ -1,8 +1,8 @@
-import { Img, staticFile, useCurrentFrame, useVideoConfig } from 'remotion'
+import { Img, useCurrentFrame, useVideoConfig } from 'remotion'
 
 const MANROPE = 'Manrope'
 
-export function TopChrome({ brandName = 'PAVILIONEND', accent = '#FF2D2D', opacity = 1, ty = 0 }) {
+export function TopChrome({ brandName = 'PAVILIONEND', accent = '#FF2D2D', logoSrc: logoProp = '', opacity = 1, ty = 0 }) {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const t = frame / fps
@@ -11,11 +11,9 @@ export function TopChrome({ brandName = 'PAVILIONEND', accent = '#FF2D2D', opaci
   const dotScale = 0.9 + dotPhase * 0.35
   const dotGlow = 0.35 + dotPhase * 0.5
 
-  // logo.png: use staticFile so Remotion Player serves it from public/
-  // Falls back to a coloured square if the file isn't available in the preview.
-  const logoSrc = (() => {
-    try { return staticFile('logo.png') } catch { return null }
-  })()
+  const logoSrc = (logoProp?.startsWith('http') || logoProp?.startsWith('/'))
+    ? logoProp
+    : '/media/media/Untitled_design.webp'
 
   return (
     <div style={{

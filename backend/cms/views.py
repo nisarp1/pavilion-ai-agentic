@@ -906,25 +906,129 @@ class ArticleViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def recreate_reel_agentic(self, request):
         """
-        Trigger the Agentic Pipeline to deconstruct a reference reel URL
-        and generate a Pavilion-branded Malayalam reel script and JSON props.
+        AI Video Production Pipeline API.
+        
+        Accepts:
+          - url: Reference YouTube URL or any context URL
+          - text_prompt: Free text prompt (alternative to URL)
+          - video_format: "reel" | "short" | "long" (default: "reel")
+          - include_avatar: boolean (default: false)
+        
+        Returns a complete VideoProductionPlan with:
+          - props (Remotion-compatible)
+          - clips (timeline data)
+          - voiceover script
+          - assets_needed checklist
+          - downloadable production brief
+          - article_id (saved draft for future editing)
         """
         reference_url = request.data.get('url')
+        text_prompt = request.data.get('text_prompt')
+        video_format = request.data.get('video_format', 'reel')
+        include_avatar = request.data.get('include_avatar', False)
         
-        if not reference_url:
+        if not reference_url and not text_prompt:
             return Response(
-                {'error': 'No reference URL provided.'},
+                {'error': 'Provide either a reference URL or text prompt.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # Validate video_format
+        if video_format not in ('reel', 'short', 'long'):
+            video_format = 'reel'
             
         try:
             from workers.tasks import task_recreate_reel_agentic
             
-            # ഇവിടെ നമ്മൾ ടാസ്ക് നേരിട്ട് (Synchronous) വിളിക്കുകയാണ്.
-            # കാരണം ഫ്രണ്ട്എൻഡിന് ഉടനടി JSON ലഭിക്കാനും പ്രിവ്യൂ കാണിക്കാനും ഇത് സഹായിക്കും!
-            result = task_recreate_reel_agentic(reference_url)
+            # Run synchronously so frontend gets immediate results for preview
+            result = task_recreate_reel_agentic(
+                reference_url or text_prompt,
+                video_format=video_format,
+                include_avatar=include_avatar,
+            )
             
             if result.get('status') == 'success':
+                # Auto-save as draft Video Article
+                try:
+                    meta = result.get('metadata', {})
+                    voiceover = result.get('voiceover', {})
+                    article_title = meta.get('title', f"Video: {(reference_url or text_prompt)[:60]}")
+                    
+                    article = Article(
+                        title=article_title,
+                        status='draft',
+                        category='video_project',
+                        source_url=reference_url or '',
+                        body=voiceover.get('script_plain', ''),
+                        summary=f"AI-generated {video_format} video project",
+                        video_script=voiceover.get('script_plain', ''),
+                        video_production_plan=result,
+                        video_format='portrait' if video_format in ('reel', 'short') else 'landscape',
+                        video_status='generating_script',
+                        author=request.user if request.user.is_authenticated else None,
+                        tenant=getattr(request, 'tenant', None),
+                    )
+                    article.save()
+                    result['article_id'] = article.id
+                    result['article_slug'] = article.slug
+                    
+                    # Generate TTS audio automatically
+                    try:
+                        from workers.tasks import generate_instagram_reel_audio
+                        # Save script to instagram_reel_script so TTS can read it
+                        article.instagram_reel_script = voiceover.get('script_plain', '')
+                        article.save(update_fields=['instagram_reel_script'])
+                        
+                        # Use highest quality voice 'best' (maps to Chirp3-HD/ElevenLabs)
+                        tts_result = generate_instagram_reel_audio(article, voice_name='best')
+                        if tts_result and tts_result.get('success') and article.instagram_reel_audio:
+                            # Use the relative media path — build_absolute_uri returns the
+                            # Docker-internal hostname (pavilion-django-dev) which the browser
+                            # can't resolve. The Vite proxy handles /media/ paths correctly.
+                            audio_url = article.instagram_reel_audio.url
+                            result['audio_url'] = audio_url
+
+                            # \u2500\u2500 Generate caption data \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+                            ml_word_timings = tts_result.get('word_timings', [])
+                            ml_script = article.instagram_reel_script or ''
+                            en_captions = []
+                            if ml_word_timings and ml_script:
+                                try:
+                                    from workers.tasks import translate_to_english_captions
+                                    en_captions = translate_to_english_captions(
+                                        ml_word_timings, ml_script
+                                    )
+                                except Exception as cap_err:
+                                    import logging as _logging
+                                    _logging.getLogger(__name__).warning(
+                                        f"English caption generation failed (non-fatal): {cap_err}"
+                                    )
+
+                            # \u2500\u2500 Persist audio_url + captions into the plan JSON \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+                            article.video_production_plan = {
+                                **article.video_production_plan,
+                                'audio_url': audio_url,
+                                'captions': {
+                                    'ml': ml_word_timings,   # [{word, start_s, end_s}]
+                                    'en': en_captions,       # [{text, start_s, end_s}]
+                                },
+                            }
+                            result['captions'] = article.video_production_plan['captions']
+                            # reel_audio_url is a URLField (requires absolute URL) — skip it here.
+                            # The serializer's get_reel_audio_url reads from instagram_reel_audio instead.
+                            article.save(update_fields=['video_production_plan'])
+                    except Exception as audio_err:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Failed to auto-generate TTS audio: {audio_err}")
+                        
+                except Exception as save_err:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Failed to auto-save video article: {save_err}")
+                    # Pipeline still succeeded, just couldn't save as article
+                    result['article_id'] = None
+                
                 return Response(result)
             else:
                 return Response(
@@ -935,7 +1039,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Agentic Pipeline API error: {str(e)}", exc_info=True)
+            logger.error(f"Video Pipeline API error: {str(e)}", exc_info=True)
             return Response(
                 {'error': f"Pipeline error: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

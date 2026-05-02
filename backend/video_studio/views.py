@@ -37,6 +37,11 @@ class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
 
+        # Resolve relative audio URL to absolute so Cloud Run can fetch it
+        audio_url = data.get('audio_url', '')
+        if audio_url and audio_url.startswith('/'):
+            audio_url = request.build_absolute_uri(audio_url)
+
         from .tasks import render_video_task
 
         job = VideoJob.objects.create(
@@ -44,7 +49,8 @@ class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
             created_by=request.user,
             job_type=VideoJob.TYPE_RENDER,
             props=data['props'],
-            audio_url=data.get('audio_url', ''),
+            clips=data.get('clips', []),
+            audio_url=audio_url,
             article_id=data.get('article_id'),
         )
         task = render_video_task.delay(str(job.id))
@@ -63,6 +69,17 @@ class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
 
+        # Resolve relative audio URL to absolute so Cloud Run can fetch it
+        audio_url = data.get('audio_url', '')
+        if audio_url and audio_url.startswith('/'):
+            audio_url = request.build_absolute_uri(audio_url)
+
+        # Resolve relative asset URLs too
+        asset_urls = [
+            request.build_absolute_uri(u) if u.startswith('/') else u
+            for u in data.get('asset_urls', [])
+        ]
+
         from .tasks import export_fallback_task
 
         job = VideoJob.objects.create(
@@ -70,8 +87,9 @@ class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
             created_by=request.user,
             job_type=VideoJob.TYPE_FALLBACK,
             props=data['props'],
-            audio_url=data.get('audio_url', ''),
-            asset_urls=data.get('asset_urls', []),
+            clips=data.get('clips', []),
+            audio_url=audio_url,
+            asset_urls=asset_urls,
             article_id=data.get('article_id'),
         )
         task = export_fallback_task.delay(str(job.id))

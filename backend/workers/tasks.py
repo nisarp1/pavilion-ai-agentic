@@ -25,6 +25,7 @@ from io import BytesIO
 from django.core.files.base import ContentFile
 from PIL import Image
 import re
+import json
 import os
 import html
 import time
@@ -1123,16 +1124,131 @@ def _generate_article_task_impl(article_id):
         }
 
 
+# ── Caption helpers ───────────────────────────────────────────────────────────
+
+def _build_ssml_with_marks(text: str, rate: str = "1.1", pitch: str = None) -> tuple:
+    """
+    Wrap each word in the Malayalam script with an SSML <mark> tag.
+    The TTS engine fires a timepoint for each mark, giving us per-word timing.
+
+    Returns:
+        (ssml_string, word_list)  — word_list preserves original word order
+    """
+    import re
+    import html as html_lib
+    # Split on whitespace, keep non-empty tokens
+    words = [w for w in re.split(r'\s+', text.strip()) if w]
+    # Build SSML: <mark name="w_N"/> before each word
+    marked_parts = []
+    for i, word in enumerate(words):
+        marked_parts.append(f'<mark name="w_{i}"/>{html_lib.escape(word)}')
+    inner = ' '.join(marked_parts)
+    # Omit pitch attribute — Chirp3-HD voices reject it; speaking_rate alone is fine
+    prosody_attrs = f'rate="{rate}"'
+    if pitch:
+        prosody_attrs += f' pitch="{pitch}"'
+    ssml = f'<speak><prosody {prosody_attrs}>{inner}</prosody></speak>'
+    return ssml, words
+
+
+def _parse_timepoints(timepoints, words: list, total_duration_s: float) -> list:
+    """
+    Convert Google TTS timepoints into [{word, start_s, end_s}] list.
+    Each timepoint.mark_name is 'w_N'; the next mark's time is this word's end.
+    """
+    result = []
+    # Only keep marks that correspond to our w_N marks
+    valid = [tp for tp in timepoints if tp.mark_name.startswith('w_')]
+    for i, tp in enumerate(valid):
+        try:
+            idx = int(tp.mark_name.split('_')[1])
+        except (IndexError, ValueError):
+            continue
+        start_s = round(tp.time_seconds, 3)
+        # end_s = next mark's time, or total audio duration for the last word
+        if i + 1 < len(valid):
+            end_s = round(valid[i + 1].time_seconds, 3)
+        else:
+            end_s = round(total_duration_s, 3)
+        if idx < len(words):
+            result.append({
+                'word':    words[idx],
+                'start_s': start_s,
+                'end_s':   end_s,
+            })
+    return result
+
+
+def translate_to_english_captions(ml_word_timings: list, ml_script: str) -> list:
+    """
+    Use Gemini to translate the Malayalam script sentence-by-sentence,
+    then map sentence timings from the Malayalam word timing data.
+
+    Returns:
+        [{'text': 'English sentence.', 'start_s': 0.0, 'end_s': 3.2}, ...]
+    """
+    if not ml_word_timings:
+        return []
+    try:
+        import google.generativeai as genai
+        import re
+        model_name = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')
+        # Use plain model name for the generativeai client
+        plain_model = model_name.replace('gemini/', '').replace('vertex_ai/', '')
+        client = genai.GenerativeModel(plain_model)
+
+        prompt = (
+            "Translate the following Malayalam sports commentary script into natural English. "
+            "Preserve the sentence structure exactly — output one English sentence per input Malayalam sentence. "
+            "Do NOT add explanations. Output ONLY the English sentences separated by newlines.\n\n"
+            f"Malayalam script:\n{ml_script}"
+        )
+        response = client.generate_content(prompt)
+        en_text = response.text.strip()
+        # Split on sentence boundaries
+        en_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', en_text) if s.strip()]
+
+        if not en_sentences:
+            return []
+
+        # Split Malayalam words into equal-length sentence groups
+        total_words = len(ml_word_timings)
+        n_sentences = len(en_sentences)
+        words_per_sentence = max(1, total_words // n_sentences)
+
+        captions = []
+        for i, en_sent in enumerate(en_sentences):
+            start_idx = i * words_per_sentence
+            end_idx   = start_idx + words_per_sentence if i < n_sentences - 1 else total_words
+            if start_idx >= total_words:
+                break
+            start_s = ml_word_timings[start_idx]['start_s']
+            end_s   = ml_word_timings[min(end_idx, total_words) - 1]['end_s']
+            captions.append({'text': en_sent, 'start_s': start_s, 'end_s': end_s})
+
+        logger.info(f"[Captions] Generated {len(captions)} English caption sentences")
+        return captions
+
+    except Exception as e:
+        logger.warning(f"[Captions] English translation failed (non-fatal): {e}")
+        return []
+
+
+# ── Reel audio with word timings ───────────────────────────────────────────────
+
 def generate_instagram_reel_audio(article, voice_name='chirp'):
     """
     Generate audio for Instagram Reel script using Google Cloud Text-to-Speech.
-    
+    Uses SSML <mark> tags to capture word-level timing for caption sync.
+
     Args:
         article: Article instance with instagram_reel_script
         voice_name: Voice name to use
-    
+
     Returns:
-        bool: True if audio was generated successfully, False otherwise
+        dict | False:
+          On success: {'success': True, 'word_timings': [...], 'audio_content': bytes}
+          On failure: False
     """
     if not TTS_AVAILABLE:
         logger.warning("Google Cloud Text-to-Speech not available. Skipping reel audio generation.")
@@ -1181,7 +1297,7 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
                         save=True
                     )
                     logger.info(f"ElevenLabs Reel audio saved successfully to {audio_filename}")
-                    return True
+                    return {'success': True, 'word_timings': [], 'audio_content': el_response.content}
                 else:
                     logger.warning(f"ElevenLabs failed ({el_response.status_code}): {el_response.text}. Falling back to Google TTS.")
             except Exception as el_e:
@@ -1219,23 +1335,20 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
                 'ml-IN-Standard-A',
             ]
 
-        # Audio config - optimize for social media (louder effectively)
+        # Audio config — no pitch param: Chirp3-HD voices reject pitch at API level
         audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.MP3,
-            speaking_rate=1.1, # Slightly faster for reels
-            pitch=1.0,
-            volume_gain_db=4.0, # Louder for social media
+            speaking_rate=1.1,
+            volume_gain_db=4.0,
             effects_profile_id=['headphone-class-device'],
         )
-        
-        # SSML
-        escaped_text = html.escape(text_content)
-        ssml_text = f"""<speak>
-            <prosody rate="1.1" pitch="+1st">
-                {escaped_text}
-            </prosody>
-        </speak>"""
-        
+
+        # ── Build SSML with <mark> tags for word-level timing ──
+        # No pitch in SSML either — Chirp3-HD doesn't support prosody pitch
+        ssml_text, word_list = _build_ssml_with_marks(
+            text_content, rate='1.1', pitch=None
+        )
+        logger.info(f"[Captions] Built SSML with {len(word_list)} word marks")
         synthesis_input = texttospeech.SynthesisInput(ssml=ssml_text)
         
         # Try voices in fallback order until one works
@@ -1252,12 +1365,17 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
                     name=attempt_voice,
                 )
                 
+                # TimepointType is only in v1beta1 — fall back gracefully if unavailable
+                timepoint_args = {}
+                if hasattr(texttospeech, 'TimepointType'):
+                    timepoint_args['enable_time_pointing'] = [texttospeech.TimepointType.SSML_MARK]
                 response = client.synthesize_speech(
                     input=synthesis_input,
                     voice=voice,
-                    audio_config=audio_config
+                    audio_config=audio_config,
+                    **timepoint_args,
                 )
-                
+
                 # If we get here, it worked
                 used_voice_name = attempt_voice
                 logger.info(f"Successfully generated reel audio with voice: {attempt_voice}")
@@ -1272,19 +1390,34 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
             logger.error(f"All voice attempts failed for reel audio. Last error: {str(last_error)}")
             return False
         
-        # Save audio
+        # ── Extract word timings from TTS timepoints ──────────────────
+        audio_content = response.audio_content
+        # Estimate total duration from MP3 byte count (~128kbps)
+        total_duration_s = len(audio_content) / (128 * 1024 / 8)
+        word_timings = []
+        if hasattr(response, 'timepoints') and response.timepoints:
+            word_timings = _parse_timepoints(response.timepoints, word_list, total_duration_s)
+            logger.info(f"[Captions] Extracted {len(word_timings)} word timings from TTS timepoints")
+        else:
+            logger.warning("[Captions] No timepoints in TTS response — captions will have no timing")
+
+        # ── Save audio file ────────────────────────────────────────────
         voice_short_name = used_voice_name.split('-')[-1] if '-' in used_voice_name else used_voice_name
         audio_filename = f'reel_{article.id}_audio_{voice_short_name.lower()}.mp3'
-        
+
         article.instagram_reel_audio.save(
             audio_filename,
-            ContentFile(response.audio_content),
+            ContentFile(audio_content),
             save=True
         )
-        
+
         logger.info(f"Reel audio saved to {audio_filename}")
-        return True
-        
+        return {
+            'success':      True,
+            'word_timings': word_timings,
+            'audio_content': audio_content,  # kept in memory for GCS upload if needed
+        }
+
     except Exception as e:
         logger.error(f"Error generating reel audio for article {article.id}: {str(e)}")
         return False
@@ -1458,43 +1591,33 @@ def run_agentic_trends_celery():
 
 
 @shared_task(bind=True)
-def task_recreate_reel_agentic(self, reference_url):
+def task_recreate_reel_agentic(self, reference_url, video_format="reel", include_avatar=False):
     """
-    Stage 1 & 2: Agentic Pipeline to deconstruct a reference reel
-    and generate a Pavilion-branded Malayalam reel script and JSON props.
+    AI Video Production Pipeline — Multi-agent orchestrator.
+    
+    Replaces the old 2-agent pipeline with a proper 3-step flow:
+      1. Context Analysis (deterministic — yt-dlp metadata extraction)
+      2. Script Writing (LLM — Malayalam voiceover + headlines)
+      3. Scene Planning (LLM — template matching + assets list)
+    
+    Returns a complete VideoProductionPlan with clips, props, voiceover,
+    assets checklist, and downloadable production brief.
     """
     try:
-        logger.info(f"Starting Agentic Reel Recreation for URL: {reference_url}")
+        logger.info(f"Starting Video Production Pipeline for URL: {reference_url}")
         
-        # Import the CrewAI orchestrator from the agents folder
-        from agents.reel_agents import ReelRecreationCrew
+        from agents.video_pipeline import VideoProductionPipeline
         
-        # Initialize and run the CrewAI pipeline
-        crew = ReelRecreationCrew()
-        result = crew.run_pipeline(reference_url)
+        pipeline = VideoProductionPipeline()
+        result = pipeline.run(
+            reference_url=reference_url,
+            video_format=video_format,
+            include_avatar=include_avatar,
+        )
         
-        # Safely extract JSON from the LLM's output
-        result_str = str(result)
-        modular_props = {}
-        
-        # Try to find JSON block if LLM wrapped it in markdown (e.g., ```json ... ```)
-        json_match = re.search(r'\{.*\}', result_str, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(0)
-            try:
-                modular_props = json.loads(json_str)
-            except json.JSONDecodeError:
-                logger.error("Agent returned invalid JSON format.")
-                modular_props = {"error": "Failed to parse JSON", "raw": result_str}
-        
-        logger.info("Agentic Pipeline successfully generated modular JSON.")
-        
-        return {
-            "status": "success",
-            "reference_url": reference_url,
-            "modular_props": modular_props,
-        }
+        logger.info(f"Pipeline complete: {result.get('metadata', {}).get('title', 'untitled')}")
+        return result
 
     except Exception as e:
-        logger.error(f"Error in Agentic Recreation Pipeline: {str(e)}", exc_info=True)
+        logger.error(f"Error in Video Production Pipeline: {str(e)}", exc_info=True)
         return {"status": "error", "error": str(e)}

@@ -37,6 +37,8 @@ class VideoJob(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
     # The PavilionReelProps payload (and any extensions)
     props = models.JSONField(default=dict)
+    # Timeline clips (dynamic scene breakdown)
+    clips = models.JSONField(default=list, blank=True)
     # ElevenLabs / TTS audio voiceover URL
     audio_url = models.URLField(blank=True, max_length=2048)
     # Extra asset URLs to bundle in fallback ZIP

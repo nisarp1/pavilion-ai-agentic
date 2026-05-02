@@ -52,6 +52,8 @@ INSTALLED_APPS = [
     'rss_fetcher',
     'workers',
     'video_studio',
+    'agents',
+    'style_library',
 ]
 
 MIDDLEWARE = [
@@ -324,7 +326,7 @@ RSS_FEEDS = env.list('RSS_FEEDS', default=[])
 
 # Google Gemini AI
 GEMINI_API_KEY = env('GEMINI_API_KEY', default='')
-GEMINI_MODEL = env('GEMINI_MODEL', default='gemini-2.5-flash')
+GEMINI_MODEL = env('GEMINI_MODEL', default='gemini-2.5-flash-lite')
 
 # Google Cloud Text-to-Speech
 # Set this to the full path of your service account JSON key file
@@ -360,7 +362,14 @@ GCS_BUCKET_NAME = env('GCS_BUCKET_NAME', default='')
 CLOUD_RUN_RENDERER_URL = env('CLOUD_RUN_RENDERER_URL', default='')
 # GCS path (gs://bucket/path or blob-name) to the base After Effects .aep template (Track B)
 AEP_TEMPLATE_GCS_PATH = env('AEP_TEMPLATE_GCS_PATH', default='')
+
+# ── Google Custom Search (Image Fetcher Agent) ────────────────────────────────
+# Enable at: https://console.cloud.google.com/apis/library/customsearch.googleapis.com
+# Create search engine at: https://cse.google.com
+GOOGLE_CUSTOM_SEARCH_API_KEY  = env('GOOGLE_CUSTOM_SEARCH_API_KEY',  default='')
+GOOGLE_CUSTOM_SEARCH_ENGINE_ID = env('GOOGLE_CUSTOM_SEARCH_ENGINE_ID', default='')
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 # Frontend URL (used for invite links, password reset emails)
 FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:3001')
@@ -406,6 +415,9 @@ LOGGING = {
         'workers': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
         'tenants': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
         'rss_fetcher': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
+        'agents':      {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
+        'video_studio':{'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
+        'style_library':{'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
     },
 }
 

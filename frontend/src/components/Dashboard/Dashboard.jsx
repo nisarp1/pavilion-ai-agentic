@@ -37,7 +37,8 @@ function Dashboard() {
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: FiHome, exact: true },
-    { path: '/articles', label: 'Articles', icon: FiFileText, matchStart: true },
+    { path: '/articles', label: 'All Articles', icon: FiFileText, matchStart: true },
+    { path: '/articles?category=video_project', label: 'Draft Reels', icon: FiVideo },
     { path: '/articles/create', label: 'Create Article', icon: FiPlus },
     { path: '/webstories', label: 'Web Stories', icon: FiBookOpen, matchStart: true },
     { path: '/webstories/create', label: 'Create Web Story', icon: FiLayers },

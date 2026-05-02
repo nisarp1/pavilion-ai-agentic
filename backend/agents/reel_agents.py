@@ -12,13 +12,12 @@ class ReelRecreationCrew:
     rebuilding it in Pavilion's Malayalam brand style.
     """
     def __init__(self):
-        # Initialize Gemini 1.5 Pro as the main intelligence
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-pro",
-            verbose=True,
-            temperature=0.4,
-            google_api_key=os.getenv("GEMINI_API_KEY")
-        )
+        model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
+        # Ensure it has the correct prefix for LiteLLM if not using Vertex AI
+        if not model_name.startswith("gemini/") and not model_name.startswith("vertex_ai/"):
+            model_name = f"gemini/{model_name}"
+            
+        self.llm_model = model_name  # Using liteLLM format, works natively with CrewAI
 
     def get_vision_agent(self):
         return Agent(
@@ -31,7 +30,7 @@ class ReelRecreationCrew:
             ),
             verbose=True,
             allow_delegation=False,
-            llm=self.llm
+            llm=self.llm_model
         )
 
     def get_writer_agent(self):
@@ -45,7 +44,7 @@ class ReelRecreationCrew:
             ),
             verbose=True,
             allow_delegation=False,
-            llm=self.llm
+            llm=self.llm_model
         )
 
     def run_pipeline(self, reference_url: str) -> dict:

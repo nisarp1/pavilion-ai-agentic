@@ -1,0 +1,8 @@
+node_modules
+build
+bundle
+src/templates/my-video/node_modules
+src/templates/my-video/.git
+src/templates/my-video/.claude
+*.md
+.git

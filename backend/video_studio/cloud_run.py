@@ -19,10 +19,15 @@ def _auth_header(audience: str) -> dict:
         return {}
 
 
-def trigger_render(props: dict, job_id: str, output_blob: str) -> dict:
+def trigger_render(props: dict, job_id: str, output_blob: str, composition_id: str = None) -> dict:
     """
     POST to the Remotion Cloud Run renderer and block until the render completes.
     Returns the JSON response which must contain 'videoUrl'.
+
+    composition_id resolves in this order:
+      1. Explicit argument
+      2. props['_compositionId'] set by the pipeline
+      3. Default: 'PavilionReel'
 
     If CLOUD_RUN_RENDERER_URL is not set, raises ValueError so the caller
     can decide what to do (e.g. save the plan as a manifest JSON instead).
@@ -31,9 +36,17 @@ def trigger_render(props: dict, job_id: str, output_blob: str) -> dict:
     if not base_url:
         raise ValueError("CLOUD_RUN_RENDERER_URL is not configured")
 
+    # Resolve which Remotion composition to render
+    resolved_composition = (
+        composition_id
+        or props.pop('_compositionId', None)
+        or 'PavilionReel'
+    )
+    logger.info(f"[VideoJob {job_id}] compositionId={resolved_composition}")
+
     endpoint = f"{base_url}/render"
     payload = {
-        'compositionId': 'PavilionReel',
+        'compositionId': resolved_composition,
         'props': props,
         'jobId': job_id,
         'outputGcsPath': output_blob,

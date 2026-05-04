@@ -1,0 +1,850 @@
+{
+  "$schema": "./registry.schema.json",
+  "version": "1.1.0",
+  "updated_at": "2026-05-04T00:00:00Z",
+  "templates": [
+    {
+      "id": "hero_headline",
+      "composition_id": "PavilionReel",
+      "name": "Hero Headline",
+      "category": "opening",
+      "status": "active",
+      "source": "builtin",
+      "description": "Full-screen hero image with a dramatic gradient overlay. A large Malayalam headline animates word-by-word from the bottom. Top chrome bar with brand logo and LIVE badge is visible. Best for opening scenes, breaking news, and dramatic reveals.",
+      "duration": {
+        "default_seconds": 6,
+        "default_frames": 180,
+        "min_seconds": 3,
+        "max_seconds": 12
+      },
+      "props": {
+        "required": [
+          {
+            "key": "scene1Headline",
+            "type": "string",
+            "description": "Main headline text in Malayalam",
+            "example": "മുഹമ്മദ് സലാ ലിവർപൂൾ വിടുന്നു"
+          },
+          {
+            "key": "heroSrc",
+            "type": "string",
+            "description": "Hero background image URL or static filename"
+          }
+        ],
+        "optional": [
+          {
+            "key": "bgColor",
+            "type": "string",
+            "default": "#000000",
+            "description": "Background fallback color"
+          },
+          {
+            "key": "scene1HeadlineColor",
+            "type": "string",
+            "default": "#ffffff"
+          },
+          {
+            "key": "scene1HeadlineFontSize",
+            "type": "number",
+            "default": 78
+          },
+          {
+            "key": "scene1HeadlineFont",
+            "type": "string",
+            "default": "Anek Malayalam"
+          },
+          {
+            "key": "brandName",
+            "type": "string",
+            "default": "PAVILIONEND"
+          },
+          {
+            "key": "accent",
+            "type": "string",
+            "default": "#FF2D2D"
+          },
+          {
+            "key": "logoSrc",
+            "type": "string",
+            "description": "Brand logo URL"
+          }
+        ]
+      },
+      "assets": [
+        {
+          "slot": "heroSrc",
+          "type": "image",
+          "description": "Hero background — wide stadium shot, player action, or event banner",
+          "required": true,
+          "aspect_ratio": "9:16",
+          "search_hint": "sports action wide shot stadium"
+        }
+      ],
+      "suitable_for": [
+        "opening",
+        "breaking_news",
+        "dramatic_reveal",
+        "match_update",
+        "transfer_news"
+      ],
+      "tags": [
+        "hero",
+        "headline",
+        "malayalam",
+        "sports",
+        "reel",
+        "portrait"
+      ],
+      "file": "scenes/Scene1.tsx",
+      "exported_component": "Scene1",
+      "clips": [
+        {
+          "id": "scene1-hero",
+          "label": "Hero Image",
+          "track": 2,
+          "color": "#0ea5e9"
+        },
+        {
+          "id": "scene1-headline",
+          "label": "Scene 1 Headline",
+          "track": 3,
+          "color": "#38bdf8"
+        }
+      ]
+    },
+    {
+      "id": "player_card",
+      "composition_id": "PavilionReel",
+      "name": "Player Card",
+      "category": "player",
+      "status": "active",
+      "source": "builtin",
+      "description": "Blurred hero background with a teal glass-card overlay. Shows player name, portrait image, and a stats grid (up to 6 stats). A secondary headline animates at the bottom. Best for player profiles, performance stats, and comparison scenes.",
+      "duration": {
+        "default_seconds": 8,
+        "default_frames": 240,
+        "min_seconds": 5,
+        "max_seconds": 15
+      },
+      "props": {
+        "required": [
+          {
+            "key": "scene2Headline",
+            "type": "string",
+            "description": "Secondary headline in Malayalam",
+            "example": "ആ റൈറ്റ് വിങ്ങിൽ ആരെ കൊണ്ടുവരും?"
+          },
+          {
+            "key": "playerName",
+            "type": "string",
+            "description": "Player name (uppercase)",
+            "example": "MO SALAH"
+          },
+          {
+            "key": "playerImage",
+            "type": "string",
+            "description": "Player portrait image URL"
+          },
+          {
+            "key": "stats",
+            "type": "StatItem[]",
+            "description": "Array of {label, value} stat objects",
+            "example": [
+              {
+                "label": "Goals",
+                "value": "12"
+              },
+              {
+                "label": "Assists",
+                "value": "8"
+              }
+            ]
+          }
+        ],
+        "optional": [
+          {
+            "key": "heroSrc",
+            "type": "string",
+            "description": "Blurred background image — reuse hero or stadium shot"
+          },
+          {
+            "key": "bgColor",
+            "type": "string",
+            "default": "#000000"
+          },
+          {
+            "key": "cardColor",
+            "type": "string",
+            "default": "#1f7a6e",
+            "description": "Glass card tint color"
+          },
+          {
+            "key": "cardAccent",
+            "type": "string",
+            "default": "#e8b73b",
+            "description": "Card accent bar color"
+          },
+          {
+            "key": "scene2HeadlineColor",
+            "type": "string",
+            "default": "#ffffff"
+          },
+          {
+            "key": "scene2HeadlineFontSize",
+            "type": "number",
+            "default": 64
+          },
+          {
+            "key": "scene2HeadlineFont",
+            "type": "string",
+            "default": "Anek Malayalam"
+          }
+        ]
+      },
+      "assets": [
+        {
+          "slot": "playerImage",
+          "type": "image",
+          "description": "Player portrait — cropped headshot or action shot facing camera",
+          "required": true,
+          "aspect_ratio": "1:1",
+          "search_hint": "player portrait headshot transparent background"
+        },
+        {
+          "slot": "heroSrc",
+          "type": "image",
+          "description": "Blurred background — reuse hero image or stadium shot",
+          "required": false,
+          "aspect_ratio": "9:16"
+        }
+      ],
+      "suitable_for": [
+        "player_profile",
+        "stats_display",
+        "performance_recap",
+        "transfer_news",
+        "man_of_the_match"
+      ],
+      "tags": [
+        "player",
+        "stats",
+        "card",
+        "glassmorphism",
+        "malayalam",
+        "sports",
+        "reel"
+      ],
+      "file": "scenes/Scene2.tsx",
+      "exported_component": "Scene2",
+      "clips": [
+        {
+          "id": "scene2-bg",
+          "label": "Background",
+          "track": 4,
+          "color": "#10b981"
+        },
+        {
+          "id": "scene2-card",
+          "label": "Player Card",
+          "track": 5,
+          "color": "#34d399"
+        },
+        {
+          "id": "scene2-headline",
+          "label": "Scene 2 Headline",
+          "track": 6,
+          "color": "#6ee7b7"
+        }
+      ]
+    },
+    {
+      "id": "scoreboard",
+      "composition_id": "PavilionReel",
+      "name": "Scoreboard",
+      "category": "scoreboard",
+      "status": "active",
+      "source": "builtin",
+      "description": "Live match scoreboard display. Dark background with two team columns flanking a central score display. Team logos/flags at top, team names below, large animated score numbers in the center with a gold accent divider. Match status badge (LIVE / FT / HT) pulses at top. Optional match time or event info at bottom. Best for live scores, match results, and head-to-head matchups.",
+      "duration": {
+        "default_seconds": 5,
+        "default_frames": 150,
+        "min_seconds": 3,
+        "max_seconds": 10
+      },
+      "props": {
+        "required": [
+          {
+            "key": "team1Name",
+            "type": "string",
+            "example": "KERALA"
+          },
+          {
+            "key": "team2Name",
+            "type": "string",
+            "example": "BENGALURU"
+          },
+          {
+            "key": "team1Score",
+            "type": "string",
+            "example": "2"
+          },
+          {
+            "key": "team2Score",
+            "type": "string",
+            "example": "1"
+          },
+          {
+            "key": "matchStatus",
+            "type": "string",
+            "description": "LIVE | FT | HT | 45' etc.",
+            "example": "FT"
+          }
+        ],
+        "optional": [
+          {
+            "key": "team1LogoSrc",
+            "type": "string",
+            "description": "Team 1 logo URL"
+          },
+          {
+            "key": "team2LogoSrc",
+            "type": "string",
+            "description": "Team 2 logo URL"
+          },
+          {
+            "key": "matchTime",
+            "type": "string",
+            "example": "90'"
+          },
+          {
+            "key": "matchEvent",
+            "type": "string",
+            "example": "ISL Final"
+          },
+          {
+            "key": "bgColor",
+            "type": "string",
+            "default": "#0a0a0a"
+          },
+          {
+            "key": "accent",
+            "type": "string",
+            "default": "#e8b73b"
+          },
+          {
+            "key": "heroSrc",
+            "type": "string",
+            "description": "Optional stadium background (blurred)"
+          }
+        ]
+      },
+      "assets": [
+        {
+          "slot": "team1LogoSrc",
+          "type": "image",
+          "description": "Team 1 logo or crest — square, transparent background preferred",
+          "required": false,
+          "aspect_ratio": "1:1",
+          "search_hint": "football team logo transparent"
+        },
+        {
+          "slot": "team2LogoSrc",
+          "type": "image",
+          "description": "Team 2 logo or crest — square, transparent background preferred",
+          "required": false,
+          "aspect_ratio": "1:1"
+        },
+        {
+          "slot": "heroSrc",
+          "type": "image",
+          "description": "Stadium background (heavily blurred)",
+          "required": false,
+          "aspect_ratio": "9:16"
+        }
+      ],
+      "suitable_for": [
+        "live_score",
+        "match_result",
+        "head_to_head",
+        "fixture",
+        "final_score"
+      ],
+      "tags": [
+        "scoreboard",
+        "score",
+        "match",
+        "live",
+        "result",
+        "sports",
+        "football",
+        "cricket"
+      ],
+      "file": "scenes/Scoreboard.tsx",
+      "exported_component": "Scoreboard",
+      "clips": [
+        {
+          "id": "scoreboard-bg",
+          "label": "Background",
+          "track": 2,
+          "color": "#8b5cf6"
+        },
+        {
+          "id": "scoreboard-card",
+          "label": "Score Card",
+          "track": 3,
+          "color": "#a78bfa"
+        },
+        {
+          "id": "scoreboard-status",
+          "label": "Match Status",
+          "track": 4,
+          "color": "#c4b5fd"
+        }
+      ]
+    },
+    {
+      "id": "stat_comparison",
+      "composition_id": "PavilionReel",
+      "name": "Stat Comparison",
+      "category": "comparison",
+      "status": "active",
+      "source": "builtin",
+      "description": "Side-by-side player or team comparison with animated stat bars. Two columns with player/team images at top, names below, and horizontal stat bars that animate outward from center. Each stat row shows label, bar visualization, and numeric value. Colors differentiate the two sides (teal vs gold). Best for player comparisons, team matchups, and performance analysis.",
+      "duration": {
+        "default_seconds": 7,
+        "default_frames": 210,
+        "min_seconds": 5,
+        "max_seconds": 12
+      },
+      "props": {
+        "required": [
+          {
+            "key": "leftName",
+            "type": "string",
+            "example": "MESSI"
+          },
+          {
+            "key": "rightName",
+            "type": "string",
+            "example": "RONALDO"
+          },
+          {
+            "key": "comparisonStats",
+            "type": "ComparisonStat[]",
+            "description": "Array of {label, leftValue, rightValue}",
+            "example": [
+              {
+                "label": "Goals",
+                "leftValue": 50,
+                "rightValue": 44
+              }
+            ]
+          }
+        ],
+        "optional": [
+          {
+            "key": "leftImageSrc",
+            "type": "string",
+            "description": "Left player/team portrait URL"
+          },
+          {
+            "key": "rightImageSrc",
+            "type": "string",
+            "description": "Right player/team portrait URL"
+          },
+          {
+            "key": "comparisonTitle",
+            "type": "string",
+            "example": "Head-to-Head 2024"
+          },
+          {
+            "key": "leftColor",
+            "type": "string",
+            "default": "#10b981"
+          },
+          {
+            "key": "rightColor",
+            "type": "string",
+            "default": "#e8b73b"
+          },
+          {
+            "key": "bgColor",
+            "type": "string",
+            "default": "#000000"
+          },
+          {
+            "key": "heroSrc",
+            "type": "string",
+            "description": "Optional background image"
+          }
+        ]
+      },
+      "assets": [
+        {
+          "slot": "leftImageSrc",
+          "type": "image",
+          "description": "Left player/team portrait — cropped headshot",
+          "required": false,
+          "aspect_ratio": "1:1",
+          "search_hint": "player headshot portrait"
+        },
+        {
+          "slot": "rightImageSrc",
+          "type": "image",
+          "description": "Right player/team portrait — cropped headshot",
+          "required": false,
+          "aspect_ratio": "1:1"
+        }
+      ],
+      "suitable_for": [
+        "player_comparison",
+        "team_comparison",
+        "head_to_head",
+        "performance_analysis",
+        "season_review"
+      ],
+      "tags": [
+        "comparison",
+        "stats",
+        "bars",
+        "head-to-head",
+        "sports",
+        "analysis"
+      ],
+      "file": "scenes/StatComparison.tsx",
+      "exported_component": "StatComparison",
+      "clips": [
+        {
+          "id": "comparison-bg",
+          "label": "Background",
+          "track": 2,
+          "color": "#f59e0b"
+        },
+        {
+          "id": "comparison-left",
+          "label": "Left Column",
+          "track": 3,
+          "color": "#fbbf24"
+        },
+        {
+          "id": "comparison-right",
+          "label": "Right Column",
+          "track": 4,
+          "color": "#fcd34d"
+        },
+        {
+          "id": "comparison-bars",
+          "label": "Stat Bars",
+          "track": 5,
+          "color": "#fde68a"
+        }
+      ]
+    },
+    {
+      "id": "quote_card",
+      "composition_id": "PavilionReel",
+      "name": "Quote Card",
+      "category": "quote",
+      "status": "active",
+      "source": "builtin",
+      "description": "Full-screen dramatic quote display with attribution. Dark gradient background, large opening quotation mark as accent, the quote text animates in word-by-word in Malayalam, followed by the speaker name and title/role fading in below. Optional speaker portrait in a circular frame. Best for expert opinions, player quotes, and coach statements.",
+      "duration": {
+        "default_seconds": 6,
+        "default_frames": 180,
+        "min_seconds": 4,
+        "max_seconds": 10
+      },
+      "props": {
+        "required": [
+          {
+            "key": "quoteText",
+            "type": "string",
+            "description": "The quote in Malayalam",
+            "example": "ഞങ്ങൾ ഈ ട്രോഫി നേടും"
+          },
+          {
+            "key": "speakerName",
+            "type": "string",
+            "example": "VIRAT KOHLI"
+          }
+        ],
+        "optional": [
+          {
+            "key": "speakerTitle",
+            "type": "string",
+            "example": "Team India Captain"
+          },
+          {
+            "key": "speakerImageSrc",
+            "type": "string",
+            "description": "Speaker portrait URL"
+          },
+          {
+            "key": "bgColor",
+            "type": "string",
+            "default": "#0a0a0a"
+          },
+          {
+            "key": "accent",
+            "type": "string",
+            "default": "#FF2D2D"
+          },
+          {
+            "key": "quoteFont",
+            "type": "string",
+            "default": "Anek Malayalam"
+          },
+          {
+            "key": "quoteFontSize",
+            "type": "number",
+            "default": 72
+          },
+          {
+            "key": "heroSrc",
+            "type": "string",
+            "description": "Background image (heavily blurred/darkened)"
+          }
+        ]
+      },
+      "assets": [
+        {
+          "slot": "speakerImageSrc",
+          "type": "image",
+          "description": "Speaker portrait — circular crop, facing camera",
+          "required": false,
+          "aspect_ratio": "1:1",
+          "search_hint": "player coach portrait headshot"
+        },
+        {
+          "slot": "heroSrc",
+          "type": "image",
+          "description": "Background image (blurred to near-black)",
+          "required": false,
+          "aspect_ratio": "9:16"
+        }
+      ],
+      "suitable_for": [
+        "quote",
+        "expert_opinion",
+        "player_statement",
+        "coach_comment",
+        "pundit_take",
+        "interview"
+      ],
+      "tags": [
+        "quote",
+        "statement",
+        "interview",
+        "opinion",
+        "malayalam",
+        "sports"
+      ],
+      "file": "scenes/QuoteCard.tsx",
+      "exported_component": "QuoteCard",
+      "clips": [
+        {
+          "id": "quote-bg",
+          "label": "Background",
+          "track": 2,
+          "color": "#ec4899"
+        },
+        {
+          "id": "quote-text",
+          "label": "Quote Text",
+          "track": 3,
+          "color": "#f472b6"
+        },
+        {
+          "id": "quote-attribution",
+          "label": "Attribution",
+          "track": 4,
+          "color": "#f9a8d4"
+        }
+      ]
+    },
+    {
+      "id": "ticker_headline",
+      "composition_id": "PavilionReel",
+      "name": "Ticker Headline",
+      "category": "ticker",
+      "status": "active",
+      "source": "builtin",
+      "description": "Breaking news ticker/banner scene. Full-screen dark background with a bold BREAKING or category tag animating in from left, followed by a large headline sliding in from the right. A thin accent-colored bar separates tag from headline. Optional sub-headline or timestamp below. Creates urgency — best for breaking news and flash updates.",
+      "duration": {
+        "default_seconds": 4,
+        "default_frames": 120,
+        "min_seconds": 2,
+        "max_seconds": 8
+      },
+      "props": {
+        "required": [
+          {
+            "key": "tickerTag",
+            "type": "string",
+            "description": "Breaking category tag",
+            "example": "BREAKING"
+          },
+          {
+            "key": "tickerHeadline",
+            "type": "string",
+            "description": "The news headline in Malayalam",
+            "example": "സലാ കരാർ ഒപ്പിട്ടു"
+          }
+        ],
+        "optional": [
+          {
+            "key": "tickerSubHeadline",
+            "type": "string",
+            "description": "Secondary detail line"
+          },
+          {
+            "key": "tickerTimestamp",
+            "type": "string",
+            "example": "5 minutes ago"
+          },
+          {
+            "key": "bgColor",
+            "type": "string",
+            "default": "#0a0a0a"
+          },
+          {
+            "key": "accent",
+            "type": "string",
+            "default": "#FF2D2D"
+          },
+          {
+            "key": "heroSrc",
+            "type": "string",
+            "description": "Optional background (darkened to near-black)"
+          }
+        ]
+      },
+      "assets": [
+        {
+          "slot": "heroSrc",
+          "type": "image",
+          "description": "Optional contextual background (will be heavily darkened)",
+          "required": false,
+          "aspect_ratio": "9:16"
+        }
+      ],
+      "suitable_for": [
+        "breaking_news",
+        "flash_update",
+        "transfer_alert",
+        "injury_update",
+        "result_flash",
+        "last_minute"
+      ],
+      "tags": [
+        "ticker",
+        "breaking",
+        "urgent",
+        "news",
+        "flash",
+        "alert",
+        "malayalam"
+      ],
+      "file": "scenes/TickerHeadline.tsx",
+      "exported_component": "TickerHeadline",
+      "clips": [
+        {
+          "id": "ticker-bg",
+          "label": "Background",
+          "track": 2,
+          "color": "#ef4444"
+        },
+        {
+          "id": "ticker-tag",
+          "label": "Breaking Tag",
+          "track": 3,
+          "color": "#f87171"
+        },
+        {
+          "id": "ticker-headline",
+          "label": "Headline",
+          "track": 4,
+          "color": "#fca5a5"
+        }
+      ]
+    },
+    {
+      "id": "captioned_video",
+      "composition_id": "CaptionedVideo",
+      "name": "TikTok Captioned Video",
+      "category": "custom",
+      "status": "active",
+      "source": "custom",
+      "description": "Full-screen video playback with TikTok-style auto-captions. Renders a source video (mp4/webm/mkv/mov) and overlays word-by-word highlighted captions loaded from a Whisper-generated JSON file. Active word highlights in bright green (configurable). Caption font is TheBoldFont in uppercase. Duration is calculated dynamically from the video file itself. Ideal for voiceover videos, social clips, reels with auto-subtitles, or any video that needs accessibility captions. Requires a pre-generated Whisper caption JSON file at the same path as the video (e.g., video.mp4 → video.json).",
+      "duration": {
+        "default_seconds": 30,
+        "default_frames": 900,
+        "min_seconds": 5,
+        "max_seconds": 300
+      },
+      "props": {
+        "required": [
+          {
+            "key": "src",
+            "type": "string",
+            "description": "URL or static filename of the source video (mp4/webm/mkv/mov). A matching .json caption file must exist at the same path.",
+            "example": "https://storage.googleapis.com/bucket/reel_01.mp4"
+          }
+        ],
+        "optional": [
+          {
+            "key": "highlightColor",
+            "type": "string",
+            "default": "#39E508",
+            "description": "Active word highlight color (any CSS color)",
+            "example": "#FFD700"
+          }
+        ]
+      },
+      "assets": [
+        {
+          "slot": "src",
+          "type": "video",
+          "description": "Source video file. The pipeline also needs a Whisper-generated caption JSON at the same path with .json extension.",
+          "required": true,
+          "aspect_ratio": "9:16",
+          "search_hint": "source video for captioning"
+        }
+      ],
+      "suitable_for": [
+        "voiceover_video",
+        "social_clip",
+        "reel_with_captions",
+        "interview_clip",
+        "highlights",
+        "auto_subtitles"
+      ],
+      "tags": [
+        "captions",
+        "subtitles",
+        "tiktok",
+        "whisper",
+        "voiceover",
+        "video",
+        "reels",
+        "accessibility"
+      ],
+      "file": "templates/captioned_video/index.tsx",
+      "exported_component": "CaptionedVideo",
+      "clips": [
+        {
+          "id": "captioned-video",
+          "label": "Source Video",
+          "track": 2,
+          "color": "#06b6d4"
+        },
+        {
+          "id": "captioned-captions",
+          "label": "Auto Captions",
+          "track": 3,
+          "color": "#22d3ee"
+        }
+      ]
+    }
+  ]
+}

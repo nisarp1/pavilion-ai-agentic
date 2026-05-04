@@ -1,26 +1,32 @@
 #!/usr/bin/env bash
-# One-shot deploy script — builds the image locally and deploys to Cloud Run.
-# Prerequisites: gcloud CLI authenticated, Docker running, Artifact Registry enabled.
+# One-shot local deploy script — builds the image and deploys to Cloud Run.
+# Normally triggered via GitHub Actions (deploy-remotion.yml).
+# Prerequisites: gcloud CLI authenticated with sufficient permissions, Docker running.
 #
 # Usage: bash deploy.sh
 
 set -euo pipefail
 
-PROJECT_ID="${GCP_PROJECT_ID:-your-gcp-project-id}"
-REGION="${GCP_REGION:-asia-south1}"
+PROJECT_ID="${GCP_PROJECT_ID:-pavilion-ai-agentic-v2}"
+REGION="${GCP_REGION:-us-central1}"
 SERVICE="${CLOUD_RUN_SERVICE:-pavilion-remotion-renderer}"
-GCS_BUCKET="${GCS_BUCKET_NAME:-your-gcs-bucket}"
-IMAGE="gcr.io/${PROJECT_ID}/${SERVICE}:latest"
+GCS_BUCKET="${GCS_BUCKET_NAME:-pavilion-media}"
+REGISTRY="us-central1-docker.pkg.dev"
+REPOSITORY="pavilion-agentic-app"
+IMAGE="${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/${SERVICE}"
 
-echo "==> Building Docker image: ${IMAGE}"
-docker build -t "${IMAGE}" .
+echo "==> Configuring Docker for Artifact Registry..."
+gcloud auth configure-docker "${REGISTRY}"
 
-echo "==> Pushing to GCR..."
-docker push "${IMAGE}"
+echo "==> Building Docker image: ${IMAGE}:latest"
+docker build -t "${IMAGE}:latest" .
+
+echo "==> Pushing to Artifact Registry..."
+docker push "${IMAGE}:latest"
 
 echo "==> Deploying to Cloud Run (${REGION})..."
 gcloud run deploy "${SERVICE}" \
-  --image="${IMAGE}" \
+  --image="${IMAGE}:latest" \
   --region="${REGION}" \
   --platform=managed \
   --memory=4Gi \
@@ -30,6 +36,7 @@ gcloud run deploy "${SERVICE}" \
   --max-instances=10 \
   --no-allow-unauthenticated \
   --set-env-vars="GCS_BUCKET_NAME=${GCS_BUCKET}" \
+  --service-account="pavilion-agentic@${PROJECT_ID}.iam.gserviceaccount.com" \
   --project="${PROJECT_ID}"
 
 SERVICE_URL=$(gcloud run services describe "${SERVICE}" \
@@ -40,11 +47,11 @@ SERVICE_URL=$(gcloud run services describe "${SERVICE}" \
 echo ""
 echo "✓ Deployed: ${SERVICE_URL}"
 echo ""
-echo "Add to your .env:"
+echo "Set in backend/.env:"
 echo "  CLOUD_RUN_RENDERER_URL=${SERVICE_URL}"
 echo ""
-echo "Grant your Django service-account invoker access:"
+echo "Grant invoker access to the backend service account if needed:"
 echo "  gcloud run services add-iam-policy-binding ${SERVICE} \\"
 echo "    --region=${REGION} \\"
-echo "    --member=serviceAccount:<your-sa>@${PROJECT_ID}.iam.gserviceaccount.com \\"
+echo "    --member=serviceAccount:pavilion-agentic@${PROJECT_ID}.iam.gserviceaccount.com \\"
 echo "    --role=roles/run.invoker"

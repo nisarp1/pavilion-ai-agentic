@@ -10,7 +10,8 @@ const http = require('http');
 const os = require('os');
 const fs = require('fs');
 
-const BUNDLE_DIR = path.join(__dirname, 'bundle');
+// Remotion 4.x bundles to ./build by default (ignores --output flag)
+const BUNDLE_DIR = path.join(__dirname, 'build');
 const BUNDLE_INTERNAL_PORT = 9000;
 const API_PORT = parseInt(process.env.PORT || '8080', 10);
 const BUNDLE_URL = `http://127.0.0.1:${BUNDLE_INTERNAL_PORT}`;

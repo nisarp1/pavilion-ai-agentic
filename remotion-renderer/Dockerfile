@@ -11,7 +11,8 @@ COPY src/ ./src/
 COPY public/ ./public/
 
 # Pre-bundle the Remotion composition at build time (slow once, fast at render)
-RUN npx remotion bundle src/index.ts --output ./bundle
+# Note: Remotion 4.x outputs to ./build regardless of --output flag
+RUN npx remotion bundle src/index.ts
 
 # ── Stage 2: runtime image ───────────────────────────────────────────────────
 FROM node:20-bookworm-slim
@@ -52,8 +53,8 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev --prefer-offline
 
-# Copy pre-built bundle and server
-COPY --from=bundler /app/bundle ./bundle
+# Copy pre-built bundle (Remotion 4.x outputs to ./build) and server
+COPY --from=bundler /app/build ./build
 COPY server.js ./
 
 EXPOSE 8080

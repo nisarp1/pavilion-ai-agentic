@@ -3,20 +3,25 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "bundle": "npx remotion bundle src/index.ts --output ./bundle",
+    "bundle": "npx remotion bundle src/index.ts",
     "start": "node server.js",
     "dev": "node server.js"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.7.0",
+    "@remotion/animation-utils": "4.0.320",
     "@remotion/bundler": "4.0.320",
+    "@remotion/captions": "4.0.320",
     "@remotion/cli": "4.0.320",
     "@remotion/google-fonts": "4.0.320",
+    "@remotion/layout-utils": "4.0.320",
+    "@remotion/media-utils": "4.0.320",
     "@remotion/renderer": "4.0.320",
     "express": "^4.18.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "remotion": "4.0.320"
+    "remotion": "4.0.320",
+    "zod": "^3.22.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

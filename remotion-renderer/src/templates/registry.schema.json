@@ -1,0 +1,164 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "remotion-template-registry",
+  "title": "Pavilion Remotion Template Registry Schema",
+  "description": "Defines the structure for registering Remotion video scene templates. Each entry maps a template ID to its Remotion composition, props, assets, and suitability metadata used by the agentic pipeline for mix-and-match video generation.",
+  "type": "object",
+  "required": ["version", "templates"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Semantic version of this registry file"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp of last registry update"
+    },
+    "templates": {
+      "type": "array",
+      "description": "All available scene templates",
+      "items": { "$ref": "#/definitions/Template" }
+    }
+  },
+  "definitions": {
+    "Template": {
+      "type": "object",
+      "required": ["id", "composition_id", "name", "category", "description", "duration", "props", "assets", "suitable_for", "tags", "file"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Snake-case unique identifier used in the agent pipeline (e.g. 'hero_headline')"
+        },
+        "composition_id": {
+          "type": "string",
+          "description": "Exact Remotion <Composition id> string registered in Root.tsx (e.g. 'HeroHeadline')"
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable display name"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["opening", "player", "scoreboard", "comparison", "quote", "ticker", "transition", "outro", "custom"],
+          "description": "Broad visual category for grouping and mix-and-match logic"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the visual layout, animations, and best use-cases. Written for both humans and LLM agents."
+        },
+        "thumbnail_url": {
+          "type": "string",
+          "description": "Optional preview image URL (relative path or https://)"
+        },
+        "duration": {
+          "type": "object",
+          "required": ["default_seconds", "default_frames"],
+          "properties": {
+            "default_seconds": { "type": "number" },
+            "default_frames": { "type": "integer" },
+            "min_seconds": { "type": "number" },
+            "max_seconds": { "type": "number" }
+          }
+        },
+        "props": {
+          "type": "object",
+          "required": ["required", "optional"],
+          "properties": {
+            "required": {
+              "type": "array",
+              "description": "Props that MUST be provided — pipeline will fail without these",
+              "items": { "$ref": "#/definitions/PropDefinition" }
+            },
+            "optional": {
+              "type": "array",
+              "description": "Props that have sensible defaults — pipeline works without these",
+              "items": { "$ref": "#/definitions/PropDefinition" }
+            }
+          }
+        },
+        "assets": {
+          "type": "array",
+          "description": "Image/video/audio slots needed by this template",
+          "items": { "$ref": "#/definitions/AssetSlot" }
+        },
+        "suitable_for": {
+          "type": "array",
+          "description": "Content-type tags the agent uses to match this template to a story",
+          "items": { "type": "string" }
+        },
+        "tags": {
+          "type": "array",
+          "description": "Free-form tags for filtering and search (mood, style, sport, language)",
+          "items": { "type": "string" }
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to the TSX component file relative to remotion-renderer/src/ (e.g. 'scenes/Scene1.tsx')"
+        },
+        "exported_component": {
+          "type": "string",
+          "description": "Named export from the file (defaults to PascalCase of id if omitted)"
+        },
+        "clips": {
+          "type": "array",
+          "description": "Timeline clip descriptors used by the Video Studio editor",
+          "items": { "$ref": "#/definitions/ClipDescriptor" }
+        },
+        "source": {
+          "type": "string",
+          "enum": ["builtin", "library", "custom"],
+          "default": "builtin",
+          "description": "Where this template came from"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "beta", "deprecated"],
+          "default": "active"
+        }
+      }
+    },
+    "PropDefinition": {
+      "type": "object",
+      "required": ["key", "type"],
+      "properties": {
+        "key": { "type": "string", "description": "Prop name as used in the TSX component" },
+        "type": {
+          "type": "string",
+          "enum": ["string", "number", "boolean", "string[]", "StatItem[]", "ComparisonStat[]", "object"],
+          "description": "TypeScript type of this prop"
+        },
+        "description": { "type": "string" },
+        "default": { "description": "Default value (any JSON-serializable type)" },
+        "example": { "description": "Example value to show agents" }
+      }
+    },
+    "AssetSlot": {
+      "type": "object",
+      "required": ["slot", "type"],
+      "properties": {
+        "slot": { "type": "string", "description": "Prop key that receives the asset URL" },
+        "type": {
+          "type": "string",
+          "enum": ["image", "video", "audio", "lottie"],
+          "description": "Media type expected"
+        },
+        "description": { "type": "string", "description": "What image/video is ideal for this slot" },
+        "required": { "type": "boolean", "default": false },
+        "aspect_ratio": { "type": "string", "description": "Preferred aspect ratio hint (e.g. '9:16', '1:1', '16:9')" },
+        "search_hint": { "type": "string", "description": "Hint for the ImageFetcherAgent to find a good match" }
+      }
+    },
+    "ClipDescriptor": {
+      "type": "object",
+      "required": ["id", "label", "track"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "track": { "type": "integer" },
+        "color": { "type": "string", "description": "Hex color for the Video Studio timeline" }
+      }
+    }
+  }
+}

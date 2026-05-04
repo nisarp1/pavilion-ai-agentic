@@ -125,3 +125,4 @@ backend/credentials/
 backend/credentials/
 backend/**/*.key.json
 backend/**/*credentials*
+remotion-renderer/src/templates/my-video/

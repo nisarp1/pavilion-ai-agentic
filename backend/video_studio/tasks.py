@@ -29,9 +29,14 @@ def render_video_task(self, job_id: str):
         if job.audio_url:
             props['audioSrc'] = job.audio_url
 
+        # Extract compositionId stored by the pipeline (pops it so it's not
+        # passed as a Remotion prop — the renderer treats it separately)
+        composition_id = props.pop('_compositionId', None) or 'PavilionReel'
+        logger.info(f"[VideoJob {job_id}] compositionId={composition_id}")
+
         # ── Try Cloud Run renderer; fallback to manifest JSON if not configured ─
         try:
-            result = trigger_render(props, job_id, output_blob)
+            result = trigger_render(props, job_id, output_blob, composition_id=composition_id)
         except ValueError as cfg_err:
             # Cloud Run not configured — upload props as a manifest JSON to GCS
             logger.warning(f"[VideoJob {job_id}] Cloud Run not configured: {cfg_err}. Uploading manifest fallback.")

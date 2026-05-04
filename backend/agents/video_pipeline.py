@@ -29,6 +29,7 @@ from agents.scene_templates_catalog import (
     get_all_templates_by_id,
 )
 from agents.image_fetcher import ImageFetcherAgent, inject_assets_into_plan
+from agents.template_matcher import TEMPLATE_TOOLS, get_compact_catalog_text
 
 logger = logging.getLogger(__name__)
 
@@ -111,8 +112,12 @@ class VideoProductionPipeline:
                 "You are a video production engineer who specializes in automated video "
                 "composition. You know every available scene template inside-out and can "
                 "pick the perfect combination to tell any sports story. You output precise "
-                "JSON structures that directly feed into the Remotion rendering engine."
+                "JSON structures that directly feed into the Remotion rendering engine. "
+                "Use the TemplateMatcher tool to query templates by content type before "
+                "finalising your scene plan — this gives you filtered, up-to-date template "
+                "info without token waste. Use TemplateDetail only for templates you pick."
             ),
+            tools=TEMPLATE_TOOLS,
             verbose=True,
             allow_delegation=False,
             llm=self.llm_model,
@@ -172,6 +177,10 @@ class VideoProductionPipeline:
         format_specs = get_format_specs()
         chosen_format = format_specs.get(video_format, format_specs["reel"])
 
+        raw_content_section = ""
+        if context.get("raw_content"):
+            raw_content_section = f"\n=== RAW SOURCE CONTENT (use ALL key details from this) ===\n{context['raw_content'][:3000]}\n"
+
         script_task_description = f"""
 You are writing a script for a Pavilion-branded Malayalam sports video.
 
@@ -182,6 +191,12 @@ Facts:
 {chr(10).join('- ' + f for f in context['facts'])}
 Thumbnail URL: {context.get('thumbnail_url', 'N/A')}
 Duration Hint: {context.get('duration_hint_seconds', 60)} seconds
+{raw_content_section}
+CRITICAL SCRIPT REQUIREMENTS:
+- You MUST cover ALL key facts, player names, match scores, statistics, and specific events from the SOURCE CONTENT above.
+- Do NOT generalize — use exact names, numbers, and results.
+- The script must feel like it was written by someone who actually watched/read the source material.
+- Every important detail in the source content should appear somewhere in the script.
 
 === VIDEO FORMAT ===
 Format: {video_format} ({chosen_format['label']})
@@ -228,8 +243,10 @@ Output a valid JSON object with these keys:
         # ── Step 3: Scene Planning (LLM) ───────────────────────────────────
         logger.info("Step 3/3: Planning scenes and assets...")
 
-        # Use the full catalog (including DB templates)
-        catalog_text = get_full_catalog_text()
+        # Use compact catalog for the prompt — agent calls TemplateMatcher tool
+        # for filtered lookups and TemplateDetail for full prop definitions.
+        # This saves ~400 tokens vs injecting the full catalog text every call.
+        catalog_text = get_compact_catalog_text()
 
         style_instructions = ""
         if style_context and style_context.get("template_sequence"):
@@ -243,7 +260,15 @@ Output a valid JSON object with these keys:
         scene_task_description = f"""
 Based on the script writer's output, plan the final video composition.
 
-=== AVAILABLE SCENE TEMPLATES ===
+=== TEMPLATE LOOKUP TOOLS ===
+You have two tools to query templates efficiently:
+- TemplateMatcher: pass content_types list → get top matching templates
+- TemplateDetail: pass template_id → get full prop definitions for chosen templates
+
+Use TemplateMatcher FIRST to discover the best templates, then TemplateDetail
+only for the templates you actually pick.
+
+=== TEMPLATE OVERVIEW (compact — use tools for details) ===
 {catalog_text}
 
 === VIDEO FORMAT ===
@@ -252,15 +277,17 @@ Resolution: {chosen_format['resolution']['w']}×{chosen_format['resolution']['h'
 FPS: 30
 
 === INSTRUCTIONS ===
-1. Plan the video scene-by-scene.
-2. For a REEL: Typically 3-6 scenes to keep it engaging for 30-60 seconds.
-3. For a SHORT: Plan 8-15 scenes.
-4. For a LONG video: Plan as many scenes as needed (30+).
+1. Call TemplateMatcher with the content types from the script to get ranked template suggestions.
+2. Plan the video scene-by-scene.
+3. For a REEL: Typically 3-6 scenes to keep it engaging for 30-60 seconds.
+4. For a SHORT: Plan 8-15 scenes.
+5. For a LONG video: Plan as many scenes as needed (30+).
 
 CRITICAL INSTRUCTION FOR SCENE TEMPLATES:
-- You MUST MIX AND MATCH the available templates. 
+- You MUST MIX AND MATCH the available templates.
 - DO NOT use the same template repeatedly for every scene.
-- If the catalog has `hero_headline` and `player_card`, use BOTH in the video to keep it visually dynamic.
+- Use `captioned_video` when the content is a voiceover video that needs auto-subtitles.
+- Use `hero_headline` + `player_card` + `ticker_headline` combos to keep sports reels dynamic.
 {style_instructions}
 
 For each scene:
@@ -357,6 +384,22 @@ Output a valid JSON object:
 
         # Build props from scene plan and style context
         props = self._build_props(scene_plan, script_data, style_context)
+
+        # Determine which Remotion composition to render based on the scene plan.
+        # If ALL scenes use the captioned_video template, route to CaptionedVideo.
+        # Everything else renders through PavilionReel.
+        TEMPLATE_BY_ID = get_all_templates_by_id()
+        planned_composition_ids = {
+            TEMPLATE_BY_ID.get(s.get("template_id", ""), {}).get("composition_id", "PavilionReel")
+            for s in scene_plan.get("scenes", [])
+        }
+        if planned_composition_ids == {"CaptionedVideo"}:
+            props["_compositionId"] = "CaptionedVideo"
+        else:
+            props["_compositionId"] = "PavilionReel"
+            # Inject resolved scenes array so PavilionReel renders modularly.
+            # Asset placeholders ({{ASSET:xxx}}) are resolved later by inject_assets_into_plan.
+            props["scenes"] = scene_plan.get("scenes", [])
 
         # Build assets list
         assets = scene_plan.get("assets_needed", [])

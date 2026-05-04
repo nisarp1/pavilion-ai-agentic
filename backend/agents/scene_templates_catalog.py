@@ -1,21 +1,16 @@
 """
 Scene Templates Catalog — Registry of available Remotion compositions.
 
-Each template entry describes:
-  - id: unique key used in the pipeline
-  - name: human-readable name
-  - description: what the scene looks like
-  - duration_seconds: default duration
-  - required_props: list of prop keys that MUST be filled
-  - optional_props: list of prop keys that have sensible defaults
-  - assets: list of asset slots that need images/videos
-  - suitable_for: list of content types this template works well for
+Source of truth is remotion-renderer/src/templates/registry.json (loaded via
+template_registry.py). The hardcoded SCENE_TEMPLATES list below is kept as a
+last-resort fallback only — prefer editing registry.json to add/change templates.
 
-This catalog is passed as context to the Scene Planner agent so it can
-intelligently pick and sequence templates.
+Priority order for get_all_templates():
+  1. DB StyleLibrary (verified custom overrides — highest priority)
+  2. registry.json entries (primary — includes CaptionedVideo and all builtins)
+  3. Hardcoded SCENE_TEMPLATES (fallback if registry.json is missing)
 
-NOTE: This file now also supports dynamic templates from the Style Library DB.
-Use get_all_templates() to get catalog + library templates combined.
+Use get_all_templates() everywhere. Do NOT use SCENE_TEMPLATES directly.
 """
 
 SCENE_TEMPLATES = [
@@ -296,24 +291,39 @@ def get_full_catalog_text():
 
 def get_all_templates():
     """
-    Return all templates: hardcoded catalog + active library templates from DB.
-    Library templates override catalog entries with the same template_id.
+    Return all templates: registry.json + DB StyleLibrary overrides.
+
+    Priority (highest wins):
+      1. DB StyleLibrary (verified custom templates)
+      2. registry.json  (primary — edit this file to add templates)
+      3. Hardcoded SCENE_TEMPLATES (last-resort fallback)
     """
-    templates = list(SCENE_TEMPLATES)
+    # Start with registry.json as base
+    try:
+        from agents.template_registry import get_registry_templates
+        templates = get_registry_templates()
+        if not templates:
+            raise ValueError("Registry returned empty list")
+    except Exception as reg_err:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"[Catalog] Falling back to hardcoded templates: {reg_err}"
+        )
+        templates = list(SCENE_TEMPLATES)
+
     template_ids = {t["id"] for t in templates}
 
+    # Layer DB StyleLibrary on top (verified templates override registry entries)
     try:
         from style_library.models import StyleTemplate
         for tpl in StyleTemplate.objects.filter(is_active=True, is_verified=True):
             entry = tpl.to_catalog_entry()
             if entry["id"] in template_ids:
-                # Library template overrides catalog — replace
                 templates = [t for t in templates if t["id"] != entry["id"]]
             template_ids.add(entry["id"])
             templates.append(entry)
     except Exception:
-        # DB not available or app not installed yet — just use hardcoded
-        pass
+        pass  # DB not available — use registry only
 
     return templates
 

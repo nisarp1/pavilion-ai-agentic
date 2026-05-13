@@ -37,6 +37,12 @@ local_settings.py
 /static/
 /staticfiles/
 db.sqlite3
+backend/media/
+
+# Generated / installer files
+aws/
+awscliv2.zip
+config_output.txt
 
 # Node & Frontend
 node_modules/

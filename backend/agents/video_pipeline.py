@@ -77,6 +77,29 @@ def _safe_json_extract(text: str) -> dict:
 
 # ── Timeline builder helpers ───────────────────────────────────────────────────
 
+def _word_timings_to_captions(word_timings: list) -> list:
+    """
+    Convert [{word, start_ms, end_ms}] → Caption[] for @remotion/captions.
+
+    Caption type: {text, startMs, endMs, timestampMs, confidence}
+
+    Words after the first are prefixed with a space so that
+    createTikTokStyleCaptions() can group them into pages by the
+    combineTokensWithinMilliseconds threshold (space-prefix triggers page-splitting).
+    """
+    words = [wt for wt in word_timings if wt.get("word", "").strip()]
+    return [
+        {
+            "text":        wt["word"] if i == 0 else f" {wt['word']}",
+            "startMs":     wt["start_ms"],
+            "endMs":       wt["end_ms"],
+            "timestampMs": wt["start_ms"],
+            "confidence":  None,
+        }
+        for i, wt in enumerate(words)
+    ]
+
+
 def _chunk_word_timings(word_timings: list, max_chars: int = 14) -> list:
     """
     Group word timings into subtitle chunks of at most max_chars characters.
@@ -187,6 +210,7 @@ def build_timeline(
         "shortTitle": short_title,
         "elements": elements,
         "text": _chunk_word_timings(word_timings, max_chars=14),
+        "wordCaptions": _word_timings_to_captions(word_timings),
         "audio": [{"startMs": 0, "endMs": total_duration_ms, "audioUrl": audio_url}],
     }
 

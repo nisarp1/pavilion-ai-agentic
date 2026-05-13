@@ -7,10 +7,10 @@ import {
   SortableContext, rectSortingStrategy, useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { updateAssetUrl, reorderAssets, setAssets, setAudioUrl } from '../../store/slices/videoStudioSlice'
+import { updateAssetUrl, reorderAssets, setAssets, setAudioUrl, setVideoData } from '../../store/slices/videoStudioSlice'
 import {
   FiMic, FiFilm, FiPackage, FiCopy, FiCheck, FiUpload, FiLink,
-  FiX, FiMenu, FiImage, FiVideo, FiList, FiPlus,
+  FiX, FiMenu, FiImage, FiVideo, FiList, FiPlus, FiEdit3, FiSave,
 } from 'react-icons/fi'
 import api from '../../services/api'
 import { showSuccess, showError } from '../../utils/toast'
@@ -52,43 +52,80 @@ function VoiceoverTab({ plan }) {
   const dispatch = useDispatch()
   const audioUrl = useSelector(s => s.videoStudio.audioUrl)
 
-  const [elLoading, setElLoading] = useState(false)
-  const [elError,   setElError]   = useState('')
-  const [elUrl,     setElUrl]     = useState('')   // URL from this session's generation
+  const [elLoading,   setElLoading]   = useState(false)
+  const [gtLoading,   setGtLoading]   = useState(false)
+  const [elError,     setElError]     = useState('')
+  const [elUrl,       setElUrl]       = useState('')
+  const [editing,     setEditing]     = useState(false)
+  const [editedScript, setEditedScript] = useState('')
 
   const vo     = plan.voiceover || {}
   const script = vo.script_plain || ''
 
-  // ElevenLabs is active if the backend flagged it on the plan,
-  // or if we just generated it this session.
+  const activeScript = editing ? editedScript : script
+
   const isElevenLabsActive = plan.audio_source === 'elevenlabs' || !!elUrl
+  const isGoogleTTSActive  = plan.audio_source === 'google_tts'
+
+  const resolveAudioUrl = (raw) =>
+    raw.startsWith('/') ? `${window.location.origin}${raw}` : raw
+
+  const refreshPlan = useCallback(async (url) => {
+    const articleRes = await api.get(`/articles/${plan.article_id}/`)
+    const freshPlan  = articleRes.data.video_production_plan || {}
+    const freshProps = freshPlan.modular_props || freshPlan.props || {}
+    dispatch(setVideoData({
+      props:    Object.keys(freshProps).length ? freshProps : undefined,
+      audioUrl: url,
+    }))
+  }, [plan.article_id, dispatch])
 
   const handleGenerateElevenLabs = useCallback(async () => {
-    if (!plan.article_id) {
-      setElError('Article must be saved first (run the pipeline on an article)')
-      return
-    }
-    setElLoading(true)
-    setElError('')
+    if (!plan.article_id) { setElError('Run the pipeline on an article first'); return }
+    setElLoading(true); setElError('')
     try {
-      const res = await api.post(`/articles/${plan.article_id}/generate_elevenlabs_audio/`)
+      const res = await api.post(`/articles/${plan.article_id}/generate_elevenlabs_audio/`, {
+        script: activeScript || undefined,
+      })
       if (res.data.status === 'success') {
-        // Backend returns a relative /media/... URL (same as TTS pipeline).
-        // Convert to absolute so the <audio> element and Remotion renderer can fetch it.
-        const raw = res.data.audio_url
-        const url = raw.startsWith('/') ? `${window.location.origin}${raw}` : raw
+        const url = resolveAudioUrl(res.data.audio_url)
         setElUrl(url)
-        dispatch(setAudioUrl(url))
+        await refreshPlan(url)
+        setEditing(false)
         showSuccess('ElevenLabs audio ready — render will use this track')
       }
     } catch (err) {
       const msg = err.response?.data?.error || 'ElevenLabs generation failed'
-      setElError(msg)
+      setElError(msg); showError(msg)
+    } finally { setElLoading(false) }
+  }, [plan.article_id, activeScript, refreshPlan])
+
+  const handleGenerateGoogleTTS = useCallback(async () => {
+    if (!plan.article_id) { showError('Run the pipeline on an article first'); return }
+    setGtLoading(true); setElError('')
+    try {
+      const res = await api.post(`/articles/${plan.article_id}/generate_google_tts_audio/`, {
+        script: activeScript || undefined,
+      })
+      if (res.data.status === 'success') {
+        const url = resolveAudioUrl(res.data.audio_url)
+        await refreshPlan(url)
+        setElUrl('')  // clear ElevenLabs session flag
+        setEditing(false)
+        showSuccess('Google TTS audio ready')
+      }
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Google TTS generation failed'
       showError(msg)
-    } finally {
-      setElLoading(false)
-    }
-  }, [plan.article_id, dispatch])
+    } finally { setGtLoading(false) }
+  }, [plan.article_id, activeScript, refreshPlan])
+
+  const handleEditToggle = () => {
+    if (!editing) setEditedScript(script)
+    setEditing(v => !v)
+  }
+
+  const anyLoading = elLoading || gtLoading
 
   return (
     <div className="space-y-4">
@@ -96,11 +133,39 @@ function VoiceoverTab({ plan }) {
       <div>
         <div className="flex items-center justify-between mb-2">
           <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Script (Malayalam)</h4>
-          <CopyButton text={script} />
+          <div className="flex items-center gap-1">
+            <CopyButton text={activeScript} />
+            <button
+              onClick={handleEditToggle}
+              className={`p-1 rounded transition-colors ${editing ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600'}`}
+              title={editing ? 'Cancel edit' : 'Edit script'}
+            >
+              {editing ? <FiX size={13} /> : <FiEdit3 size={13} />}
+            </button>
+          </div>
         </div>
-        <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap border border-gray-100 max-h-48 overflow-y-auto">
-          {script || <span className="text-gray-400 italic">No script generated</span>}
-        </div>
+
+        {editing ? (
+          <textarea
+            value={editedScript}
+            onChange={e => setEditedScript(e.target.value)}
+            className="w-full bg-white rounded-xl p-3 text-sm text-gray-700 leading-relaxed border border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y"
+            rows={8}
+            dir="auto"
+            autoFocus
+          />
+        ) : (
+          <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap border border-gray-100 max-h-48 overflow-y-auto">
+            {script || <span className="text-gray-400 italic">No script generated</span>}
+          </div>
+        )}
+
+        {editing && (
+          <p className="text-[10px] text-blue-500 mt-1">
+            Edited script will be used for the next generation and saved back to the plan.
+          </p>
+        )}
+
         <div className="flex gap-4 mt-2 text-xs text-gray-400">
           <span>⏱ ~{vo.estimated_duration_seconds || vo.duration_seconds || '?'}s</span>
           <span>🌐 {vo.language || 'ml-IN'}</span>
@@ -114,9 +179,7 @@ function VoiceoverTab({ plan }) {
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Audio Track</span>
           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-            isElevenLabsActive
-              ? 'bg-violet-100 text-violet-700'
-              : 'bg-sky-100 text-sky-700'
+            isElevenLabsActive ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'
           }`}>
             {isElevenLabsActive ? '🎙️ ElevenLabs' : '☁️ Google TTS'}
           </span>
@@ -124,47 +187,54 @@ function VoiceoverTab({ plan }) {
 
         {/* Native audio player */}
         {audioUrl && (
-          <audio
-            key={audioUrl}
-            controls
-            src={audioUrl}
-            className="w-full"
-            style={{ height: 32 }}
-          />
+          <audio key={audioUrl} controls src={audioUrl} className="w-full" style={{ height: 32 }} />
         )}
 
-        {/* ElevenLabs CTA */}
-        <div className="space-y-1.5">
-          {elError && (
-            <p className="text-[10px] text-red-500 leading-snug">{elError}</p>
-          )}
-          <button
-            onClick={handleGenerateElevenLabs}
-            disabled={elLoading || !script}
-            className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-40 ${
-              isElevenLabsActive
-                ? 'bg-violet-100 text-violet-700 border border-violet-200 hover:bg-violet-200'
-                : 'bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:from-violet-700 hover:to-purple-700'
-            }`}
-          >
-            {elLoading
-              ? <><span className="animate-spin inline-block">⏳</span> Generating…</>
-              : isElevenLabsActive
-              ? '🎙️ Regenerate ElevenLabs Audio'
-              : '🎙️ Generate ElevenLabs Audio'
-            }
-          </button>
-          {!isElevenLabsActive && (
-            <p className="text-[9px] text-gray-400 text-center">
-              Paid API · only trigger for final approved reels
-            </p>
-          )}
-          {isElevenLabsActive && (
-            <p className="text-[9px] text-violet-500 text-center font-medium">
-              ✓ ElevenLabs audio active — render will use this track
-            </p>
-          )}
-        </div>
+        {elError && <p className="text-[10px] text-red-500 leading-snug">{elError}</p>}
+
+        {/* Google TTS — playground / testing */}
+        <button
+          onClick={handleGenerateGoogleTTS}
+          disabled={anyLoading || !activeScript}
+          className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-40 ${
+            isGoogleTTSActive && !isElevenLabsActive
+              ? 'bg-sky-100 text-sky-700 border border-sky-200 hover:bg-sky-200'
+              : 'bg-gradient-to-r from-sky-500 to-blue-500 text-white hover:from-sky-600 hover:to-blue-600'
+          }`}
+        >
+          {gtLoading
+            ? <><span className="animate-spin inline-block">⏳</span> Generating…</>
+            : isGoogleTTSActive && !isElevenLabsActive
+            ? '☁️ Regenerate (Google TTS)'
+            : '☁️ Generate (Google TTS)'
+          }
+        </button>
+        <p className="text-[9px] text-gray-400 text-center -mt-1">Free · for playground & testing</p>
+
+        {/* ElevenLabs — production */}
+        <button
+          onClick={handleGenerateElevenLabs}
+          disabled={anyLoading || !activeScript}
+          className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-40 ${
+            isElevenLabsActive
+              ? 'bg-violet-100 text-violet-700 border border-violet-200 hover:bg-violet-200'
+              : 'bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:from-violet-700 hover:to-purple-700'
+          }`}
+        >
+          {elLoading
+            ? <><span className="animate-spin inline-block">⏳</span> Generating…</>
+            : isElevenLabsActive
+            ? '🎙️ Regenerate (ElevenLabs)'
+            : '🎙️ Generate (ElevenLabs)'
+          }
+        </button>
+        <p className="text-[9px] text-gray-400 text-center -mt-1">Paid API · for final approved reels only</p>
+
+        {isElevenLabsActive && (
+          <p className="text-[9px] text-violet-500 text-center font-medium">
+            ✓ ElevenLabs audio active — render will use this track
+          </p>
+        )}
       </div>
     </div>
   )

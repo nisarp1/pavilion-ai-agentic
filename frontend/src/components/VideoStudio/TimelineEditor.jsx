@@ -1,16 +1,33 @@
 import { useEffect, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import { updateClip, selectClip, setCurrentFrame, resetClips, pushHistory, addClip } from '../../store/slices/videoStudioSlice'
+import {
+  updateClip, selectClip, setCurrentFrame, resetClips, pushHistory, addClip,
+  toggleVisible, toggleLocked,
+} from '../../store/slices/videoStudioSlice'
+import {
+  FiEye, FiEyeOff, FiLock, FiUnlock, FiChevronDown, FiChevronRight,
+  FiImage, FiVideo, FiMic, FiType,
+} from 'react-icons/fi'
 
 const RULER_HEIGHT = 28
 const TRACK_HEIGHT = 34
+const EXPANDED_HEIGHT = 90
 const HANDLE_WIDTH = 8
 const FPS = 30
+const LABEL_WIDTH = 148
 
 function frameToTime(frame) {
   const s = Math.floor(frame / FPS)
   const f = frame % FPS
   return `${s}s ${String(f).padStart(2, '0')}f`
+}
+
+function trackIcon(clip) {
+  if (clip.type === 'image') return <FiImage size={9} />
+  if (clip.type === 'video') return <FiVideo size={9} />
+  if (clip.type === 'audio' || clip.id === 'audio') return <FiMic size={9} />
+  if (clip.type === 'text') return <FiType size={9} />
+  return null
 }
 
 function RulerRow({ zoom, currentFrame, maxFrames, onRulerMouseDown }) {
@@ -34,44 +51,67 @@ function RulerRow({ zoom, currentFrame, maxFrames, onRulerMouseDown }) {
           )}
         </div>
       ))}
-      {/* Playhead on ruler */}
       <div style={{ position: 'absolute', left: currentFrame * zoom - 1, top: 0, bottom: 0, width: 2, background: '#ef4444', pointerEvents: 'none', zIndex: 5 }} />
     </div>
   )
 }
 
-function ClipBar({ clip, zoom, isSelected, onSelect, onMouseDownMove, onMouseDownLeft, onMouseDownRight }) {
+function ClipBar({ clip, zoom, isSelected, rowHeight, onSelect, onMouseDownMove, onMouseDownLeft, onMouseDownRight }) {
   const left = clip.globalStartFrame * zoom
   const width = Math.max(clip.durationFrames * zoom, HANDLE_WIDTH * 2 + 4)
+  const isHidden = clip.visible === false
+
   return (
     <div
-      style={{ position: 'absolute', left, top: 3, width, height: TRACK_HEIGHT - 6, borderRadius: 5, background: clip.color, cursor: 'grab', outline: isSelected ? '2px solid white' : '2px solid transparent', outlineOffset: -1, zIndex: 2, overflow: 'hidden', userSelect: 'none' }}
-      onMouseDown={e => { e.stopPropagation(); onSelect(); onMouseDownMove(e) }}
+      style={{
+        position: 'absolute', left, top: 3,
+        width, height: rowHeight - 6,
+        borderRadius: 5, background: clip.color,
+        cursor: clip.locked ? 'not-allowed' : 'grab',
+        outline: isSelected ? '2px solid white' : '2px solid transparent',
+        outlineOffset: -1, zIndex: 2, overflow: 'hidden', userSelect: 'none',
+        opacity: isHidden ? 0.35 : 1,
+      }}
+      onMouseDown={e => { e.stopPropagation(); onSelect(); if (!clip.locked) onMouseDownMove(e) }}
       onClick={e => e.stopPropagation()}
     >
       {/* Left resize handle */}
-      <div
-        style={{ position: 'absolute', left: 0, top: 0, width: HANDLE_WIDTH, height: '100%', cursor: 'w-resize', background: 'rgba(0,0,0,0.25)', zIndex: 3 }}
-        onMouseDown={e => { e.stopPropagation(); onSelect(); onMouseDownLeft(e) }}
-        onClick={e => e.stopPropagation()}
-      />
-      <span style={{ position: 'absolute', left: HANDLE_WIDTH + 4, right: HANDLE_WIDTH + 4, top: 0, bottom: 0, display: 'flex', alignItems: 'center', fontSize: 10, color: 'rgba(255,255,255,0.95)', fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+      {!clip.locked && (
+        <div
+          style={{ position: 'absolute', left: 0, top: 0, width: HANDLE_WIDTH, height: '100%', cursor: 'w-resize', background: 'rgba(0,0,0,0.25)', zIndex: 3 }}
+          onMouseDown={e => { e.stopPropagation(); onSelect(); onMouseDownLeft(e) }}
+          onClick={e => e.stopPropagation()}
+        />
+      )}
+
+      {/* Thumbnail strip for image clips when row is expanded */}
+      {clip.src && clip.type === 'image' && rowHeight > TRACK_HEIGHT && (
+        <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+          <img
+            src={clip.src}
+            alt=""
+            style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.55 }}
+          />
+        </div>
+      )}
+      {clip.src && clip.type === 'video' && rowHeight > TRACK_HEIGHT && (
+        <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+          <video src={clip.src} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.55 }} muted />
+        </div>
+      )}
+
+      <span style={{ position: 'absolute', left: HANDLE_WIDTH + 4, right: HANDLE_WIDTH + 4, top: 0, bottom: 0, display: 'flex', alignItems: 'center', fontSize: 10, color: 'rgba(255,255,255,0.95)', fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 4, textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
         {clip.label}
       </span>
-      {/* Right resize handle */}
-      <div
-        style={{ position: 'absolute', right: 0, top: 0, width: HANDLE_WIDTH, height: '100%', cursor: 'e-resize', background: 'rgba(0,0,0,0.25)', zIndex: 3 }}
-        onMouseDown={e => { e.stopPropagation(); onSelect(); onMouseDownRight(e) }}
-        onClick={e => e.stopPropagation()}
-      />
-    </div>
-  )
-}
 
-function Playhead({ frame, zoom, totalTrackHeight }) {
-  return (
-    <div style={{ position: 'absolute', left: frame * zoom, top: 0, bottom: 0, width: 2, background: '#ef4444', pointerEvents: 'none', zIndex: 10 }}>
-      <div style={{ width: 10, height: 10, background: '#ef4444', borderRadius: '50%', transform: 'translateX(-4px)', marginTop: -2 }} />
+      {/* Right resize handle */}
+      {!clip.locked && (
+        <div
+          style={{ position: 'absolute', right: 0, top: 0, width: HANDLE_WIDTH, height: '100%', cursor: 'e-resize', background: 'rgba(0,0,0,0.25)', zIndex: 3 }}
+          onMouseDown={e => { e.stopPropagation(); onSelect(); onMouseDownRight(e) }}
+          onClick={e => e.stopPropagation()}
+        />
+      )}
     </div>
   )
 }
@@ -82,16 +122,23 @@ export default function TimelineEditor() {
   const [zoom, setZoom] = useState(3)
   const [dragState, setDragState] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
+  const [expandedTracks, setExpandedTracks] = useState(new Set())
   const scrollRef = useRef(null)
-  const isDraggingRef = useRef(false)
 
-  // Track labels column width
-  const LABEL_WIDTH = 96
-
-  // Sort clips by track
   const sortedClips = [...clips].sort((a, b) => a.track - b.track)
-
   const maxFrames = clips.reduce((m, c) => Math.max(m, c.globalStartFrame + c.durationFrames), 420)
+
+  function rowHeight(clip) {
+    return expandedTracks.has(clip.id) ? EXPANDED_HEIGHT : TRACK_HEIGHT
+  }
+
+  function toggleExpand(clipId) {
+    setExpandedTracks(prev => {
+      const next = new Set(prev)
+      next.has(clipId) ? next.delete(clipId) : next.add(clipId)
+      return next
+    })
+  }
 
   function handleRulerMouseDown(e) {
     const rect = scrollRef.current.getBoundingClientRect()
@@ -99,23 +146,19 @@ export default function TimelineEditor() {
     const xInCanvas = e.clientX - rect.left - LABEL_WIDTH + scrollLeft
     const frame = Math.max(0, Math.min(maxFrames - 1, Math.round(xInCanvas / zoom)))
     dispatch(setCurrentFrame(frame))
-    // Allow dragging playhead along ruler
     const onMove = (moveE) => {
       const x = moveE.clientX - rect.left - LABEL_WIDTH + scrollRef.current.scrollLeft
       dispatch(setCurrentFrame(Math.max(0, Math.min(maxFrames - 1, Math.round(x / zoom)))))
     }
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
+    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
   }
 
   function startDrag(e, clip, type) {
+    if (clip.locked) return
     e.preventDefault()
     dispatch(pushHistory())
-    isDraggingRef.current = true
     setDragState({ clipId: clip.id, type, startX: e.clientX, originalStartFrame: clip.globalStartFrame, originalDuration: clip.durationFrames })
   }
 
@@ -126,24 +169,20 @@ export default function TimelineEditor() {
       const deltaFrames = Math.round(deltaPx / zoom)
       let changes = {}
       if (dragState.type === 'move') {
-        changes = { globalStartFrame: dragState.originalStartFrame + deltaFrames }
+        changes = { globalStartFrame: Math.max(0, dragState.originalStartFrame + deltaFrames) }
       } else if (dragState.type === 'left') {
-        changes = { globalStartFrame: dragState.originalStartFrame + deltaFrames, durationFrames: dragState.originalDuration - deltaFrames }
+        const newStart = Math.max(0, dragState.originalStartFrame + deltaFrames)
+        const dur = dragState.originalDuration - (newStart - dragState.originalStartFrame)
+        changes = { globalStartFrame: newStart, durationFrames: dur }
       } else if (dragState.type === 'right') {
         changes = { durationFrames: dragState.originalDuration + deltaFrames }
       }
       dispatch(updateClip({ id: dragState.clipId, changes }))
     }
-    const handleUp = () => {
-      setDragState(null)
-      isDraggingRef.current = false
-    }
+    const handleUp = () => setDragState(null)
     window.addEventListener('mousemove', handleMove)
     window.addEventListener('mouseup', handleUp)
-    return () => {
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
-    }
+    return () => { window.removeEventListener('mousemove', handleMove); window.removeEventListener('mouseup', handleUp) }
   }, [dragState, zoom, dispatch])
 
   useEffect(() => {
@@ -153,7 +192,6 @@ export default function TimelineEditor() {
     return () => window.removeEventListener('mousedown', close)
   }, [addOpen])
 
-  const totalTrackHeight = sortedClips.length * TRACK_HEIGHT
   const canvasWidth = maxFrames * zoom
 
   return (
@@ -164,36 +202,25 @@ export default function TimelineEditor() {
         <span className="text-xs text-red-400 font-mono w-20">{frameToTime(currentFrame)}</span>
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500">Zoom</span>
-          <input
-            type="range" min="1" max="8" step="0.5" value={zoom}
-            onChange={e => setZoom(Number(e.target.value))}
-            className="w-20 h-1 accent-blue-500 cursor-pointer"
-          />
+          <input type="range" min="1" max="8" step="0.5" value={zoom} onChange={e => setZoom(Number(e.target.value))} className="w-20 h-1 accent-blue-500 cursor-pointer" />
           <span className="text-xs text-gray-600 font-mono">{zoom}×</span>
         </div>
         <div className="flex-1" />
 
-        {/* Add Track dropdown */}
+        {/* Add Track */}
         <div style={{ position: 'relative' }} onMouseDown={e => e.stopPropagation()}>
-          <button
-            onClick={() => setAddOpen(v => !v)}
-            className="text-xs text-gray-400 hover:text-white px-2 py-0.5 rounded border border-gray-700 hover:border-gray-500 transition-colors flex items-center gap-1"
-          >
+          <button onClick={() => setAddOpen(v => !v)} className="text-xs text-gray-400 hover:text-white px-2 py-0.5 rounded border border-gray-700 hover:border-gray-500 transition-colors flex items-center gap-1">
             ＋ Add Track
           </button>
           {addOpen && (
             <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: '#1e293b', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden', zIndex: 50, minWidth: 160 }}>
               {[
-                { type: 'image', label: 'Image Track' },
-                { type: 'video', label: 'Video Track' },
-                { type: 'audio', label: 'Audio Track' },
-                { type: 'text',  label: 'Text Track'  },
+                { type: 'image', label: '🖼 Image Track' },
+                { type: 'video', label: '🎬 Video Track' },
+                { type: 'audio', label: '🎵 Audio Track' },
+                { type: 'text',  label: '✏️ Text Track'  },
               ].map(({ type, label }) => (
-                <button
-                  key={label}
-                  onClick={() => { dispatch(addClip({ type })); setAddOpen(false) }}
-                  className="block w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
-                >
+                <button key={type} onClick={() => { dispatch(addClip({ type })); setAddOpen(false) }} className="block w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-white/10 hover:text-white transition-colors">
                   {label}
                 </button>
               ))}
@@ -201,11 +228,8 @@ export default function TimelineEditor() {
           )}
         </div>
 
-        <button
-          onClick={() => dispatch(resetClips())}
-          className="text-xs text-gray-400 hover:text-white px-2 py-0.5 rounded border border-gray-700 hover:border-gray-500 transition-colors"
-        >
-          Reset clips
+        <button onClick={() => dispatch(resetClips())} className="text-xs text-gray-400 hover:text-white px-2 py-0.5 rounded border border-gray-700 hover:border-gray-500 transition-colors">
+          Reset
         </button>
       </div>
 
@@ -213,47 +237,100 @@ export default function TimelineEditor() {
       <div ref={scrollRef} className="flex-1 overflow-x-auto overflow-y-auto" style={{ position: 'relative' }}>
         <div style={{ display: 'flex', minHeight: '100%' }}>
 
-          {/* Track label column (sticky left) */}
+          {/* Track label column */}
           <div style={{ width: LABEL_WIDTH, flexShrink: 0, background: '#0f172a', borderRight: '1px solid #1e293b', zIndex: 20, position: 'sticky', left: 0 }}>
+            {/* Corner header */}
             <div style={{ height: RULER_HEIGHT, borderBottom: '1px solid #334155', display: 'flex', alignItems: 'center', paddingLeft: 8, position: 'sticky', top: 0, zIndex: 26, background: '#0f172a' }}>
-              <span style={{ fontSize: 9, color: '#475569', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Track</span>
+              <span style={{ fontSize: 9, color: '#475569', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Layers</span>
             </div>
-            {sortedClips.map(clip => (
-              <div
-                key={clip.id}
-                style={{ height: TRACK_HEIGHT, display: 'flex', alignItems: 'center', paddingLeft: 8, borderBottom: '1px solid #1e293b', cursor: 'pointer', background: selectedClipId === clip.id ? 'rgba(255,255,255,0.04)' : 'transparent' }}
-                onClick={() => dispatch(selectClip(selectedClipId === clip.id ? null : clip.id))}
-              >
-                <div style={{ width: 8, height: 8, borderRadius: 2, background: clip.color, flexShrink: 0, marginRight: 6 }} />
-                <span style={{ fontSize: 9, color: '#94a3b8', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: 68 }}>{clip.label}</span>
-              </div>
-            ))}
+
+            {sortedClips.map(clip => {
+              const rh = rowHeight(clip)
+              const isHidden = clip.visible === false
+              const isLocked = clip.locked === true
+              const isExpanded = expandedTracks.has(clip.id)
+              return (
+                <div
+                  key={clip.id}
+                  style={{ height: rh, display: 'flex', alignItems: 'center', paddingLeft: 6, paddingRight: 4, borderBottom: '1px solid #1e293b', gap: 3, background: selectedClipId === clip.id ? 'rgba(255,255,255,0.04)' : 'transparent', cursor: 'pointer', transition: 'height 0.15s' }}
+                  onClick={() => dispatch(selectClip(selectedClipId === clip.id ? null : clip.id))}
+                >
+                  {/* Color dot + type icon */}
+                  <div style={{ position: 'relative', flexShrink: 0 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 2, background: clip.color, opacity: isHidden ? 0.4 : 1 }} />
+                    <div style={{ position: 'absolute', top: -3, right: -3, color: '#94a3b8', opacity: 0.7 }}>
+                      {trackIcon(clip)}
+                    </div>
+                  </div>
+
+                  {/* Label */}
+                  <span style={{ fontSize: 9, color: isHidden ? '#475569' : '#94a3b8', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
+                    {clip.label}
+                  </span>
+
+                  {/* Controls (stop propagation so they don't select the clip) */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                    {/* Visibility toggle */}
+                    <button
+                      onClick={() => dispatch(toggleVisible(clip.id))}
+                      title={isHidden ? 'Show layer' : 'Hide layer'}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: isHidden ? '#475569' : '#64748b', display: 'flex', alignItems: 'center' }}
+                    >
+                      {isHidden ? <FiEyeOff size={10} /> : <FiEye size={10} />}
+                    </button>
+
+                    {/* Lock toggle */}
+                    <button
+                      onClick={() => dispatch(toggleLocked(clip.id))}
+                      title={isLocked ? 'Unlock layer' : 'Lock layer'}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: isLocked ? '#f59e0b' : '#64748b', display: 'flex', alignItems: 'center' }}
+                    >
+                      {isLocked ? <FiLock size={10} /> : <FiUnlock size={10} />}
+                    </button>
+
+                    {/* Expand toggle (image/video only) */}
+                    {(clip.type === 'image' || clip.type === 'video') && (
+                      <button
+                        onClick={() => toggleExpand(clip.id)}
+                        title={isExpanded ? 'Collapse row' : 'Expand row'}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#64748b', display: 'flex', alignItems: 'center' }}
+                      >
+                        {isExpanded ? <FiChevronDown size={10} /> : <FiChevronRight size={10} />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
 
           {/* Timeline canvas */}
           <div style={{ position: 'relative', flexShrink: 0, width: canvasWidth }}>
             <RulerRow zoom={zoom} currentFrame={currentFrame} maxFrames={maxFrames} onRulerMouseDown={handleRulerMouseDown} />
 
-            {/* Track rows */}
-            {sortedClips.map((clip, idx) => (
-              <div
-                key={clip.id}
-                style={{ position: 'relative', height: TRACK_HEIGHT, borderBottom: '1px solid #1e293b', background: idx % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent' }}
-                onClick={() => dispatch(selectClip(null))}
-              >
-                <ClipBar
-                  clip={clip}
-                  zoom={zoom}
-                  isSelected={selectedClipId === clip.id}
-                  onSelect={() => dispatch(selectClip(clip.id))}
-                  onMouseDownMove={e => clip.id !== 'chrome' && clip.id !== 'audio' && startDrag(e, clip, 'move')}
-                  onMouseDownLeft={e => clip.id !== 'chrome' && clip.id !== 'audio' && startDrag(e, clip, 'left')}
-                  onMouseDownRight={e => clip.id !== 'chrome' && clip.id !== 'audio' && startDrag(e, clip, 'right')}
-                />
-              </div>
-            ))}
+            {sortedClips.map((clip, idx) => {
+              const rh = rowHeight(clip)
+              return (
+                <div
+                  key={clip.id}
+                  style={{ position: 'relative', height: rh, borderBottom: '1px solid #1e293b', background: idx % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent', transition: 'height 0.15s' }}
+                  onClick={() => dispatch(selectClip(null))}
+                >
+                  <ClipBar
+                    clip={clip}
+                    zoom={zoom}
+                    rowHeight={rh}
+                    isSelected={selectedClipId === clip.id}
+                    onSelect={() => dispatch(selectClip(clip.id))}
+                    onMouseDownMove={e => clip.id !== 'chrome' && clip.id !== 'audio' && startDrag(e, clip, 'move')}
+                    onMouseDownLeft={e => clip.id !== 'chrome' && clip.id !== 'audio' && startDrag(e, clip, 'left')}
+                    onMouseDownRight={e => clip.id !== 'chrome' && clip.id !== 'audio' && startDrag(e, clip, 'right')}
+                  />
+                </div>
+              )
+            })}
 
-            {/* Playhead line across all tracks */}
+            {/* Playhead */}
             <div style={{ position: 'absolute', left: currentFrame * zoom, top: RULER_HEIGHT, bottom: 0, width: 1, background: 'rgba(239,68,68,0.6)', pointerEvents: 'none', zIndex: 10 }} />
           </div>
         </div>

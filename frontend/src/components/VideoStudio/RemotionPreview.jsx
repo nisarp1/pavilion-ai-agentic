@@ -66,6 +66,12 @@ export default function RemotionPreview({ props }) {
     ? (audioUrl.startsWith('/') ? `${window.location.origin}${audioUrl}` : audioUrl)
     : null
 
+  // ── Detect pipeline mode ───────────────────────────────────────────────────
+  // Must be declared BEFORE any useEffect that references it in its dependency
+  // array — const is not hoisted past its declaration (temporal dead zone).
+  const isTimelinePipeline = Boolean(props?.timeline)
+  isTimelinePipelineRef.current = isTimelinePipeline
+
   // ── Native audio element: load & buffer whenever URL changes ───────────────
   useEffect(() => {
     const audio = audioRef.current
@@ -86,10 +92,6 @@ export default function RemotionPreview({ props }) {
   }, [resolvedAudioUrl])
 
   // ── Sync native audio with Remotion Player events ──────────────────────────
-  // For the timeline pipeline, the composition has a 1-second intro card
-  // (INTRO_FRAMES = 30) before audio starts. The native <audio> element must
-  // be held silent during those frames and its currentTime offset accordingly.
-  // For the legacy clips pipeline (introOffset = 0) behaviour is unchanged.
   useEffect(() => {
     const player = playerRef.current
     const audio  = audioRef.current
@@ -100,17 +102,24 @@ export default function RemotionPreview({ props }) {
     const introOffset = () => isTimelinePipelineRef.current ? INTRO_FRAMES : 0
     const toAudioTime = (frame) => (frame - introOffset()) / FPS
 
+    const setPitchPreserving = () => {
+      audio.preservesPitch = true
+      audio.mozPreservesPitch = true  // Firefox
+      audio.webkitPreservesPitch = true  // older Safari
+    }
+
     const onPlay = () => {
       if (!resolvedAudioUrl) return
       const frame = player.getCurrentFrame()
       const t = toAudioTime(frame)
+      setPitchPreserving()
       if (t < 0) {
-        // Still in intro card — hold audio at 0, start it when intro ends
         audio.currentTime = 0
         audio.pause()
         waitingForIntroRef.current = true
       } else {
         audio.currentTime = t
+        audio.playbackRate = 1.0
         waitingForIntroRef.current = false
         audio.play().catch(() => {})
       }
@@ -118,15 +127,16 @@ export default function RemotionPreview({ props }) {
 
     const onPause = () => {
       audio.pause()
+      audio.playbackRate = 1.0
       waitingForIntroRef.current = false
     }
 
     const onSeeked = ({ detail }) => {
       const t = toAudioTime(detail.frame)
+      audio.playbackRate = 1.0
       if (t < 0) {
         audio.currentTime = 0
         audio.pause()
-        // If playing, arm the intro-wait so audio resumes when content starts
         if (player.isPlaying()) waitingForIntroRef.current = true
       } else {
         audio.currentTime = t
@@ -140,6 +150,7 @@ export default function RemotionPreview({ props }) {
     const onEnded = () => {
       audio.pause()
       audio.currentTime = 0
+      audio.playbackRate = 1.0
       waitingForIntroRef.current = false
     }
 
@@ -147,13 +158,31 @@ export default function RemotionPreview({ props }) {
       if (detail?.playbackRate) audio.playbackRate = detail.playbackRate
     }
 
-    // Fire audio start the moment the player crosses from intro into content
+    // Drift correction via playbackRate — never seek mid-playback.
+    // Remotion's RAF clock and the audio hardware clock diverge ~2-4ms/s.
+    // We nudge playbackRate proportionally: 1% rate change per 0.15s of drift,
+    // capped at ±3%.  At 3% the pitch shift is inaudible (well below 1 semitone).
+    // This closes a 150ms gap in ~5 seconds with no audible break.
     const onFrameUpdate = ({ detail }) => {
-      if (!waitingForIntroRef.current) return
-      if (detail.frame >= introOffset() && player.isPlaying()) {
-        audio.currentTime = toAudioTime(detail.frame)
-        audio.play().catch(() => {})
-        waitingForIntroRef.current = false
+      if (waitingForIntroRef.current) {
+        if (detail.frame >= introOffset() && player.isPlaying()) {
+          setPitchPreserving()
+          audio.currentTime = toAudioTime(detail.frame)
+          audio.playbackRate = 1.0
+          audio.play().catch(() => {})
+          waitingForIntroRef.current = false
+        }
+        return
+      }
+
+      if (player.isPlaying() && !audio.paused && resolvedAudioUrl) {
+        const expected = toAudioTime(detail.frame)
+        if (expected >= 0) {
+          const driftS = expected - audio.currentTime
+          // Proportional rate: 1% per 0.15s drift, clamped ±3%
+          const rate = 1.0 + Math.max(-0.03, Math.min(0.03, driftS / 0.15))
+          audio.playbackRate = rate
+        }
       }
     }
 
@@ -284,11 +313,6 @@ export default function RemotionPreview({ props }) {
     
     return 'hero_headline'
   }
-
-  // ── Detect pipeline mode ───────────────────────────────────────────────────
-  const isTimelinePipeline = Boolean(props?.timeline)
-  // Keep ref in sync so the audio-sync effect closures always read the current value
-  isTimelinePipelineRef.current = isTimelinePipeline
 
   // ── Timeline pipeline: use AIVideoComposition ─────────────────────────────
   const timelineTotalFrames = (() => {

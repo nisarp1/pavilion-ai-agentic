@@ -1018,7 +1018,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
 
                             if ml_word_timings and result.get('timeline'):
                                 try:
-                                    from agents.video_pipeline import _chunk_word_timings
+                                    from agents.video_pipeline import _chunk_word_timings, _word_timings_to_captions
                                     ml_ms = [
                                         {
                                             'word':     t['word'],
@@ -1029,16 +1029,19 @@ class ArticleViewSet(viewsets.ModelViewSet):
                                         if 'start_s' in t and 'end_s' in t
                                     ]
                                     if ml_ms:
-                                        total_ms  = ml_ms[-1]['end_ms']
-                                        new_text  = _chunk_word_timings(ml_ms)
-                                        new_audio = [{'startMs': 0, 'endMs': total_ms, 'audioUrl': audio_url}]
-                                        result['timeline']['text']  = new_text
-                                        result['timeline']['audio'] = new_audio
+                                        total_ms      = ml_ms[-1]['end_ms']
+                                        new_text      = _chunk_word_timings(ml_ms)
+                                        new_captions  = _word_timings_to_captions(ml_ms)
+                                        new_audio     = [{'startMs': 0, 'endMs': total_ms, 'audioUrl': audio_url}]
+                                        result['timeline']['text']         = new_text
+                                        result['timeline']['wordCaptions'] = new_captions
+                                        result['timeline']['audio']        = new_audio
                                         for _key in ('props', 'modular_props'):
                                             _tl = result.get(_key, {}).get('timeline')
                                             if _tl:
-                                                _tl['text']  = new_text
-                                                _tl['audio'] = new_audio
+                                                _tl['text']         = new_text
+                                                _tl['wordCaptions'] = new_captions
+                                                _tl['audio']        = new_audio
                                 except Exception as _tl_err:
                                     import logging as _logging
                                     _logging.getLogger(__name__).warning(
@@ -1124,7 +1127,8 @@ class ArticleViewSet(viewsets.ModelViewSet):
 
         article = self.get_object()
         plan    = article.video_production_plan or {}
-        script  = plan.get('voiceover', {}).get('script_plain', '')
+        # Prefer script from request body (editor override) over stored plan script
+        script  = (request.data.get('script') or '').strip() or plan.get('voiceover', {}).get('script_plain', '')
 
         if not script:
             return Response(
@@ -1134,11 +1138,15 @@ class ArticleViewSet(viewsets.ModelViewSet):
 
         try:
             from agents.elevenlabs_agent import ElevenLabsAgent
+            from agents.video_pipeline import _word_timings_to_captions
             agent = ElevenLabsAgent()
 
-            _logger.info(f"[ElevenLabs] Starting generation for article {pk} ({len(script)} chars)")
-            audio_bytes = agent.synthesize(script=script)
-            _logger.info(f"[ElevenLabs] Received {len(audio_bytes)} bytes from ElevenLabs API")
+            _logger.info(f"[ElevenLabs] Starting chunked generation for article {pk} ({len(script)} chars)")
+            audio_bytes, word_timings = agent.synthesize_with_timings_chunked(script=script)
+            _logger.info(
+                f"[ElevenLabs] Received {len(audio_bytes)} bytes, "
+                f"{len(word_timings)} word timings (chunked)"
+            )
 
             # Save as local Django media file — avoids GCS ACL issues entirely
             filename = f'elevenlabs_{article.pk}_{_uuid.uuid4().hex[:8]}.mp3'
@@ -1149,27 +1157,51 @@ class ArticleViewSet(viewsets.ModelViewSet):
             )
 
             # Return the relative /media/... URL — same pattern as the existing TTS pipeline.
-            # The Vite proxy handles /media/ → Django, and the frontend converts to absolute
-            # using window.location.origin (see VideoStudio.jsx load logic).
             audio_url = article.instagram_reel_audio.url   # e.g. /media/articles/reels/...
 
-            # Rough MP3 duration at ~128 kbps
-            duration_seconds = round(len(audio_bytes) / (128 * 1000 / 8), 1)
+            # Use actual duration from word timings (last word end), fall back to bitrate estimate
+            if word_timings:
+                duration_seconds = round(word_timings[-1]['end_ms'] / 1000, 1)
+            else:
+                duration_seconds = round(len(audio_bytes) / (128 * 1000 / 8), 1)
 
-            # Persist on article — store relative URL, consistent with reel_audio_url pattern
-            article.elevenlabs_audio_url = audio_url
+            # ── Build wordCaptions from ElevenLabs character-level timestamps ──
+            # ElevenLabs returns precise character timestamps — far more accurate
+            # than Google STT for ElevenLabs-generated audio. No STT step needed.
+            word_captions = _word_timings_to_captions(word_timings) if word_timings else []
+
+            # ── Update plan with new audio URL + word captions ────────────────
             updated_plan = dict(plan)
             updated_plan['audio_url']    = audio_url
             updated_plan['audio_source'] = 'elevenlabs'
+            # Persist edited script back to plan so future runs use the correct text
+            updated_plan.setdefault('voiceover', {})['script_plain'] = script
+
+            if word_captions:
+                for _key in ('timeline', 'props', 'modular_props'):
+                    _tl = updated_plan.get(_key) if _key == 'timeline' \
+                        else (updated_plan.get(_key) or {}).get('timeline')
+                    if _tl:
+                        _tl['wordCaptions'] = word_captions
+                        _tl['audio'] = [{'startMs': 0, 'endMs': int(duration_seconds * 1000), 'audioUrl': audio_url}]
+                if 'voiceover' in updated_plan:
+                    updated_plan['voiceover']['word_timings'] = word_timings
+
+            # Persist on article
+            article.elevenlabs_audio_url = audio_url
             article.video_production_plan = updated_plan
             article.save(update_fields=['instagram_reel_audio', 'elevenlabs_audio_url', 'video_production_plan'])
 
-            _logger.info(f"[ElevenLabs] Article {article.pk}: saved ~{duration_seconds}s → {audio_url}")
+            _logger.info(
+                f"[ElevenLabs] Article {article.pk}: {duration_seconds}s, "
+                f"{len(word_captions)} word captions → {audio_url}"
+            )
 
             return Response({
                 'status':           'success',
                 'audio_url':        audio_url,
                 'duration_seconds': duration_seconds,
+                'word_timings_count': len(word_timings),
                 'voice_id':         agent._voice_id,
             })
 
@@ -1179,6 +1211,89 @@ class ArticleViewSet(viewsets.ModelViewSet):
             _logger.error(f"[ElevenLabs] Generation failed for article {pk}: {e}", exc_info=True)
             return Response(
                 {'error': f'ElevenLabs generation failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @action(detail=True, methods=['post'], url_path='generate_google_tts_audio')
+    def generate_google_tts_audio(self, request, pk=None):
+        """
+        Generate Google Cloud TTS audio for playground / testing.
+        Accepts optional `script` body param — if provided it overrides the
+        stored plan script and the edit is persisted back to the plan.
+        Free-tier friendly: saves audio as a local Django media file.
+        """
+        import logging as _logging
+        import uuid as _uuid
+        from django.core.files.base import ContentFile
+
+        _logger = _logging.getLogger(__name__)
+
+        article = self.get_object()
+        plan    = article.video_production_plan or {}
+        script  = (request.data.get('script') or '').strip() or plan.get('voiceover', {}).get('script_plain', '')
+
+        if not script:
+            return Response(
+                {'error': 'No voiceover script found. Run the AI pipeline first.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            from agents.tts_agent import TTSAgent, SAMPLE_RATE
+            from agents.video_pipeline import _word_timings_to_captions
+
+            agent = TTSAgent()
+            _logger.info(f"[GoogleTTS] Starting synthesis for article {pk} ({len(script)} chars)")
+            audio_bytes, word_timings = agent.synthesize_bytes(script=script)
+            _logger.info(f"[GoogleTTS] Got {len(audio_bytes)} bytes, {len(word_timings)} word timings")
+
+            filename = f'google_tts_{article.pk}_{_uuid.uuid4().hex[:8]}.wav'
+            article.instagram_reel_audio.save(filename, ContentFile(audio_bytes), save=False)
+            audio_url = article.instagram_reel_audio.url
+
+            if word_timings:
+                duration_seconds = round(word_timings[-1]['end_ms'] / 1000, 1)
+            else:
+                data_bytes = max(0, len(audio_bytes) - 44)
+                duration_seconds = round((data_bytes / 2 / SAMPLE_RATE), 1)
+
+            word_captions = _word_timings_to_captions(word_timings) if word_timings else []
+
+            updated_plan = dict(plan)
+            updated_plan['audio_url']    = audio_url
+            updated_plan['audio_source'] = 'google_tts'
+            updated_plan.setdefault('voiceover', {})['script_plain'] = script
+
+            if word_captions:
+                for _key in ('timeline', 'props', 'modular_props'):
+                    _tl = updated_plan.get(_key) if _key == 'timeline' \
+                        else (updated_plan.get(_key) or {}).get('timeline')
+                    if _tl:
+                        _tl['wordCaptions'] = word_captions
+                        _tl['audio'] = [{'startMs': 0, 'endMs': int(duration_seconds * 1000), 'audioUrl': audio_url}]
+                if 'voiceover' in updated_plan:
+                    updated_plan['voiceover']['word_timings'] = word_timings
+
+            # Clear any ElevenLabs flag since we're now using Google TTS
+            article.elevenlabs_audio_url = ''
+            article.video_production_plan = updated_plan
+            article.save(update_fields=['instagram_reel_audio', 'elevenlabs_audio_url', 'video_production_plan'])
+
+            _logger.info(f"[GoogleTTS] Article {article.pk}: {duration_seconds}s, {len(word_captions)} captions → {audio_url}")
+
+            return Response({
+                'status':            'success',
+                'audio_url':         audio_url,
+                'duration_seconds':  duration_seconds,
+                'word_timings_count': len(word_timings),
+            })
+
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            _logger.error(f"[GoogleTTS] Generation failed for article {pk}: {e}", exc_info=True)
+            return Response(
+                {'error': f'Google TTS generation failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

@@ -3,8 +3,9 @@ import { useDispatch, useSelector } from 'react-redux'
 import {
   updateProps, updateStat, addStat, removeStat, setAudioUrl,
   updateClip, removeClip, copyStyle, pasteStyle, pushHistory,
+  toggleVisible, toggleLocked,
 } from '../../store/slices/videoStudioSlice'
-import { FiPlus, FiX, FiRefreshCw, FiCopy, FiClipboard, FiTrash2, FiImage, FiLoader, FiUpload } from 'react-icons/fi'
+import { FiPlus, FiX, FiRefreshCw, FiCopy, FiClipboard, FiTrash2, FiImage, FiLoader, FiUpload, FiEye, FiEyeOff, FiLock, FiUnlock } from 'react-icons/fi'
 import MediaLibrary from '../MediaLibrary/MediaLibrary'
 import api from '../../services/api'
 import { showError } from '../../utils/toast'
@@ -135,6 +136,76 @@ function UploadField({ value, onChange, accept, placeholder }) {
   )
 }
 
+function SliderRow({ label, value, min, max, step = 1, unit = '', onChange }) {
+  return (
+    <div className="flex items-center gap-2 mb-1.5">
+      <span className="text-[10px] text-gray-400 w-16 flex-shrink-0">{label}</span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))} className="flex-1 h-1 accent-blue-500 cursor-pointer" />
+      <span className="text-[10px] text-gray-500 font-mono w-10 text-right flex-shrink-0">{typeof value === 'number' ? (step < 1 ? value.toFixed(2) : Math.round(value)) : value}{unit}</span>
+    </div>
+  )
+}
+
+function MediaFitPanel({ clip, dispatch }) {
+  const update = (changes) => dispatch(updateClip({ id: clip.id, changes }))
+
+  return (
+    <div className="border-t border-gray-100 pt-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fit &amp; Crop</span>
+        <button
+          onClick={() => update({ objectFit: 'cover', scaleX: 1, scaleY: 1, panX: 50, panY: 50, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0 })}
+          className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors"
+        >
+          <FiRefreshCw size={10} /> Reset
+        </button>
+      </div>
+
+      {/* Object Fit */}
+      <Field>
+        <Label>Fit Mode</Label>
+        <div className="flex gap-1">
+          {['cover', 'contain', 'fill'].map(f => (
+            <button
+              key={f}
+              onClick={() => update({ objectFit: f })}
+              className={`flex-1 py-1 rounded text-[11px] font-semibold border transition-colors ${
+                (clip.objectFit ?? 'cover') === f
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300 hover:text-blue-600'
+              }`}
+            >
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      {/* Zoom */}
+      <Field>
+        <Label>Zoom</Label>
+        <SliderRow label="Scale" value={clip.scaleX ?? 1} min={0.5} max={3} step={0.01} onChange={v => update({ scaleX: v, scaleY: v })} />
+      </Field>
+
+      {/* Pan */}
+      <Field>
+        <Label>Pan (reframe)</Label>
+        <SliderRow label="Horizontal" value={clip.panX ?? 50} min={0} max={100} unit="%" onChange={v => update({ panX: v })} />
+        <SliderRow label="Vertical"   value={clip.panY ?? 50} min={0} max={100} unit="%" onChange={v => update({ panY: v })} />
+      </Field>
+
+      {/* Crop */}
+      <Field>
+        <Label>Crop (mask edges)</Label>
+        <SliderRow label="Top"    value={clip.cropTop    ?? 0} min={0} max={50} unit="%" onChange={v => update({ cropTop: v })} />
+        <SliderRow label="Bottom" value={clip.cropBottom ?? 0} min={0} max={50} unit="%" onChange={v => update({ cropBottom: v })} />
+        <SliderRow label="Left"   value={clip.cropLeft   ?? 0} min={0} max={50} unit="%" onChange={v => update({ cropLeft: v })} />
+        <SliderRow label="Right"  value={clip.cropRight  ?? 0} min={0} max={50} unit="%" onChange={v => update({ cropRight: v })} />
+      </Field>
+    </div>
+  )
+}
+
 export default function PropertiesPanel() {
   const dispatch = useDispatch()
   const { selectedClipId, clips, props, audioUrl, copiedStyle } = useSelector(s => s.videoStudio)
@@ -186,6 +257,24 @@ export default function PropertiesPanel() {
         <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: clip.color }} />
         <span className="text-sm font-bold text-gray-700 flex-1 truncate">{clip.label}</span>
         <span className="text-xs text-gray-400 font-mono flex-shrink-0">{startSec}s – {endSec}s</span>
+
+        {/* Visibility toggle */}
+        <button
+          onClick={() => dispatch(toggleVisible(clip.id))}
+          title={clip.visible === false ? 'Show layer' : 'Hide layer'}
+          className={`p-1 transition-colors flex-shrink-0 ${clip.visible === false ? 'text-gray-300' : 'text-gray-400 hover:text-blue-600'}`}
+        >
+          {clip.visible === false ? <FiEyeOff size={13} /> : <FiEye size={13} />}
+        </button>
+
+        {/* Lock toggle */}
+        <button
+          onClick={() => dispatch(toggleLocked(clip.id))}
+          title={clip.locked ? 'Unlock layer' : 'Lock layer'}
+          className={`p-1 transition-colors flex-shrink-0 ${clip.locked ? 'text-amber-500' : 'text-gray-400 hover:text-amber-500'}`}
+        >
+          {clip.locked ? <FiLock size={13} /> : <FiUnlock size={13} />}
+        </button>
 
         <button
           onClick={() => dispatch(copyStyle(clip.id))}
@@ -241,6 +330,7 @@ export default function PropertiesPanel() {
                 <span className="text-xs text-gray-500 font-mono w-10 text-right">{Math.round((clip.opacity ?? 1) * 100)}%</span>
               </div>
             </Field>
+            <MediaFitPanel clip={clip} dispatch={dispatch} />
           </>
         )}
 
@@ -263,6 +353,7 @@ export default function PropertiesPanel() {
                 <span className="text-xs text-gray-500 font-mono w-10 text-right">{Math.round((clip.opacity ?? 1) * 100)}%</span>
               </div>
             </Field>
+            <MediaFitPanel clip={clip} dispatch={dispatch} />
           </>
         )}
 
@@ -406,14 +497,17 @@ export default function PropertiesPanel() {
         )}
 
         {fields.includes('heroSrc') && (
-          <Field>
-            <Label>Hero Image</Label>
-            <ImagePasteField
-              value={clip.customProps?.heroSrc !== undefined ? clip.customProps.heroSrc : props.heroSrc}
-              onChange={url => dispatch(updateClip({ id: clip.id, changes: { customProps: { ...clip.customProps, heroSrc: url } } }))}
-              onPickFromLibrary={() => setMediaPicker({ target: 'heroSrc' })}
-            />
-          </Field>
+          <>
+            <Field>
+              <Label>Hero Image</Label>
+              <ImagePasteField
+                value={clip.customProps?.heroSrc !== undefined ? clip.customProps.heroSrc : props.heroSrc}
+                onChange={url => dispatch(updateClip({ id: clip.id, changes: { customProps: { ...clip.customProps, heroSrc: url } } }))}
+                onPickFromLibrary={() => setMediaPicker({ target: 'heroSrc' })}
+              />
+            </Field>
+            <MediaFitPanel clip={clip} dispatch={dispatch} />
+          </>
         )}
 
         {fields.includes('playerName') && (
@@ -566,15 +660,12 @@ export default function PropertiesPanel() {
           </div>
         )}
 
-        {/* Spatial transform controls (built-in draggable clips + all dynamic clips) */}
-        {(hasSpatial || (isDynamic && clip.type !== 'audio')) && (
+        {/* Position offset — for text and built-in spatial clips only (image/video use MediaFitPanel above) */}
+        {hasSpatial && clip.type !== 'image' && clip.type !== 'video' && (
           <div className="border-t border-gray-100 pt-4 mb-4">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Transform</span>
-              <button
-                onClick={() => dispatch(updateClip({ id: clip.id, changes: { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 } }))}
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors"
-              >
+              <button onClick={() => dispatch(updateClip({ id: clip.id, changes: { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 } }))} className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors">
                 <FiRefreshCw size={10} /> Reset
               </button>
             </div>
@@ -582,40 +673,13 @@ export default function PropertiesPanel() {
               <Label>Position Offset (px)</Label>
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <input
-                    type="number"
-                    value={Math.round(clip.offsetX ?? 0)}
-                    onChange={e => dispatch(updateClip({ id: clip.id, changes: { offsetX: Number(e.target.value) } }))}
-                    placeholder="X"
-                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-center focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
+                  <input type="number" value={Math.round(clip.offsetX ?? 0)} onChange={e => dispatch(updateClip({ id: clip.id, changes: { offsetX: Number(e.target.value) } }))} placeholder="X" className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-center focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                   <span className="block text-center text-xs text-gray-400 mt-0.5">X</span>
                 </div>
                 <div className="flex-1">
-                  <input
-                    type="number"
-                    value={Math.round(clip.offsetY ?? 0)}
-                    onChange={e => dispatch(updateClip({ id: clip.id, changes: { offsetY: Number(e.target.value) } }))}
-                    placeholder="Y"
-                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-center focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
+                  <input type="number" value={Math.round(clip.offsetY ?? 0)} onChange={e => dispatch(updateClip({ id: clip.id, changes: { offsetY: Number(e.target.value) } }))} placeholder="Y" className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-center focus:ring-2 focus:ring-blue-500 focus:outline-none" />
                   <span className="block text-center text-xs text-gray-400 mt-0.5">Y</span>
                 </div>
-              </div>
-            </Field>
-            <Field>
-              <Label>Scale</Label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="range" min="0.2" max="2" step="0.01"
-                  value={clip.scaleX ?? 1}
-                  onChange={e => {
-                    const v = Number(e.target.value)
-                    dispatch(updateClip({ id: clip.id, changes: { scaleX: v, scaleY: v } }))
-                  }}
-                  className="flex-1 h-1.5 accent-blue-500 cursor-pointer"
-                />
-                <span className="text-xs text-gray-500 font-mono w-10 text-right">{Math.round((clip.scaleX ?? 1) * 100)}%</span>
               </div>
             </Field>
           </div>

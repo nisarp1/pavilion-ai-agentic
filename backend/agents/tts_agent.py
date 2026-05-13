@@ -172,13 +172,73 @@ class TTSAgent:
 
         duration_seconds = round(offset_ms / 1000, 2)
 
-        logger.info(f"[TTSAgent] Done: {duration_seconds}s audio → {audio_url}")
+        # ── Replace proportional timings with real STT timestamps ─────────────
+        # Use GCS URI (available for any duration) when upload succeeded;
+        # fall back to inline bytes for short audio when GCS is unavailable.
+        try:
+            from agents.stt_agent import transcribe_for_word_timings
+            gcs_uri = (
+                f"gs://{self._gcs_bucket}/{gcs_path}"
+                if audio_url.startswith("https://")
+                else None
+            )
+            stt_timings = transcribe_for_word_timings(
+                audio_bytes=all_audio_bytes,
+                language_code="ml-IN",
+                encoding="LINEAR16",
+                sample_rate=SAMPLE_RATE,
+                gcs_uri=gcs_uri,
+            )
+            if stt_timings:
+                all_word_timings = stt_timings
+                logger.info(
+                    f"[TTSAgent] STT replaced proportional timings: {len(stt_timings)} real words"
+                )
+        except Exception as _stt_err:
+            logger.warning(f"[TTSAgent] STT step failed, keeping proportional: {_stt_err}")
+
+        logger.info(f"[TTSAgent] Done: {duration_seconds}s audio, {len(all_word_timings)} word timings → {audio_url}")
         return {
             "audio_url":       audio_url,
             "duration_seconds": duration_seconds,
             "word_timings":    all_word_timings,
             "voice_used":      voice_used,
         }
+
+    def synthesize_bytes(self, script: str) -> tuple[bytes, list]:
+        """
+        Synthesize script to raw audio bytes + word timings without GCS upload.
+        Used for local media saves (playground / testing).
+        Returns: (audio_bytes_wav, word_timings [{word, start_ms, end_ms}])
+        """
+        if not script or not script.strip():
+            raise ValueError("TTS script cannot be empty")
+
+        chunks = self._split_script(script)
+        logger.info(f"[TTSAgent] synthesize_bytes: {len(chunks)} chunk(s), {len(script)} chars")
+
+        all_audio_bytes = b""
+        all_word_timings: list = []
+        offset_ms = 0
+
+        for i, chunk in enumerate(chunks):
+            try:
+                audio_bytes, timings, _ = self._synthesize_chunk(chunk, PRIMARY_VOICE)
+            except Exception as e:
+                logger.warning(f"[TTSAgent] Primary voice failed (chunk {i}): {e} — trying fallbacks")
+                audio_bytes, timings, _ = self._synthesize_with_fallback(chunk)
+
+            chunk_duration_ms = self._estimate_duration_ms(audio_bytes)
+            for t in timings:
+                all_word_timings.append({
+                    "word":     t.get("word", ""),
+                    "start_ms": t.get("start_ms", 0) + offset_ms,
+                    "end_ms":   t.get("end_ms", 0) + offset_ms,
+                })
+            offset_ms += chunk_duration_ms
+            all_audio_bytes += audio_bytes
+
+        return all_audio_bytes, all_word_timings
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 

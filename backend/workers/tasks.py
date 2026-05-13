@@ -1372,6 +1372,29 @@ def _get_word_timings_via_wavenet(text: str, words: list, target_duration_s: flo
         return []
 
 
+def _get_stt_word_timings_s(audio_bytes: bytes, encoding: str = "MP3") -> list:
+    """
+    Run Google STT on audio bytes and return [{word, start_s, end_s}].
+    Returns [] on failure so callers keep their existing timings.
+    """
+    try:
+        from agents.stt_agent import transcribe_for_word_timings
+        raw = transcribe_for_word_timings(
+            audio_bytes=audio_bytes,
+            language_code="ml-IN",
+            encoding=encoding,
+        )
+        if not raw:
+            return []
+        return [
+            {"word": t["word"], "start_s": t["start_ms"] / 1000, "end_s": t["end_ms"] / 1000}
+            for t in raw
+        ]
+    except Exception as exc:
+        logger.warning("[TTS] STT helper failed (non-fatal): %s", exc)
+        return []
+
+
 def generate_instagram_reel_audio(article, voice_name='chirp'):
     """
     Generate audio for Instagram Reel script using Google Cloud Text-to-Speech.
@@ -1404,40 +1427,27 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
         elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
         if elevenlabs_key and voice_name.lower() in ['elevenlabs', 'george', 'chirp', 'best']:
             try:
-                logger.info("ElevenLabs API key found. Attempting ElevenLabs for highest quality Malayalam.")
-                # Use the environment variable for voice ID, fallback to standard Malayalam Voice ID
-                voice_id = os.getenv("ELEVENLABS_MALAYALAM_VOICE_ID", "pFZP5JQG7iQjIQuC4Bku") 
-                
-                url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-                headers = {
-                    "Accept": "audio/mpeg",
-                    "Content-Type": "application/json",
-                    "xi-api-key": elevenlabs_key
-                }
-                data = {
-                    "text": text_content,
-                    "model_id": "eleven_multilingual_v2",
-                    "voice_settings": {
-                        "stability": 0.5,
-                        "similarity_boost": 0.75,
-                        "style": 0.3,
-                        "use_speaker_boost": True
-                    }
-                }
-                el_response = requests.post(url, json=data, headers=headers)
-                if el_response.status_code == 200:
-                    audio_filename = f'reel_{article.id}_audio_elevenlabs.mp3'
-                    article.instagram_reel_audio.save(
-                        audio_filename,
-                        ContentFile(el_response.content),
-                        save=True
-                    )
-                    logger.info(f"ElevenLabs Reel audio saved successfully to {audio_filename}")
-                    return {'success': True, 'word_timings': [], 'audio_content': el_response.content}
-                else:
-                    logger.warning(f"ElevenLabs failed ({el_response.status_code}): {el_response.text}. Falling back to Google TTS.")
+                logger.info("ElevenLabs: attempting chunked SDK generation with per-chunk timestamps.")
+                from agents.elevenlabs_agent import ElevenLabsAgent
+                el_agent = ElevenLabsAgent()
+                audio_bytes, el_ms_timings = el_agent.synthesize_with_timings_chunked(script=text_content)
+
+                audio_filename = f'reel_{article.id}_audio_elevenlabs.mp3'
+                article.instagram_reel_audio.save(
+                    audio_filename,
+                    ContentFile(audio_bytes),
+                    save=True
+                )
+                logger.info(f"ElevenLabs: saved {len(audio_bytes)}B, {len(el_ms_timings)} word timings → {audio_filename}")
+
+                # Convert ms→s to match the rest of the tasks.py pipeline
+                el_timings_s = [
+                    {'word': t['word'], 'start_s': t['start_ms'] / 1000, 'end_s': t['end_ms'] / 1000}
+                    for t in el_ms_timings
+                ]
+                return {'success': True, 'word_timings': el_timings_s, 'audio_content': audio_bytes}
             except Exception as el_e:
-                logger.error(f"ElevenLabs connection error: {el_e}. Falling back to Google TTS.")
+                logger.error(f"ElevenLabs error: {el_e}. Falling back to Google TTS.")
 
         # Map voice names
         voice_mapping = {
@@ -1551,6 +1561,12 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
                 word_timings = _proportional_word_timings_s(word_list, total_duration_s)
                 logger.warning("[TTS] WaveNet timing pass unavailable — using proportional fallback")
 
+        # ── Replace timing estimates with real STT timestamps ─────────────────
+        stt_timings = _get_stt_word_timings_s(audio_content, encoding="MP3")
+        if stt_timings:
+            word_timings = stt_timings
+            logger.info(f"[TTS] STT replaced timings: {len(stt_timings)} real word timestamps")
+
         # ── Save audio file ────────────────────────────────────────────
         voice_short_name = used_voice_name.split('-')[-1] if '-' in used_voice_name else used_voice_name
         audio_filename = f'reel_{article.id}_audio_{voice_short_name.lower()}.mp3'
@@ -1565,7 +1581,7 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
         return {
             'success':      True,
             'word_timings': word_timings,
-            'audio_content': audio_content,  # kept in memory for GCS upload if needed
+            'audio_content': audio_content,
         }
 
     except Exception as e:

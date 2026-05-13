@@ -3,7 +3,8 @@
  * Used exclusively by @remotion/player for the in-CMS live preview.
  * Cloud Run uses the TypeScript original in remotion-renderer/.
  */
-import { useEffect } from 'react'
+import { createTikTokStyleCaptions } from '@remotion/captions'
+import { useEffect, useMemo } from 'react'
 import { AbsoluteFill, Img, Sequence, interpolate, useCurrentFrame, useVideoConfig } from 'remotion'
 
 const FPS = 30
@@ -32,15 +33,27 @@ function BackgroundElement({ item, index }) {
   const frame = useCurrentFrame()
   const { durationInFrames } = useVideoConfig()
 
+  if (item.visible === false) return null
+
+  const baseZoom = item.zoom ?? 1
   const animation = item.animations?.[0]
-  let scale = 1
+  let scale = baseZoom
   if (animation?.type === 'scale' && durationInFrames > 1) {
     const progress = Math.min(1, frame / (durationInFrames - 1))
-    scale = interpolate(progress, [0, 1], [animation.from ?? 1, animation.to ?? 1], {
+    scale = baseZoom * interpolate(progress, [0, 1], [animation.from ?? 1, animation.to ?? 1], {
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     })
   }
+
+  const panX       = item.panX       ?? 50
+  const panY       = item.panY       ?? 50
+  const cropTop    = item.cropTop    ?? 0
+  const cropRight  = item.cropRight  ?? 0
+  const cropBottom = item.cropBottom ?? 0
+  const cropLeft   = item.cropLeft   ?? 0
+  const objectFit  = item.objectFit  ?? 'cover'
+  const hasCrop    = cropTop > 0 || cropRight > 0 || cropBottom > 0 || cropLeft > 0
 
   const gradient = GRADIENTS[index % GRADIENTS.length]
   const isHttpUrl = item.imageUrl &&
@@ -54,9 +67,11 @@ function BackgroundElement({ item, index }) {
           style={{
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
+            objectFit,
+            objectPosition: `${panX}% ${panY}%`,
             transform: `scale(${scale})`,
             transformOrigin: 'center center',
+            ...(hasCrop && { clipPath: `inset(${cropTop}% ${cropRight}% ${cropBottom}% ${cropLeft}%)` }),
           }}
         />
       )}
@@ -84,13 +99,45 @@ function SubtitleText({ text }) {
 
   return (
     <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
-      {/* Stroke layer */}
-      <div style={{ ...sharedStyle, color: 'black', WebkitTextStroke: '18px black' }}>
-        {text}
-      </div>
-      {/* Fill layer */}
-      <div style={{ ...sharedStyle, color: 'white' }}>
-        {text}
+      <div style={{ ...sharedStyle, color: 'black', WebkitTextStroke: '18px black' }}>{text}</div>
+      <div style={{ ...sharedStyle, color: 'white' }}>{text}</div>
+    </AbsoluteFill>
+  )
+}
+
+function MalayalamWordCaption({ page, highlightColor = '#FFE600' }) {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const timeInMs = (frame / fps) * 1000
+  const progress = Math.min(1, frame / 5)
+  const scale = 0.85 + 0.15 * progress
+  const dy = (1 - progress) * 40
+
+  return (
+    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', top: undefined, bottom: 160, height: 320, padding: '0 48px' }}>
+      <div style={{
+        fontSize: 80,
+        fontFamily: "'Anek Malayalam', sans-serif",
+        fontWeight: 800,
+        color: 'white',
+        WebkitTextStroke: '14px black',
+        paintOrder: 'stroke',
+        lineHeight: 1.35,
+        textAlign: 'center',
+        width: '100%',
+        wordBreak: 'break-word',
+        transform: `scale(${scale}) translateY(${dy}px)`,
+      }}>
+        {page.tokens.map((t) => {
+          const startRel = t.fromMs - page.startMs
+          const endRel = t.toMs - page.startMs
+          const active = startRel <= timeInMs && endRel > timeInMs
+          return (
+            <span key={t.fromMs} style={{ display: 'inline', whiteSpace: 'pre-wrap', color: active ? highlightColor : 'white' }}>
+              {t.text}
+            </span>
+          )
+        })}
       </div>
     </AbsoluteFill>
   )
@@ -98,6 +145,16 @@ function SubtitleText({ text }) {
 
 export function AIVideoComposition({ timeline }) {
   useFonts()
+
+  const wordCaptions = timeline?.wordCaptions ?? []
+
+  const { pages } = useMemo(() => {
+    if (!wordCaptions.length) return { pages: [] }
+    return createTikTokStyleCaptions({
+      captions: wordCaptions,
+      combineTokensWithinMilliseconds: 1200,
+    })
+  }, [wordCaptions])
 
   if (!timeline) {
     return (
@@ -149,18 +206,30 @@ export function AIVideoComposition({ timeline }) {
         )
       })}
 
-      {/* Caption text chunks synced to audio */}
-      {(timeline.text ?? []).map((element, index) => {
-        const startFrame = Math.floor((element.startMs / 1000) * FPS) + INTRO_DURATION
-        const duration = Math.max(1, Math.ceil(((element.endMs - element.startMs) / 1000) * FPS))
-        return (
-          <Sequence key={`text-${index}`} from={startFrame} durationInFrames={duration}>
-            <SubtitleText text={element.text} />
-          </Sequence>
-        )
-      })}
+      {/* Captions: word-level TikTok highlight (preferred) or phrase fallback */}
+      {pages.length > 0 ? (
+        pages.map((page, i) => {
+          const startFrame = Math.floor((page.startMs / 1000) * FPS) + INTRO_DURATION
+          const durationFrames = Math.max(1, Math.ceil((page.durationMs / 1000) * FPS))
+          return (
+            <Sequence key={`wc-${i}`} from={startFrame} durationInFrames={durationFrames}>
+              <MalayalamWordCaption page={page} />
+            </Sequence>
+          )
+        })
+      ) : (
+        (timeline.text ?? []).map((element, index) => {
+          const startFrame = Math.floor((element.startMs / 1000) * FPS) + INTRO_DURATION
+          const duration = Math.max(1, Math.ceil(((element.endMs - element.startMs) / 1000) * FPS))
+          return (
+            <Sequence key={`text-${index}`} from={startFrame} durationInFrames={duration}>
+              <SubtitleText text={element.text} />
+            </Sequence>
+          )
+        })
+      )}
 
-      {/* Audio is handled by the native <audio> element in RemotionPreview — not here */}
+      {/* Audio is handled by the native <audio> element in RemotionPreview */}
     </AbsoluteFill>
   )
 }

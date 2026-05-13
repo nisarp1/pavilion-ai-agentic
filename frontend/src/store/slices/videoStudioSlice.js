@@ -1,14 +1,16 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import api from '../../services/api'
 
+const CLIP_DEFAULTS = { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, panX: 50, panY: 50, cropTop: 0, cropRight: 0, cropBottom: 0, cropLeft: 0, objectFit: 'cover', visible: true, locked: false }
+
 export const DEFAULT_CLIPS = [
-  { id: 'audio',           label: 'Voiceover',        globalStartFrame: 0,   durationFrames: 420, scene: 0, track: 0, color: '#6366f1', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 },
-  { id: 'chrome',          label: 'Top Chrome',        globalStartFrame: 0,   durationFrames: 420, scene: 0, track: 1, color: '#0284c7', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 },
-  { id: 'scene1-hero',     label: 'Hero Image',        globalStartFrame: 0,   durationFrames: 180, scene: 1, track: 2, color: '#0ea5e9', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 },
-  { id: 'scene1-headline', label: 'Scene 1 Headline',  globalStartFrame: 36,  durationFrames: 144, scene: 1, track: 3, color: '#38bdf8', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 },
-  { id: 'scene2-bg',       label: 'Background',        globalStartFrame: 180, durationFrames: 240, scene: 2, track: 4, color: '#10b981', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 },
-  { id: 'scene2-card',     label: 'Player Card',       globalStartFrame: 189, durationFrames: 231, scene: 2, track: 5, color: '#34d399', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 },
-  { id: 'scene2-headline', label: 'Scene 2 Headline',  globalStartFrame: 222, durationFrames: 198, scene: 2, track: 6, color: '#6ee7b7', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 },
+  { id: 'audio',           label: 'Voiceover',        globalStartFrame: 0,   durationFrames: 420, scene: 0, track: 0, color: '#6366f1', ...CLIP_DEFAULTS },
+  { id: 'chrome',          label: 'Top Chrome',        globalStartFrame: 0,   durationFrames: 420, scene: 0, track: 1, color: '#0284c7', ...CLIP_DEFAULTS },
+  { id: 'scene1-hero',     label: 'Hero Image',        globalStartFrame: 0,   durationFrames: 180, scene: 1, track: 2, color: '#0ea5e9', ...CLIP_DEFAULTS },
+  { id: 'scene1-headline', label: 'Scene 1 Headline',  globalStartFrame: 36,  durationFrames: 144, scene: 1, track: 3, color: '#38bdf8', ...CLIP_DEFAULTS },
+  { id: 'scene2-bg',       label: 'Background',        globalStartFrame: 180, durationFrames: 240, scene: 2, track: 4, color: '#10b981', ...CLIP_DEFAULTS },
+  { id: 'scene2-card',     label: 'Player Card',       globalStartFrame: 189, durationFrames: 231, scene: 2, track: 5, color: '#34d399', ...CLIP_DEFAULTS },
+  { id: 'scene2-headline', label: 'Scene 2 Headline',  globalStartFrame: 222, durationFrames: 198, scene: 2, track: 6, color: '#6ee7b7', ...CLIP_DEFAULTS },
 ]
 
 const DYNAMIC_COLORS = ['#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#84cc16']
@@ -204,8 +206,13 @@ const videoStudioSlice = createSlice({
               durationFrames: Math.max(1, Math.round((el.endMs - el.startMs) / 1000 * FPS)),
               scene: i + 1, track: i + 1,
               color: BG_COLORS[i % BG_COLORS.length],
-              offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1,
               type: 'image', src: el.imageUrl || '',
+              ...CLIP_DEFAULTS,
+              panX: el.panX ?? 50, panY: el.panY ?? 50,
+              cropTop: el.cropTop ?? 0, cropRight: el.cropRight ?? 0,
+              cropBottom: el.cropBottom ?? 0, cropLeft: el.cropLeft ?? 0,
+              objectFit: el.objectFit ?? 'cover',
+              scaleX: el.zoom ?? 1, scaleY: el.zoom ?? 1,
             })),
           ]
           state.nextClipSeq = timelineElements.length + 2
@@ -264,15 +271,38 @@ const videoStudioSlice = createSlice({
     updateClip(state, { payload: { id, changes } }) {
       const clip = state.clips.find(c => c.id === id)
       if (!clip || clip.id === 'audio') return
-      
-      // Dynamic scene constraints if available
       const merged = { ...clip, ...changes }
       const MIN_DUR = 6
       merged.durationFrames = Math.max(MIN_DUR, merged.durationFrames)
-      
-      // If the clip belongs to a scene, we might want to constrain it to that scene's boundaries
-      // but for now let's allow free movement to avoid issues with dynamic scene counts
       Object.assign(clip, merged)
+
+      // Sync visual transform + crop to the corresponding timeline element so the
+      // AIVideo preview picks up changes immediately without a full pipeline re-run.
+      const bgMatch = id.match(/^bg-slot-(\d+)$/)
+      if (bgMatch) {
+        const el = state.props?.timeline?.elements?.[parseInt(bgMatch[1])]
+        if (el) {
+          const syncFields = ['panX', 'panY', 'cropTop', 'cropRight', 'cropBottom', 'cropLeft', 'objectFit', 'visible']
+          for (const f of syncFields) {
+            if (changes[f] !== undefined) el[f] = changes[f]
+          }
+          if (changes.scaleX !== undefined) el.zoom = changes.scaleX
+        }
+      }
+    },
+    toggleVisible(state, { payload: clipId }) {
+      const clip = state.clips.find(c => c.id === clipId)
+      if (!clip) return
+      clip.visible = !(clip.visible ?? true)
+      const bgMatch = clipId.match(/^bg-slot-(\d+)$/)
+      if (bgMatch) {
+        const el = state.props?.timeline?.elements?.[parseInt(bgMatch[1])]
+        if (el) el.visible = clip.visible
+      }
+    },
+    toggleLocked(state, { payload: clipId }) {
+      const clip = state.clips.find(c => c.id === clipId)
+      if (clip) clip.locked = !(clip.locked ?? false)
     },
     addClip(state, { payload: { type } }) {
       pushToHistory(state)
@@ -294,7 +324,7 @@ const videoStudioSlice = createSlice({
         fontSize: 72,
         fontFamily: 'Anek Malayalam',
         opacity: 1,
-        offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1,
+        ...CLIP_DEFAULTS,
         entryAnimation: 'fadeIn',
       }
       state.clips.push(clip)
@@ -432,6 +462,7 @@ export const {
   setAssets, updateAssetUrl, reorderAssets,
   updateClip, addClip, removeClip, duplicateClip, copyStyle, pasteStyle,
   selectClip, setCurrentFrame, resetClips,
+  toggleVisible, toggleLocked,
   pushHistory, undo, redo,
 } = videoStudioSlice.actions
 

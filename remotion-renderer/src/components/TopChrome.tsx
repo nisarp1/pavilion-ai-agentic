@@ -5,6 +5,7 @@ import { MANROPE } from "../fonts";
 interface TopChromeProps {
   brandName?: string;
   accent?: string;
+  logoSrc?: string;
   opacity?: number;
   ty?: number;
 }
@@ -12,6 +13,7 @@ interface TopChromeProps {
 export const TopChrome: React.FC<TopChromeProps> = ({
   brandName = "PAVILIONEND",
   accent = "#FF2D2D",
+  logoSrc,
   opacity = 1,
   ty = 0,
 }) => {
@@ -52,7 +54,7 @@ export const TopChrome: React.FC<TopChromeProps> = ({
         }}
       >
         <Img
-          src={staticFile("logo.png")}
+          src={logoSrc || staticFile("logo.png")}
           style={{ width: "100%", height: "100%", objectFit: "contain" }}
         />
       </div>

@@ -8,6 +8,7 @@ import {
   submitFallbackExport,
   resetProps,
   setVideoData,
+  setAssets,
   undo,
   redo,
   removeClip,
@@ -32,6 +33,7 @@ const RemotionPreview = lazy(() => import('./RemotionPreview'))
 export default function VideoStudio() {
   const dispatch    = useDispatch()
   const videoStudioState = useSelector(s => s.videoStudio)
+  const assets = useSelector(s => s.videoStudio.assets)
   const [searchParams, setSearchParams] = useSearchParams()
 
   // ── Local UI state ──────────────────────────────────────────────────────────
@@ -49,6 +51,14 @@ export default function VideoStudio() {
   const [showGenPanel,    setShowGenPanel]    = useState(false)
 
   // ── MUST come before any early returns – React Rules of Hooks ───────────────
+
+  // Persist assets to localStorage whenever they change (keyed by article ID)
+  useEffect(() => {
+    if (!articleIdParam || !assets.length) return
+    try {
+      localStorage.setItem(`pavilion_assets_${articleIdParam}`, JSON.stringify(assets))
+    } catch {}
+  }, [assets, articleIdParam])
 
   // Load article whenever ?article= param changes
   useEffect(() => {
@@ -70,10 +80,12 @@ export default function VideoStudio() {
 
         const clips    = plan?.clips?.length    ? plan.clips    : []
         const propsData = plan?.modular_props || plan?.props || {}
-        // Audio URL: prefer plan.audio_url, then article reel_audio_url, then article audio_url.
-        // Normalize to absolute — relative /media/... paths only work from localhost
-        // but the render service (Cloud Run) needs a fully-qualified URL.
-        const rawAudioUrl = plan?.audio_url
+        // Audio URL priority: ElevenLabs (premium, manually triggered) > plan.audio_url (Google TTS) > fallbacks.
+        // elevenlabs_audio_url is set on the article when ElevenLabs has been triggered for this reel.
+        // plan.audio_url is also updated to the ElevenLabs URL by the backend on generation,
+        // so this explicit check handles edge cases where plan JSON is stale.
+        const rawAudioUrl = article.elevenlabs_audio_url
+          || plan?.audio_url
           || article.reel_audio_url
           || article.audio_url
           || ''
@@ -88,17 +100,31 @@ export default function VideoStudio() {
         // Captions — word-level ML + sentence-level EN from the production plan
         const captions = plan?.captions || null
 
+        // Restore uploaded asset URLs from localStorage (survive browser refresh)
+        const baseAssets = plan?.assets_needed || []
+        let assetsToLoad = baseAssets
+        try {
+          const stored = localStorage.getItem(`pavilion_assets_${articleIdParam}`)
+          if (stored && baseAssets.length) {
+            const storedAssets = JSON.parse(stored)
+            assetsToLoad = baseAssets.map(a => {
+              const sa = storedAssets.find(s => s.id === a.id)
+              return sa?.url ? { ...a, url: sa.url, status: 'uploaded' } : a
+            })
+          }
+        } catch {}
+
         setEditingJob({ ...article, kind: 'project', production_plan: plan })
         setProductionPlan(plan)
         setShowGenPanel(false)
 
         dispatch(setVideoData({
-          // Merge captions into props so they flow into Remotion inputProps
           props:    Object.keys(propsData).length
             ? { ...propsData, ...(captions ? { captions } : {}) }
             : (captions ? { captions } : undefined),
-          clips:    clips.length ? clips : undefined,   // undefined → keep DEFAULT_CLIPS
+          clips:    clips.length ? clips : undefined,
           audioUrl: audioUrlVal,
+          assets:   assetsToLoad,
         }))
       })
       .catch(() => {
@@ -221,13 +247,22 @@ export default function VideoStudio() {
   }
 
   const handleAgenticRecreation = async () => {
-    if (!referenceUrl) { showError('Please provide a reference URL or topic'); return }
+    // Allow generation from an article even if no URL is typed
+    const hasArticle = editingJob?.id && editingJob?.kind === 'project'
+    if (!referenceUrl && !hasArticle) {
+      showError('Please provide a reference URL, topic, or open an article first')
+      return
+    }
     setPipelineRunning(true)
     showSuccess(`AI Pipeline started (${videoFormat})! Analyzing context, writing script, planning scenes...`)
     try {
       const isUrl = referenceUrl.startsWith('http')
       const payload = {
-        ...(isUrl ? { url: referenceUrl } : { text_prompt: referenceUrl }),
+        // Always send article_id when editing an article
+        ...(hasArticle ? { article_id: editingJob.id } : {}),
+        // URL or text_prompt override/supplement article context
+        ...(referenceUrl && isUrl  ? { url: referenceUrl } : {}),
+        ...(referenceUrl && !isUrl ? { text_prompt: referenceUrl } : {}),
         video_format: videoFormat,
         include_avatar: includeAvatar,
       }
@@ -235,17 +270,23 @@ export default function VideoStudio() {
       if (response.data.status === 'success') {
         const plan = response.data
         setProductionPlan(plan)
+        // Clear stale localStorage assets for this article — fresh pipeline run
+        try {
+          const aid = plan.article_id || articleIdParam
+          if (aid) localStorage.removeItem(`pavilion_assets_${aid}`)
+        } catch {}
         dispatch(setVideoData({
           props:    plan.modular_props || plan.props,
           clips:    plan.clips,
           audioUrl: plan.audio_url || '',
+          assets:   plan.assets_needed || [],
         }))
-        // If a new article was saved, update URL to reflect it
         if (plan.article_id) {
           setSearchParams({ article: String(plan.article_id) })
         }
+        const neededCount = (plan.assets_needed || []).filter(a => a.status === 'needed').length
         const savedMsg = plan.article_id ? ` Saved as draft #${plan.article_id}.` : ''
-        showSuccess(`✅ Pipeline complete! ${plan.assets_needed?.length || 0} assets needed.${savedMsg}`)
+        showSuccess(`✅ Pipeline complete! Upload ${neededCount} asset${neededCount !== 1 ? 's' : ''} in the Assets tab.${savedMsg}`)
       }
     } catch (err) {
       showError('Pipeline failed: ' + (err.response?.data?.error || err.message))
@@ -346,7 +387,7 @@ export default function VideoStudio() {
         <div className="flex items-center gap-2 px-1 py-2 flex-shrink-0 bg-purple-50 border border-purple-100 rounded-xl mt-2">
           <input
             type="text"
-            placeholder="Paste reference URL or topic…"
+            placeholder={editingJob?.id ? "Optional: paste a URL to override article context" : "Paste reference URL or topic…"}
             className="flex-1 min-w-0 bg-white border border-purple-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 placeholder-purple-300"
             value={referenceUrl}
             onChange={e => setReferenceUrl(e.target.value)}

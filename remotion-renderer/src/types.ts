@@ -56,6 +56,10 @@ export interface PavilionReelProps {
   scene2HeadlineColor?: string;
   scene2HeadlineFontSize?: number;
   scene2HeadlineFont?: string;
+  /** If true, templates should NOT render their own internal captions */
+  suppressCaptions?: boolean;
+  /** Optional Whisper JSON URL for global captions */
+  captionsUrl?: string;
 }
 
 export const PAVILION_REEL_DEFAULTS: PavilionReelProps = {

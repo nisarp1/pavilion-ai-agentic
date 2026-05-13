@@ -907,44 +907,68 @@ class ArticleViewSet(viewsets.ModelViewSet):
     def recreate_reel_agentic(self, request):
         """
         AI Video Production Pipeline API.
-        
+
         Accepts:
-          - url: Reference YouTube URL or any context URL
+          - article_id: ID of an existing CMS article to generate a reel from
+          - url: Reference YouTube URL (overrides article context if provided)
           - text_prompt: Free text prompt (alternative to URL)
           - video_format: "reel" | "short" | "long" (default: "reel")
           - include_avatar: boolean (default: false)
-        
-        Returns a complete VideoProductionPlan with:
-          - props (Remotion-compatible)
-          - clips (timeline data)
-          - voiceover script
-          - assets_needed checklist
-          - downloadable production brief
-          - article_id (saved draft for future editing)
         """
-        reference_url = request.data.get('url')
-        text_prompt = request.data.get('text_prompt')
-        video_format = request.data.get('video_format', 'reel')
+        import logging as _logging
+        logger = _logging.getLogger(__name__)
+
+        reference_url  = request.data.get('url')
+        text_prompt    = request.data.get('text_prompt')
+        article_id_req = request.data.get('article_id')
+        video_format   = request.data.get('video_format', 'reel')
         include_avatar = request.data.get('include_avatar', False)
-        
-        if not reference_url and not text_prompt:
+
+        logger.info(
+            f"[Pipeline] recreate_reel_agentic: article_id={article_id_req!r} "
+            f"url={reference_url!r} text_prompt={text_prompt!r}"
+        )
+
+        if not reference_url and not text_prompt and not article_id_req:
             return Response(
-                {'error': 'Provide either a reference URL or text prompt.'},
+                {'error': 'Provide article_id, a reference URL, or a text prompt.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # Validate video_format
+
         if video_format not in ('reel', 'short', 'long'):
             video_format = 'reel'
-            
+
+        # Build article_data dict when an article_id is supplied
+        article_data_for_pipeline = None
+        if article_id_req:
+            try:
+                src_article = Article.objects.get(pk=article_id_req)
+                article_data_for_pipeline = {
+                    'id':                    src_article.id,
+                    'title':                 src_article.title or '',
+                    'summary':               src_article.summary or '',
+                    'content':               src_article.body or '',
+                    'category':              src_article.category or '',
+                    'source_url':            src_article.source_url or '',
+                    'instagram_reel_script': src_article.instagram_reel_script or '',
+                }
+                logger.info(
+                    f"[Pipeline] article_data built: id={src_article.id} "
+                    f"title={src_article.title[:60]!r} "
+                    f"body_len={len(src_article.body or '')} "
+                    f"reel_script_len={len(src_article.instagram_reel_script or '')}"
+                )
+            except Article.DoesNotExist:
+                return Response({'error': f'Article {article_id_req} not found.'}, status=status.HTTP_404_NOT_FOUND)
+
         try:
             from workers.tasks import task_recreate_reel_agentic
-            
-            # Run synchronously so frontend gets immediate results for preview
+
             result = task_recreate_reel_agentic(
-                reference_url or text_prompt,
+                reference_url or text_prompt or '',
                 video_format=video_format,
                 include_avatar=include_avatar,
+                article_data=article_data_for_pipeline,
             )
             
             if result.get('status') == 'success':
@@ -988,8 +1012,39 @@ class ArticleViewSet(viewsets.ModelViewSet):
                             audio_url = article.instagram_reel_audio.url
                             result['audio_url'] = audio_url
 
-                            # \u2500\u2500 Generate caption data \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+                            # Rebuild timeline.text from this audio's word timings so
+                            # captions and playback share one source (no cross-file drift).
                             ml_word_timings = tts_result.get('word_timings', [])
+
+                            if ml_word_timings and result.get('timeline'):
+                                try:
+                                    from agents.video_pipeline import _chunk_word_timings
+                                    ml_ms = [
+                                        {
+                                            'word':     t['word'],
+                                            'start_ms': int(t['start_s'] * 1000),
+                                            'end_ms':   int(t['end_s']   * 1000),
+                                        }
+                                        for t in ml_word_timings
+                                        if 'start_s' in t and 'end_s' in t
+                                    ]
+                                    if ml_ms:
+                                        total_ms  = ml_ms[-1]['end_ms']
+                                        new_text  = _chunk_word_timings(ml_ms)
+                                        new_audio = [{'startMs': 0, 'endMs': total_ms, 'audioUrl': audio_url}]
+                                        result['timeline']['text']  = new_text
+                                        result['timeline']['audio'] = new_audio
+                                        for _key in ('props', 'modular_props'):
+                                            _tl = result.get(_key, {}).get('timeline')
+                                            if _tl:
+                                                _tl['text']  = new_text
+                                                _tl['audio'] = new_audio
+                                except Exception as _tl_err:
+                                    import logging as _logging
+                                    _logging.getLogger(__name__).warning(
+                                        f"Timeline caption rebuild failed (non-fatal): {_tl_err}"
+                                    )
+
                             ml_script = article.instagram_reel_script or ''
                             en_captions = []
                             if ml_word_timings and ml_script:
@@ -1004,13 +1059,14 @@ class ArticleViewSet(viewsets.ModelViewSet):
                                         f"English caption generation failed (non-fatal): {cap_err}"
                                     )
 
-                            # \u2500\u2500 Persist audio_url + captions into the plan JSON \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
                             article.video_production_plan = {
                                 **article.video_production_plan,
                                 'audio_url': audio_url,
+                                'timeline':  result.get('timeline', article.video_production_plan.get('timeline')),
+                                'props':     result.get('props',    article.video_production_plan.get('props')),
                                 'captions': {
-                                    'ml': ml_word_timings,   # [{word, start_s, end_s}]
-                                    'en': en_captions,       # [{text, start_s, end_s}]
+                                    'ml': ml_word_timings,
+                                    'en': en_captions,
                                 },
                             }
                             result['captions'] = article.video_production_plan['captions']
@@ -1043,6 +1099,87 @@ class ArticleViewSet(viewsets.ModelViewSet):
             return Response(
                 {'error': f"Pipeline error: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+    @action(detail=True, methods=['post'], url_path='generate_elevenlabs_audio')
+    def generate_elevenlabs_audio(self, request, pk=None):
+        """
+        Manually trigger ElevenLabs TTS for the article's Malayalam voiceover.
+        PAID API — only trigger for final approved reels.
+
+        Audio is saved as a local Django media file (same pattern as the Google TTS
+        pipeline) to avoid GCS uniform-bucket-level-access ACL issues.
+
+        On success:
+          - Saves MP3 to media/articles/reels/elevenlabs_{id}_{uuid}.mp3
+          - Saves absolute URL to article.elevenlabs_audio_url
+          - Updates plan.audio_url + plan.audio_source so renders use ElevenLabs audio
+        """
+        import logging as _logging
+        import uuid as _uuid
+        from django.core.files.base import ContentFile
+
+        _logger = _logging.getLogger(__name__)
+
+        article = self.get_object()
+        plan    = article.video_production_plan or {}
+        script  = plan.get('voiceover', {}).get('script_plain', '')
+
+        if not script:
+            return Response(
+                {'error': 'No voiceover script found in production plan. Run the AI pipeline first.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            from agents.elevenlabs_agent import ElevenLabsAgent
+            agent = ElevenLabsAgent()
+
+            _logger.info(f"[ElevenLabs] Starting generation for article {pk} ({len(script)} chars)")
+            audio_bytes = agent.synthesize(script=script)
+            _logger.info(f"[ElevenLabs] Received {len(audio_bytes)} bytes from ElevenLabs API")
+
+            # Save as local Django media file — avoids GCS ACL issues entirely
+            filename = f'elevenlabs_{article.pk}_{_uuid.uuid4().hex[:8]}.mp3'
+            article.instagram_reel_audio.save(
+                filename,
+                ContentFile(audio_bytes),
+                save=False,
+            )
+
+            # Return the relative /media/... URL — same pattern as the existing TTS pipeline.
+            # The Vite proxy handles /media/ → Django, and the frontend converts to absolute
+            # using window.location.origin (see VideoStudio.jsx load logic).
+            audio_url = article.instagram_reel_audio.url   # e.g. /media/articles/reels/...
+
+            # Rough MP3 duration at ~128 kbps
+            duration_seconds = round(len(audio_bytes) / (128 * 1000 / 8), 1)
+
+            # Persist on article — store relative URL, consistent with reel_audio_url pattern
+            article.elevenlabs_audio_url = audio_url
+            updated_plan = dict(plan)
+            updated_plan['audio_url']    = audio_url
+            updated_plan['audio_source'] = 'elevenlabs'
+            article.video_production_plan = updated_plan
+            article.save(update_fields=['instagram_reel_audio', 'elevenlabs_audio_url', 'video_production_plan'])
+
+            _logger.info(f"[ElevenLabs] Article {article.pk}: saved ~{duration_seconds}s → {audio_url}")
+
+            return Response({
+                'status':           'success',
+                'audio_url':        audio_url,
+                'duration_seconds': duration_seconds,
+                'voice_id':         agent._voice_id,
+            })
+
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            _logger.error(f"[ElevenLabs] Generation failed for article {pk}: {e}", exc_info=True)
+            return Response(
+                {'error': f'ElevenLabs generation failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 

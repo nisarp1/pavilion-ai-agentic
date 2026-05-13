@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { Player } from '@remotion/player'
 import { PavilionReelComposition } from './compositions/PavilionReelComposition'
+import { AIVideoComposition } from './compositions/AIVideoComposition'
 import { setCurrentFrame, selectClip, updateClip, pushHistory } from '../../store/slices/videoStudioSlice'
 
 const SX = 270 / 1080
@@ -9,6 +10,8 @@ const SY = 480 / 1920
 const COMP_CX = 540   // composition center X (transform-origin)
 const COMP_CY = 960   // composition center Y (transform-origin)
 const FPS = 30
+// Must match INTRO_DURATION in AIVideoComposition.jsx and remotion-renderer/src/lib/constants.ts
+const INTRO_FRAMES = 30
 
 // Bounding boxes in 1080×1920 composition space (default/untransformed)
 const CLIP_BOXES = {
@@ -49,7 +52,9 @@ export default function RemotionPreview({ props }) {
   const audioRef  = useRef(null)   // native <audio> element — bypasses Remotion audio pipeline
   const dispatch  = useDispatch()
   const { clips, currentFrame, audioUrl, selectedClipId } = useSelector(s => s.videoStudio)
-  const isSyncingRef  = useRef(false)  // kept for safety; isPlaying() guard is the real fix
+  const isSyncingRef        = useRef(false)  // kept for safety; isPlaying() guard is the real fix
+  const waitingForIntroRef  = useRef(false)  // true while player is in the intro card, audio held
+  const isTimelinePipelineRef = useRef(false) // mirror of isTimelinePipeline for use in closures
   const [overlayDrag, setOverlayDrag] = useState(null)
   const [audioReady,  setAudioReady]  = useState(false)
   const [audioError,  setAudioError]  = useState(false)
@@ -81,41 +86,75 @@ export default function RemotionPreview({ props }) {
   }, [resolvedAudioUrl])
 
   // ── Sync native audio with Remotion Player events ──────────────────────────
-  // This is the KEY FIX: instead of relying on Remotion's Web Audio pipeline
-  // (which has CORS, timing, and buffering issues), we drive a plain <audio>
-  // element directly. The result is rock-solid, gap-free audio playback.
+  // For the timeline pipeline, the composition has a 1-second intro card
+  // (INTRO_FRAMES = 30) before audio starts. The native <audio> element must
+  // be held silent during those frames and its currentTime offset accordingly.
+  // For the legacy clips pipeline (introOffset = 0) behaviour is unchanged.
   useEffect(() => {
     const player = playerRef.current
     const audio  = audioRef.current
     if (!player || !audio) return
 
+    // introOffset is read from a ref so event callbacks always see the latest value
+    // without needing to re-subscribe on every render.
+    const introOffset = () => isTimelinePipelineRef.current ? INTRO_FRAMES : 0
+    const toAudioTime = (frame) => (frame - introOffset()) / FPS
+
     const onPlay = () => {
       if (!resolvedAudioUrl) return
-      // Sync position first, then play
-      audio.currentTime = player.getCurrentFrame() / FPS
-      audio.play().catch(() => {
-        // Autoplay blocked — browser needs a user gesture first.
-        // The user already clicked play on the Remotion Player, so this
-        // should not happen in practice, but we catch it just in case.
-      })
+      const frame = player.getCurrentFrame()
+      const t = toAudioTime(frame)
+      if (t < 0) {
+        // Still in intro card — hold audio at 0, start it when intro ends
+        audio.currentTime = 0
+        audio.pause()
+        waitingForIntroRef.current = true
+      } else {
+        audio.currentTime = t
+        waitingForIntroRef.current = false
+        audio.play().catch(() => {})
+      }
     }
 
     const onPause = () => {
       audio.pause()
+      waitingForIntroRef.current = false
     }
 
     const onSeeked = ({ detail }) => {
-      // Remotion fires 'seeked' when the user drags the timeline playhead
-      audio.currentTime = detail.frame / FPS
+      const t = toAudioTime(detail.frame)
+      if (t < 0) {
+        audio.currentTime = 0
+        audio.pause()
+        // If playing, arm the intro-wait so audio resumes when content starts
+        if (player.isPlaying()) waitingForIntroRef.current = true
+      } else {
+        audio.currentTime = t
+        if (waitingForIntroRef.current && player.isPlaying()) {
+          waitingForIntroRef.current = false
+          audio.play().catch(() => {})
+        }
+      }
     }
 
     const onEnded = () => {
       audio.pause()
       audio.currentTime = 0
+      waitingForIntroRef.current = false
     }
 
     const onRateChange = ({ detail }) => {
       if (detail?.playbackRate) audio.playbackRate = detail.playbackRate
+    }
+
+    // Fire audio start the moment the player crosses from intro into content
+    const onFrameUpdate = ({ detail }) => {
+      if (!waitingForIntroRef.current) return
+      if (detail.frame >= introOffset() && player.isPlaying()) {
+        audio.currentTime = toAudioTime(detail.frame)
+        audio.play().catch(() => {})
+        waitingForIntroRef.current = false
+      }
     }
 
     player.addEventListener('play',        onPlay)
@@ -123,15 +162,16 @@ export default function RemotionPreview({ props }) {
     player.addEventListener('seeked',      onSeeked)
     player.addEventListener('ended',       onEnded)
     player.addEventListener('ratechange',  onRateChange)
+    player.addEventListener('frameupdate', onFrameUpdate)
 
     return () => {
-      player.removeEventListener('play',       onPlay)
-      player.removeEventListener('pause',      onPause)
-      player.removeEventListener('seeked',     onSeeked)
-      player.removeEventListener('ended',      onEnded)
-      player.removeEventListener('ratechange', onRateChange)
+      player.removeEventListener('play',        onPlay)
+      player.removeEventListener('pause',       onPause)
+      player.removeEventListener('seeked',      onSeeked)
+      player.removeEventListener('ended',       onEnded)
+      player.removeEventListener('ratechange',  onRateChange)
+      player.removeEventListener('frameupdate', onFrameUpdate)
     }
-  // Re-subscribe whenever the audio URL changes so we're always in sync
   }, [resolvedAudioUrl])
 
   // ── Global spacebar → play/pause ───────────────────────────────────────────
@@ -228,13 +268,59 @@ export default function RemotionPreview({ props }) {
     dispatch(updateClip({ id: clip.id, changes: { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 } }))
   }
 
-  // ── inputProps: DO NOT pass audioSrc to Remotion ───────────────────────────
-  // Audio is handled 100% by the native <audio> element above.
-  // Passing audioSrc to Remotion would double-play (native + Web Audio API).
-  const inputProps = { ...props, audioSrc: undefined, clips }
+  function resolveSceneComponent(sceneClips) {
+    const firstClip = sceneClips[0]
+    if (!firstClip) return 'hero_headline'
+    const tplId = firstClip.templateClipId || firstClip.id || ''
+    
+    if (tplId.startsWith('scoreboard')) return 'scoreboard'
+    if (tplId.startsWith('comparison')) return 'stat_comparison'
+    if (tplId.startsWith('quote')) return 'quote_card'
+    if (tplId.startsWith('ticker')) return 'ticker_headline'
+    if (tplId.includes('breaking')) return 'breaking_news'
+    if (tplId.includes('timeline')) return 'match_analysis_timeline'
+    if (tplId.includes('poll')) return 'prediction_poll'
+    if (tplId.includes('scene2') || tplId.includes('card')) return 'player_card'
+    
+    return 'hero_headline'
+  }
 
-  // Visible clips at current frame, ordered back-to-front
-  const visibleClips = [...clips]
+  // ── Detect pipeline mode ───────────────────────────────────────────────────
+  const isTimelinePipeline = Boolean(props?.timeline)
+  // Keep ref in sync so the audio-sync effect closures always read the current value
+  isTimelinePipelineRef.current = isTimelinePipeline
+
+  // ── Timeline pipeline: use AIVideoComposition ─────────────────────────────
+  const timelineTotalFrames = (() => {
+    if (!isTimelinePipeline || !props.timeline?.elements?.length) return 300 + 30
+    const lastEndMs = Math.max(...props.timeline.elements.map(e => e.endMs))
+    return Math.ceil((lastEndMs / 1000) * FPS) + 30
+  })()
+
+  // ── Legacy pipeline: convert clips to scenes for PavilionReelComposition ──
+  const sceneNumbers = [...new Set(clips.filter(c => c.scene > 0).map(c => c.scene))].sort((a, b) => a - b)
+  const scenes = sceneNumbers.map(num => {
+    const sClips = clips.filter(c => c.scene === num)
+    const start = Math.min(...sClips.map(c => c.globalStartFrame))
+    const end = Math.max(...sClips.map(c => c.globalStartFrame + c.durationFrames))
+    const customProps = sClips.reduce((acc, c) => ({ ...acc, ...(c.customProps || {}) }), {})
+    return {
+      scene_number: num,
+      template_id: resolveSceneComponent(sClips),
+      start_frame: start,
+      duration_frames: end - start,
+      props: customProps
+    }
+  })
+
+  const legacyInputProps = { ...props, audioSrc: undefined, scenes, suppressCaptions: true }
+  const timelineInputProps = { timeline: props?.timeline ?? null }
+
+  const inputProps     = isTimelinePipeline ? timelineInputProps : legacyInputProps
+  const activeComp     = isTimelinePipeline ? AIVideoComposition : PavilionReelComposition
+
+  // Visible clips at current frame (legacy mode only), ordered back-to-front
+  const visibleClips = isTimelinePipeline ? [] : [...clips]
     .filter(c => CLIP_BOXES[c.templateClipId || c.id] &&
       currentFrame >= c.globalStartFrame &&
       currentFrame < c.globalStartFrame + c.durationFrames)
@@ -245,12 +331,15 @@ export default function RemotionPreview({ props }) {
     })
 
   const selectedClip = clips.find(c => c.id === selectedClipId)
-  const totalFrames  = clips.reduce((m, c) => Math.max(m, c.globalStartFrame + c.durationFrames), 420)
+  const totalFrames  = isTimelinePipeline
+    ? timelineTotalFrames
+    : clips.reduce((m, c) => Math.max(m, c.globalStartFrame + c.durationFrames), 420)
 
   return (
     <div className="flex flex-col items-center gap-2">
       <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">
         Live Preview (1080 × 1920 · {Math.round(totalFrames / FPS)} s)
+        {isTimelinePipeline && <span className="ml-1 text-indigo-500">· AI Video</span>}
       </p>
 
       {/* ── Native audio element (hidden) — drives the voiceover ── */}
@@ -267,7 +356,7 @@ export default function RemotionPreview({ props }) {
       <div style={{ position: 'relative', width: 270, height: 480, borderRadius: 12, overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', border: '1px solid #e5e7eb' }}>
         <Player
           ref={playerRef}
-          component={PavilionReelComposition}
+          component={activeComp}
           inputProps={inputProps}
           durationInFrames={totalFrames}
           fps={FPS}

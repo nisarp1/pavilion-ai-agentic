@@ -1,19 +1,20 @@
 """
-TTS Agent — Phase 1
-Generates Malayalam voiceover audio using Google Cloud Text-to-Speech
-Primary: ml-IN-Chirp3-HD-Despina (female, neural, highest quality)
+TTS Agent
+Generates Malayalam voiceover audio using Google Cloud Text-to-Speech.
+Primary: ml-IN-Chirp3-HD-Despina (female, Chirp3 HD)
 Fallback chain: Chirp3-HD-Erinome → Wavenet-A
 
 Returns:
-  audio_url       — permanent GCS URL
+  audio_url        — permanent GCS URL
   duration_seconds — total audio duration
-  word_timings    — [{word, start_ms, end_ms}] for sync agents
+  word_timings     — [{word, start_ms, end_ms}] for caption sync
+  voice_used       — actual voice name used
 """
+import html as _html_lib
 import os
-import io
+import re
 import uuid
 import logging
-import hashlib
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -22,9 +23,71 @@ logger = logging.getLogger(__name__)
 PRIMARY_VOICE      = "ml-IN-Chirp3-HD-Despina"
 FALLBACK_VOICES    = ["ml-IN-Chirp3-HD-Erinome", "ml-IN-Wavenet-A"]
 LANGUAGE_CODE      = "ml-IN"
-AUDIO_ENCODING     = "LINEAR16"   # WAV — best quality; we'll transcode to MP3
+AUDIO_ENCODING     = "LINEAR16"   # WAV — best quality
 SAMPLE_RATE        = 24000         # Chirp3 HD native rate
 MAX_CHARS_PER_CALL = 4800          # Google TTS limit
+
+
+# ── Module-level SSML helpers (reusable) ──────────────────────────────────────
+
+def _inject_word_marks(text: str, rate: str = "1.05") -> tuple:
+    """
+    Wrap each word with an SSML <mark> tag.
+    Returns (ssml_string, word_list).
+    The TTS engine fires a timepoint per mark, giving per-word timing.
+    Chirp3-HD rejects <prosody pitch>, so only rate is used.
+    """
+    words = [w for w in re.split(r"\s+", text.strip()) if w]
+    parts = [f'<mark name="w_{i}"/>{_html_lib.escape(w)}' for i, w in enumerate(words)]
+    ssml = f'<speak><prosody rate="{rate}">{ " ".join(parts)}</prosody></speak>'
+    return ssml, words
+
+
+def _parse_word_timepoints(timepoints, words: list, total_duration_ms: int) -> list:
+    """
+    Convert Google TTS timepoints into [{word, start_ms, end_ms}].
+    Each timepoint.mark_name is 'w_N'; the next mark's time = this word's end.
+    """
+    valid = [tp for tp in timepoints if tp.mark_name.startswith("w_")]
+    result = []
+    for i, tp in enumerate(valid):
+        try:
+            idx = int(tp.mark_name.split("_")[1])
+        except (IndexError, ValueError):
+            continue
+        start_ms = int(tp.time_seconds * 1000)
+        end_ms = int(valid[i + 1].time_seconds * 1000) if i + 1 < len(valid) else total_duration_ms
+        if idx < len(words):
+            result.append({"word": words[idx], "start_ms": start_ms, "end_ms": end_ms})
+    return result
+
+
+def _uniform_word_timings(words: list, total_duration_ms: int) -> list:
+    """Evenly distribute duration across words."""
+    if not words:
+        return []
+    word_ms = total_duration_ms / len(words)
+    return [
+        {"word": w, "start_ms": int(i * word_ms), "end_ms": int((i + 1) * word_ms)}
+        for i, w in enumerate(words)
+    ]
+
+
+def _proportional_word_timings(words: list, total_duration_ms: int) -> list:
+    """Distribute timing proportionally by character count (Malayalam syllable proxy)."""
+    if not words:
+        return []
+    total_chars = sum(len(w) for w in words)
+    if total_chars == 0:
+        return _uniform_word_timings(words, total_duration_ms)
+    elapsed_ms = 0
+    result = []
+    for i, word in enumerate(words):
+        start_ms = elapsed_ms
+        elapsed_ms += int((len(word) / total_chars) * total_duration_ms)
+        end_ms = elapsed_ms if i < len(words) - 1 else total_duration_ms
+        result.append({"word": word, "start_ms": start_ms, "end_ms": end_ms})
+    return result
 
 
 class TTSAgent:
@@ -129,56 +192,46 @@ class TTSAgent:
     def _synthesize_chunk(
         self, text: str, voice_name: str, use_ssml: bool = False
     ) -> tuple[bytes, list, str]:
-        """Call Google Cloud TTS for a single chunk. Returns (audio_bytes, word_timings, voice_used)."""
+        """
+        Call Google Cloud TTS for one chunk.
+        For Chirp3-HD voices, injects SSML word marks to capture per-word timing.
+        Returns (audio_bytes, word_timings [{word, start_ms, end_ms}], voice_used).
+        """
         from google.cloud import texttospeech_v1beta1 as texttospeech
 
         client = self._get_client()
 
+        words: list = [w for w in re.split(r"\s+", text.strip()) if w]
+
         if use_ssml:
+            # Caller-provided SSML — trust it as-is
             synthesis_input = texttospeech.SynthesisInput(ssml=text)
         else:
+            # Plain text for ALL voices — Chirp3-HD treats any SSML element
+            # (<prosody>, <mark>, even <speak>) as phrase boundaries and inserts
+            # audible gaps between words. Rate is controlled via AudioConfig instead.
             synthesis_input = texttospeech.SynthesisInput(text=text)
 
         voice_params = texttospeech.VoiceSelectionParams(
             language_code=LANGUAGE_CODE,
             name=voice_name,
         )
-
         audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.LINEAR16,
             sample_rate_hertz=SAMPLE_RATE,
+            speaking_rate=1.05,
             effects_profile_id=["telephony-class-application"],
         )
-
-        # Request word-level timing marks (available for Chirp3 HD)
-        enable_time_pointing = []
-        if "Chirp3" in voice_name:
-            enable_time_pointing = [texttospeech.SynthesizeSpeechRequest.TimepointType.SSML_MARK]
 
         request = texttospeech.SynthesizeSpeechRequest(
             input=synthesis_input,
             voice=voice_params,
             audio_config=audio_config,
-            enable_time_pointing=enable_time_pointing if enable_time_pointing else None,
         )
-
         response = client.synthesize_speech(request=request)
 
-        # Parse word timings from timepoints
-        word_timings = []
-        if hasattr(response, "timepoints") and response.timepoints:
-            prev_time_ms = 0
-            for tp in response.timepoints:
-                mark_name = tp.mark_name  # e.g. "word_0"
-                time_ms   = int(tp.time_seconds * 1000)
-                if word_timings:
-                    word_timings[-1]["end_ms"] = time_ms
-                word_timings.append({
-                    "word":     mark_name,
-                    "start_ms": time_ms,
-                    "end_ms":   time_ms + 500,  # default width, will be corrected on next iteration
-                })
-                prev_time_ms = time_ms
+        duration_ms = self._estimate_duration_ms(response.audio_content)
+        word_timings = _proportional_word_timings(words, duration_ms)
 
         return response.audio_content, word_timings, voice_name
 

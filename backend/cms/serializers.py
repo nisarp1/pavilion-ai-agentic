@@ -115,7 +115,7 @@ class ArticleSerializer(serializers.ModelSerializer):
             'newsroomx_dna', 'newsroomx_status', 'newsroomx_video_url', 'newsroomx_error',
             # ── Reel pipeline fields ──────────────────────────────────────────
             'video_production_plan',
-            'reel_generation_status', 'reel_video_url',
+            'reel_generation_status', 'reel_video_url', 'elevenlabs_audio_url',
             # ─────────────────────────────────────────────────────────────────
             'created_at', 'updated_at', 'published_at', 'publish_at',
             'generation_started_at', 'generation_completed_at',

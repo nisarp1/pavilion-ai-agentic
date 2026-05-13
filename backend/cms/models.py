@@ -364,6 +364,10 @@ class Article(models.Model):
         max_length=2000, blank=True, default='',
         help_text="TTS-generated Malayalam voiceover GCS URL"
     )
+    elevenlabs_audio_url = models.URLField(
+        max_length=2000, blank=True, default='',
+        help_text="ElevenLabs premium Malayalam voiceover GCS URL (manually triggered, paid API)"
+    )
     reel_pipeline_log = models.JSONField(
         default=list,
         blank=True,

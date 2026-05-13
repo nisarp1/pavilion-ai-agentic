@@ -1,5 +1,7 @@
-import React from "react";
-import { AbsoluteFill, Audio, Sequence } from "remotion";
+import { Caption, createTikTokStyleCaptions } from "@remotion/captions";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { AbsoluteFill, Audio, continueRender, delayRender, OffthreadVideo, Sequence } from "remotion";
+import LiveCaption from "./templates/captioned_video/SubtitlePage";
 import { Scene1 } from "./scenes/Scene1";
 import { Scene2 } from "./scenes/Scene2";
 import { Scoreboard } from "./scenes/Scoreboard";
@@ -13,14 +15,29 @@ export const SCENE1_FRAMES = 180; // 6s × 30fps
 export const SCENE2_FRAMES = 240; // 8s × 30fps
 export const TOTAL_FRAMES = SCENE1_FRAMES + SCENE2_FRAMES; // 420 (14s)
 
+// Inline scene for captioned_video clips used within a PavilionReel plan.
+// The standalone CaptionedVideo composition (with Whisper JSON) is a separate
+// Root entry; this variant simply plays the source video without auto-captions.
+const CaptionedVideoScene: React.FC<Record<string, unknown>> = (props) => {
+  const src = props.src as string | undefined;
+  if (!src) return <AbsoluteFill style={{ background: "#000" }} />;
+  return (
+    <AbsoluteFill>
+      <OffthreadVideo src={src} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+    </AbsoluteFill>
+  );
+};
+
 // Maps template_id → scene component
-const SCENE_REGISTRY: Record<string, React.ComponentType<Record<string, unknown>>> = {
-  hero_headline:   Scene1 as React.ComponentType<Record<string, unknown>>,
-  player_card:     Scene2 as React.ComponentType<Record<string, unknown>>,
-  scoreboard:      Scoreboard as React.ComponentType<Record<string, unknown>>,
-  stat_comparison: StatComparison as React.ComponentType<Record<string, unknown>>,
-  quote_card:      QuoteCard as React.ComponentType<Record<string, unknown>>,
-  ticker_headline: TickerHeadline as React.ComponentType<Record<string, unknown>>,
+const SCENE_REGISTRY: Record<string, React.ComponentType<any>> = {
+  // Original PavilionReel modular scenes
+  hero_headline: Scene1,
+  player_card: Scene2,
+  scoreboard: Scoreboard,
+  stat_comparison: StatComparison,
+  quote_card: QuoteCard,
+  ticker_headline: TickerHeadline,
+  captioned_video: CaptionedVideoScene,
 };
 
 // Global brand props that are forwarded to every scene
@@ -53,8 +70,13 @@ const ModularReel: React.FC<{
           console.warn(`[PavilionReel] Unknown template_id: "${scene.template_id}" — skipping scene ${scene.scene_number}`);
           return null;
         }
-        // Merge global brand props with scene-specific props
-        const mergedProps = { ...brandProps, ...scene.props };
+        // Merge brand props + scene props; pass durationInFrames so internal animations align
+        const mergedProps = {
+          ...brandProps,
+          ...scene.props,
+          durationInFrames: scene.duration_frames,
+          suppressCaptions: true
+        };
         return (
           <Sequence
             key={scene.scene_number}
@@ -88,19 +110,59 @@ const LegacyReel: React.FC<PavilionReelProps> = (props) => {
 // ── Entry point ────────────────────────────────────────────────────────────────
 
 export const PavilionReel: React.FC<PavilionReelProps> = (props) => {
-  const { scenes, audioSrc, bgColor = "#000000" } = props;
+  const { scenes: inputScenes = [], audioSrc, bgColor = "#000000", captionsUrl } = props;
 
-  if (scenes && scenes.length > 0) {
-    return (
-      <ModularReel
-        scenes={scenes}
-        brandProps={extractBrandProps(props)}
-        audioSrc={audioSrc}
-        bgColor={bgColor}
-      />
-    );
-  }
+  const scenes = inputScenes;
 
-  // Fall back to the original two-scene layout for backward compatibility
-  return <LegacyReel {...props} />;
+  const [captions, setCaptions] = useState<Caption[]>([]);
+  const [handle] = useState(() => (captionsUrl ? delayRender() : null));
+
+  const fetchCaptions = useCallback(async () => {
+    if (!captionsUrl || handle === null) return;
+    try {
+      const res = await fetch(captionsUrl);
+      if (res.ok) setCaptions((await res.json()) as Caption[]);
+    } catch {
+      // captions unavailable — render without them
+    } finally {
+      continueRender(handle);
+    }
+  }, [captionsUrl, handle]);
+
+  useEffect(() => {
+    fetchCaptions();
+  }, [fetchCaptions]);
+
+  const { pages } = useMemo(() => {
+    return createTikTokStyleCaptions({
+      captions,
+      combineTokensWithinMilliseconds: 1200,
+    });
+  }, [captions]);
+
+  return (
+    <AbsoluteFill>
+      {scenes && scenes.length > 0 ? (
+        <ModularReel
+          scenes={scenes}
+          brandProps={extractBrandProps(props)}
+          audioSrc={audioSrc}
+          bgColor={bgColor}
+        />
+      ) : (
+        <LegacyReel {...props} />
+      )}
+
+      {/* Global word-by-word caption overlay — each page is its own Sequence for timeline visibility */}
+      {pages.map((page, i) => (
+        <Sequence
+          key={`page-${i}`}
+          from={(page.startMs / 1000) * 30}
+          durationInFrames={Math.max(1, (page.durationMs / 1000) * 30)}
+        >
+          <LiveCaption page={page} highlightColor={props.accent} />
+        </Sequence>
+      ))}
+    </AbsoluteFill>
+  );
 };

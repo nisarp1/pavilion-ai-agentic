@@ -115,6 +115,7 @@ const videoStudioSlice = createSlice({
     props: { ...DEFAULT_PROPS },
     audioUrl: '',
     assetUrls: [],
+    assets: [],   // [{id, description, sceneIndex, type, status, url}]
     activeJob: null,
     jobs: [],
     polling: false,
@@ -169,19 +170,95 @@ const videoStudioSlice = createSlice({
       }, 0)
       state.nextClipSeq = maxSeq + 1
     },
-    setVideoData(state, { payload: { props, clips, audioUrl } }) {
+    setVideoData(state, { payload: { props, clips, audioUrl, assets } }) {
       pushToHistory(state)
       if (props) state.props = { ...state.props, ...props }
-      if (clips) state.clips = clips.map(c => ({ ...c }))
       if (audioUrl !== undefined) state.audioUrl = audioUrl
-      
-      if (clips) {
-         const maxSeq = clips.reduce((max, c) => {
+      if (assets !== undefined) state.assets = assets
+
+      if (clips?.length) {
+        state.clips = clips.map(c => ({ ...c }))
+        const maxSeq = clips.reduce((max, c) => {
           const match = c.id?.match(/(\d+)$/)
           const idSeq = match ? parseInt(match[1]) : 0
           return Math.max(max, idSeq, c.track || 0)
         }, 0)
         state.nextClipSeq = maxSeq + 1
+      } else {
+        // Auto-generate timeline display clips from AI pipeline timeline.elements
+        const timelineElements = (props ?? state.props)?.timeline?.elements
+        if (timelineElements?.length) {
+          const BG_COLORS = ['#0ea5e9', '#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316']
+          const FPS = 30
+          const INTRO = 30
+          state.clips = [
+            {
+              id: 'audio', label: 'Voiceover', globalStartFrame: INTRO,
+              durationFrames: Math.max(1, Math.round(timelineElements[timelineElements.length - 1].endMs / 1000 * FPS)),
+              scene: 0, track: 0, color: '#6366f1', offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1,
+            },
+            ...timelineElements.map((el, i) => ({
+              id: `bg-slot-${i}`,
+              label: `Visual ${i + 1}`,
+              globalStartFrame: Math.round(el.startMs / 1000 * FPS) + INTRO,
+              durationFrames: Math.max(1, Math.round((el.endMs - el.startMs) / 1000 * FPS)),
+              scene: i + 1, track: i + 1,
+              color: BG_COLORS[i % BG_COLORS.length],
+              offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1,
+              type: 'image', src: el.imageUrl || '',
+            })),
+          ]
+          state.nextClipSeq = timelineElements.length + 2
+        }
+      }
+    },
+    setAssets(state, { payload }) {
+      state.assets = payload
+      // Sync timeline elements and clips so preview updates immediately
+      payload.forEach((asset, i) => {
+        if (!asset.url) return
+        const sceneIdx = asset.sceneIndex ?? i
+        if (state.props?.timeline?.elements?.[sceneIdx] !== undefined) {
+          state.props.timeline.elements[sceneIdx] = {
+            ...state.props.timeline.elements[sceneIdx],
+            imageUrl: asset.url,
+          }
+        }
+        const clip = state.clips.find(c => c.id === `bg-slot-${sceneIdx}`)
+        if (clip) clip.src = asset.url
+      })
+    },
+    updateAssetUrl(state, { payload: { id, url } }) {
+      const assetIdx = state.assets.findIndex(a => a.id === id)
+      if (assetIdx === -1) return
+      state.assets[assetIdx].url = url
+      state.assets[assetIdx].status = url ? 'uploaded' : 'needed'
+      // Mirror into the corresponding timeline element
+      const sceneIdx = state.assets[assetIdx].sceneIndex ?? assetIdx
+      if (state.props?.timeline?.elements?.[sceneIdx] !== undefined) {
+        state.props.timeline.elements[sceneIdx] = {
+          ...state.props.timeline.elements[sceneIdx],
+          imageUrl: url,
+        }
+      }
+      // Also update the auto-generated display clip src
+      const clip = state.clips.find(c => c.id === `bg-slot-${sceneIdx}`)
+      if (clip) clip.src = url
+    },
+    reorderAssets(state, { payload: { fromIndex, toIndex } }) {
+      if (fromIndex === toIndex) return
+      const items = [...state.assets]
+      const [moved] = items.splice(fromIndex, 1)
+      items.splice(toIndex, 0, moved)
+      state.assets = items
+      // Rebuild timeline element imageUrls in the new order
+      const elements = state.props?.timeline?.elements
+      if (elements) {
+        items.forEach((asset, i) => {
+          if (elements[i] !== undefined) {
+            elements[i] = { ...elements[i], imageUrl: asset.url || '' }
+          }
+        })
       }
     },
     updateClip(state, { payload: { id, changes } }) {
@@ -352,6 +429,7 @@ const videoStudioSlice = createSlice({
 export const {
   updateProps, updateStat, addStat, removeStat,
   setAudioUrl, setAssetUrls, clearJob, resetProps, setClips, setVideoData,
+  setAssets, updateAssetUrl, reorderAssets,
   updateClip, addClip, removeClip, duplicateClip, copyStyle, pasteStyle,
   selectClip, setCurrentFrame, resetClips,
   pushHistory, undo, redo,

@@ -1,0 +1,14 @@
+**/node_modules
+**/venv
+**/.git
+**/.gcp-secrets
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+bin/
+lib/
+include/
+pip-selfcheck.json

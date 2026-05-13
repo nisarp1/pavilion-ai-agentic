@@ -66,3 +66,6 @@ sgmllib3k>=1.0.0
 # JWT
 PyJWT>=2.6.0
 async-timeout>=4.0.2
+
+# ElevenLabs TTS (premium Malayalam voiceover, manually triggered)
+elevenlabs>=1.0.0

@@ -10,10 +10,10 @@ const SCENE_DUR = 6;
 
 export const Scene1: React.FC<PavilionReelProps> = ({
   scene1Headline: headline,
-  heroSrc,
+  heroSrc = "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?q=80&w=1080&auto=format&fit=crop",
   brandName,
-  bgColor,
-  accent,
+  bgColor = "#000000",
+  accent = "#00a99d",
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -26,7 +26,7 @@ export const Scene1: React.FC<PavilionReelProps> = ({
   const chromeY = (1 - chromeOp) * -10;
   const sceneOp = anim(t, 1, 0, SCENE_DUR - 0.5, SCENE_DUR, easeInCubic);
 
-  const words = headline.split(" ");
+  const words = (headline || "BREAKING NEWS").split(" ");
   const headlineStart = 1.2;
   const perWord = 0.22;
 

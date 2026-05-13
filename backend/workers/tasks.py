@@ -1236,6 +1236,142 @@ def translate_to_english_captions(ml_word_timings: list, ml_script: str) -> list
 
 # ── Reel audio with word timings ───────────────────────────────────────────────
 
+def _parse_trailing_timepoints(timepoints, words: list, total_duration_s: float) -> list:
+    """
+    Trailing-mark SSML: each mark fires at the END of the preceding word.
+    timepoints[i].time_seconds = end time of word i.
+    start[i] = end[i-1]  (0.0 for the first word).
+    Falls back to proportional timing if timepoints are sparse.
+    """
+    # Build idx → end_s map
+    end_map: dict = {}
+    for tp in timepoints:
+        if tp.mark_name.startswith('w_'):
+            try:
+                idx = int(tp.mark_name.split('_')[1])
+                end_map[idx] = round(tp.time_seconds, 3)
+            except (IndexError, ValueError):
+                pass
+
+    result = []
+    for i, word in enumerate(words):
+        end_s = end_map.get(i)
+        if end_s is None:
+            continue
+        start_s = end_map.get(i - 1, 0.0) if i > 0 else 0.0
+        result.append({'word': word, 'start_s': start_s, 'end_s': end_s})
+
+    # Last word should end at the actual audio duration
+    if result:
+        result[-1]['end_s'] = round(total_duration_s, 3)
+
+    # If fewer than half the words got timepoints, fall back to proportional
+    if len(result) < len(words) // 2:
+        return _proportional_word_timings_s(words, total_duration_s)
+    return result
+
+
+def _proportional_word_timings_s(words: list, total_duration_s: float) -> list:
+    """Distribute word timings proportionally by character count (seconds)."""
+    if not words:
+        return []
+    total_chars = sum(len(w) for w in words)
+    if total_chars == 0:
+        step = total_duration_s / len(words)
+        return [{'word': w, 'start_s': round(i * step, 3), 'end_s': round((i + 1) * step, 3)}
+                for i, w in enumerate(words)]
+    elapsed = 0.0
+    result = []
+    for i, word in enumerate(words):
+        start_s = round(elapsed, 3)
+        elapsed += (len(word) / total_chars) * total_duration_s
+        end_s = round(elapsed, 3) if i < len(words) - 1 else round(total_duration_s, 3)
+        result.append({'word': word, 'start_s': start_s, 'end_s': end_s})
+    return result
+
+
+def _get_mp3_duration_s(mp3_bytes: bytes) -> float:
+    """
+    Parse the first MPEG Layer3 frame header to determine the true audio duration.
+    Falls back to 64kbps assumption if header is unparseable.
+    """
+    import struct as _struct
+    # MPEG1 Layer3 bitrate index table (kbps)
+    br_table = {0x1:32,0x2:40,0x3:48,0x4:56,0x5:64,0x6:80,0x7:96,
+                0x8:112,0x9:128,0xA:160,0xB:192,0xC:224,0xD:256,0xE:320}
+    offset = 0
+    # Skip ID3v2 tag
+    if len(mp3_bytes) > 10 and mp3_bytes[:3] == b'ID3':
+        id3_size = (((mp3_bytes[6] & 0x7F) << 21) | ((mp3_bytes[7] & 0x7F) << 14) |
+                    ((mp3_bytes[8] & 0x7F) << 7)  |  (mp3_bytes[9] & 0x7F))
+        offset = id3_size + 10
+    for i in range(offset, min(offset + 10000, len(mp3_bytes) - 4)):
+        if mp3_bytes[i] == 0xFF and (mp3_bytes[i + 1] & 0xE0) == 0xE0:
+            hdr = _struct.unpack('>I', mp3_bytes[i:i + 4])[0]
+            layer      = (hdr >> 17) & 0x3   # 0b01 = Layer III
+            br_idx     = (hdr >> 12) & 0xF
+            if layer == 0x1 and br_idx in br_table:
+                kbps = br_table[br_idx]
+                return len(mp3_bytes) / (kbps * 1000 / 8)
+    return len(mp3_bytes) / (64 * 1000 / 8)  # safe default
+
+
+def _get_word_timings_via_wavenet(text: str, words: list, target_duration_s: float) -> list:
+    """
+    Synthesize text with ml-IN-Wavenet-A + trailing SSML marks using v1beta1
+    to get accurate per-word end timestamps, then scale them to target_duration_s.
+    Used when the primary Chirp3-HD voice doesn't support enable_time_pointing.
+    Returns [] if WaveNet synthesis fails.
+    """
+    try:
+        from google.cloud import texttospeech_v1beta1 as _tts_beta
+        import html as _html_lib
+        import struct as _struct
+
+        marked = [f'{_html_lib.escape(w)}<mark name="w_{i}"/>' for i, w in enumerate(words)]
+        ssml = f'<speak>{" ".join(marked)}</speak>'
+
+        client = _tts_beta.TextToSpeechClient()
+        request = _tts_beta.SynthesizeSpeechRequest(
+            input=_tts_beta.SynthesisInput(ssml=ssml),
+            voice=_tts_beta.VoiceSelectionParams(language_code='ml-IN', name='ml-IN-Wavenet-A'),
+            audio_config=_tts_beta.AudioConfig(
+                audio_encoding=_tts_beta.AudioEncoding.MP3,
+                speaking_rate=1.1,
+            ),
+            enable_time_pointing=[_tts_beta.SynthesizeSpeechRequest.TimepointType.SSML_MARK],
+        )
+        resp = client.synthesize_speech(request=request)
+
+        if not (hasattr(resp, 'timepoints') and resp.timepoints):
+            logger.warning('[TTS] WaveNet timing pass: no timepoints returned')
+            return []
+
+        wn_duration_s = _get_mp3_duration_s(resp.audio_content)
+        if wn_duration_s <= 0:
+            return []
+
+        scale = target_duration_s / wn_duration_s
+
+        raw = _parse_trailing_timepoints(resp.timepoints, words, wn_duration_s)
+        scaled = [
+            {
+                'word':    t['word'],
+                'start_s': round(t['start_s'] * scale, 3),
+                'end_s':   round(t['end_s']   * scale, 3),
+            }
+            for t in raw
+        ]
+        if scaled:
+            scaled[-1]['end_s'] = round(target_duration_s, 3)
+        logger.info(f'[TTS] WaveNet timing pass: {len(scaled)} words, scale={scale:.3f}')
+        return scaled
+
+    except Exception as e:
+        logger.warning(f'[TTS] WaveNet timing pass failed: {e}')
+        return []
+
+
 def generate_instagram_reel_audio(article, voice_name='chirp'):
     """
     Generate audio for Instagram Reel script using Google Cloud Text-to-Speech.
@@ -1343,63 +1479,77 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
             effects_profile_id=['headphone-class-device'],
         )
 
-        # ── Build SSML with <mark> tags for word-level timing ──
-        # No pitch in SSML either — Chirp3-HD doesn't support prosody pitch
-        ssml_text, word_list = _build_ssml_with_marks(
-            text_content, rate='1.1', pitch=None
+        # Trailing-mark SSML: mark fires at word END, not word start.
+        # Leading marks (<mark/>word) cause Chirp3-HD to treat each mark as an
+        # utterance-start boundary and insert a pause. Trailing marks (word<mark/>)
+        # are pure milestones — they don't affect prosody, so no gaps are introduced.
+        word_list = [w for w in re.split(r'\s+', text_content.strip()) if w]
+        marked_parts = [f'{html.escape(w)}<mark name="w_{i}"/>' for i, w in enumerate(word_list)]
+        ssml = f'<speak>{" ".join(marked_parts)}</speak>'
+        logger.info(f"[TTS] Trailing-mark SSML: {len(word_list)} words")
+
+        # v1beta1 required for enable_time_pointing / SSML_MARK support
+        from google.cloud import texttospeech_v1beta1 as _tts_beta
+        beta_client = _tts_beta.TextToSpeechClient()
+        beta_audio_config = _tts_beta.AudioConfig(
+            audio_encoding=_tts_beta.AudioEncoding.MP3,
+            speaking_rate=1.1,
+            volume_gain_db=4.0,
+            effects_profile_id=['headphone-class-device'],
         )
-        logger.info(f"[Captions] Built SSML with {len(word_list)} word marks")
-        synthesis_input = texttospeech.SynthesisInput(ssml=ssml_text)
-        
+
         # Try voices in fallback order until one works
         response = None
         last_error = None
         used_voice_name = None
-        
+
         for attempt_voice in voice_fallback_chain:
             try:
                 logger.info(f"Attempting reel generation with voice: {attempt_voice}")
-                
-                voice = texttospeech.VoiceSelectionParams(
+
+                beta_voice = _tts_beta.VoiceSelectionParams(
                     language_code='ml-IN',
                     name=attempt_voice,
                 )
-                
-                # TimepointType is only in v1beta1 — fall back gracefully if unavailable
-                timepoint_args = {}
-                if hasattr(texttospeech, 'TimepointType'):
-                    timepoint_args['enable_time_pointing'] = [texttospeech.TimepointType.SSML_MARK]
-                response = client.synthesize_speech(
-                    input=synthesis_input,
-                    voice=voice,
-                    audio_config=audio_config,
-                    **timepoint_args,
+                request = _tts_beta.SynthesizeSpeechRequest(
+                    input=_tts_beta.SynthesisInput(ssml=ssml),
+                    voice=beta_voice,
+                    audio_config=beta_audio_config,
+                    enable_time_pointing=[
+                        _tts_beta.SynthesizeSpeechRequest.TimepointType.SSML_MARK
+                    ],
                 )
+                response = beta_client.synthesize_speech(request=request)
 
-                # If we get here, it worked
                 used_voice_name = attempt_voice
                 logger.info(f"Successfully generated reel audio with voice: {attempt_voice}")
                 break
-                
+
             except Exception as inner_e:
                 last_error = inner_e
                 logger.warning(f"Failed to generate reel audio with voice {attempt_voice}: {str(inner_e)}")
                 continue
-                
+
         if not response:
             logger.error(f"All voice attempts failed for reel audio. Last error: {str(last_error)}")
             return False
-        
-        # ── Extract word timings from TTS timepoints ──────────────────
+
+        # Derive word timings from timepoints (trailing marks → each timepoint is word END)
         audio_content = response.audio_content
-        # Estimate total duration from MP3 byte count (~128kbps)
-        total_duration_s = len(audio_content) / (128 * 1024 / 8)
-        word_timings = []
+        # Use actual MP3 bitrate from frame header (Chirp3-HD is ~56kbps, not 128kbps)
+        total_duration_s = _get_mp3_duration_s(audio_content)
+        logger.info(f"[TTS] MP3 duration: {total_duration_s:.2f}s (parsed from header)")
+
         if hasattr(response, 'timepoints') and response.timepoints:
-            word_timings = _parse_timepoints(response.timepoints, word_list, total_duration_s)
-            logger.info(f"[Captions] Extracted {len(word_timings)} word timings from TTS timepoints")
+            word_timings = _parse_trailing_timepoints(response.timepoints, word_list, total_duration_s)
+            logger.info(f"[TTS] Got {len(word_timings)} word timings from timepoints")
         else:
-            logger.warning("[Captions] No timepoints in TTS response — captions will have no timing")
+            # Chirp3-HD doesn't support enable_time_pointing — use WaveNet for timing alignment
+            logger.info("[TTS] No timepoints from primary voice — trying WaveNet timing pass")
+            word_timings = _get_word_timings_via_wavenet(text_content, word_list, total_duration_s)
+            if not word_timings:
+                word_timings = _proportional_word_timings_s(word_list, total_duration_s)
+                logger.warning("[TTS] WaveNet timing pass unavailable — using proportional fallback")
 
         # ── Save audio file ────────────────────────────────────────────
         voice_short_name = used_voice_name.split('-')[-1] if '-' in used_voice_name else used_voice_name
@@ -1591,30 +1741,29 @@ def run_agentic_trends_celery():
 
 
 @shared_task(bind=True)
-def task_recreate_reel_agentic(self, reference_url, video_format="reel", include_avatar=False):
+def task_recreate_reel_agentic(self, reference_url, video_format="reel", include_avatar=False, article_data=None):
     """
     AI Video Production Pipeline — Multi-agent orchestrator.
-    
-    Replaces the old 2-agent pipeline with a proper 3-step flow:
-      1. Context Analysis (deterministic — yt-dlp metadata extraction)
-      2. Script Writing (LLM — Malayalam voiceover + headlines)
-      3. Scene Planning (LLM — template matching + assets list)
-    
-    Returns a complete VideoProductionPlan with clips, props, voiceover,
-    assets checklist, and downloadable production brief.
+
+    Steps:
+      1. Context Analysis (yt-dlp metadata or article content)
+      2. Script Writing (LLM — Malayalam voiceover + short title)
+      3. Scene Planning (LLM — template matching + assets)
     """
     try:
-        logger.info(f"Starting Video Production Pipeline for URL: {reference_url}")
-        
+        source_label = article_data.get('title', '') if article_data else reference_url
+        logger.info(f"Starting Video Production Pipeline for: {source_label!r}")
+
         from agents.video_pipeline import VideoProductionPipeline
-        
+
         pipeline = VideoProductionPipeline()
         result = pipeline.run(
-            reference_url=reference_url,
+            reference_url=reference_url or None,
             video_format=video_format,
             include_avatar=include_avatar,
+            article_data=article_data,
         )
-        
+
         logger.info(f"Pipeline complete: {result.get('metadata', {}).get('title', 'untitled')}")
         return result
 

@@ -9,6 +9,7 @@ import { ANEK_MALAYALAM } from "../fonts";
 import { Background } from "./Background";
 import Subtitle from "./Subtitle";
 import { MalayalamCaptionPage } from "./MalayalamCaptionPage";
+import { TopChrome } from "./TopChrome";
 
 export const aiVideoSchema = z.object({
   timeline: TimelineSchema.nullable(),
@@ -128,6 +129,9 @@ export const AIVideo: React.FC<z.infer<typeof aiVideoSchema>> = ({ timeline }) =
           );
         })
       )}
+
+      {/* ── TopChrome: persistent logo + brand overlay ── */}
+      <TopChrome />
 
       {/* ── Audio tracks ── */}
       {timeline.audio.map((element, index) => {

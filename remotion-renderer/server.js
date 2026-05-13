@@ -27,7 +27,7 @@ http.createServer(staticApp).listen(BUNDLE_INTERNAL_PORT, '127.0.0.1', () => {
 
 // ── Render API ────────────────────────────────────────────────────────────────
 const app = express();
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 app.get('/',       (_req, res) => res.json({ service: 'Pavilion Remotion Renderer', version: '2.1.0', status: 'ok' }));
 app.get('/health', (_req, res) => res.json({ status: 'ok', bundle: BUNDLE_URL, chrome: CHROME_EXEC, cpus: os.cpus().length }));

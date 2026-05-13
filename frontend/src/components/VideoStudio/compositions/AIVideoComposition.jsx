@@ -6,6 +6,7 @@
 import { createTikTokStyleCaptions } from '@remotion/captions'
 import { useEffect, useMemo } from 'react'
 import { AbsoluteFill, Img, Sequence, interpolate, useCurrentFrame, useVideoConfig } from 'remotion'
+import { TopChrome } from './TopChrome'
 
 const FPS = 30
 const INTRO_DURATION = 30  // 1-second intro card
@@ -243,6 +244,9 @@ export function AIVideoComposition({ timeline }) {
           )
         })
       )}
+
+      {/* TopChrome: persistent logo + brand overlay */}
+      <TopChrome />
 
       {/* Audio is handled by the native <audio> element in RemotionPreview */}
     </AbsoluteFill>

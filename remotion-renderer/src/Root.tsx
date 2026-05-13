@@ -31,17 +31,22 @@ const calculatePavilionReelMetadata = async ({
   return { durationInFrames: Math.max(totalFrames, 60) };
 };
 
-// Duration = last background element end time (ms → frames) + intro card
+// Duration = max(last element endMs, last audio endMs, last caption endMs) + intro card
 const calculateAIVideoMetadata = async ({
   props,
 }: {
   props: { timeline: Timeline | null };
 }) => {
-  if (!props.timeline || !props.timeline.elements?.length) {
+  if (!props.timeline) {
     return { durationInFrames: 300 + INTRO_DURATION };
   }
-  const sorted = [...props.timeline.elements].sort((a, b) => b.endMs - a.endMs);
-  const lastMs = sorted[0].endMs;
+  const tl = props.timeline;
+  const candidates: number[] = [];
+  if (tl.elements?.length)      candidates.push(Math.max(...tl.elements.map((e: any) => e.endMs)));
+  if (tl.audio?.length)         candidates.push(Math.max(...tl.audio.map((a: any) => a.endMs)));
+  if (tl.wordCaptions?.length)  candidates.push(Math.max(...tl.wordCaptions.map((c: any) => c.endMs)));
+  if (tl.text?.length)          candidates.push(Math.max(...tl.text.map((t: any) => t.endMs)));
+  const lastMs = candidates.length ? Math.max(...candidates) : 10000;
   const contentFrames = Math.ceil((lastMs / 1000) * FPS);
   return { durationInFrames: contentFrames + INTRO_DURATION };
 };

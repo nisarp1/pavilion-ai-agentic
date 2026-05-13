@@ -156,6 +156,17 @@ export function AIVideoComposition({ timeline }) {
     })
   }, [wordCaptions])
 
+  // True end = max of all tracks so last image fills the full audio duration
+  const totalContentMs = useMemo(() => {
+    if (!timeline) return 10000
+    const ends = []
+    if (timeline.elements?.length)     ends.push(Math.max(...timeline.elements.map(e => e.endMs)))
+    if (timeline.audio?.length)        ends.push(Math.max(...timeline.audio.map(a => a.endMs)))
+    if (timeline.wordCaptions?.length) ends.push(Math.max(...timeline.wordCaptions.map(c => c.endMs)))
+    if (timeline.text?.length)         ends.push(Math.max(...timeline.text.map(t => t.endMs)))
+    return ends.length ? Math.max(...ends) : 10000
+  }, [timeline])
+
   if (!timeline) {
     return (
       <AbsoluteFill style={{ backgroundColor: 'black', justifyContent: 'center', alignItems: 'center' }}>
@@ -191,8 +202,12 @@ export function AIVideoComposition({ timeline }) {
       </Sequence>
 
       {/* Background elements with Ken Burns zoom */}
+      {/* Last element extended to totalContentMs so audio never outlasts the background */}
       {(timeline.elements ?? []).map((element, index) => {
-        const durationMs = element.endMs - element.startMs
+        const elements = timeline.elements ?? []
+        const isLast = index === elements.length - 1
+        const endMs = isLast ? Math.max(element.endMs, totalContentMs) : element.endMs
+        const durationMs = endMs - element.startMs
         const startFrame = index === 0
           ? Math.floor((element.startMs / 1000) * FPS)
           : Math.floor((element.startMs / 1000) * FPS) + INTRO_DURATION

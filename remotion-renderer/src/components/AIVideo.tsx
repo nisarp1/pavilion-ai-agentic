@@ -25,6 +25,18 @@ export const AIVideo: React.FC<z.infer<typeof aiVideoSchema>> = ({ timeline }) =
     });
   }, [wordCaptions]);
 
+  // True end time = max of all tracks so the last background image
+  // stays visible through the full audio duration instead of going black.
+  const totalContentMs = useMemo(() => {
+    if (!timeline) return 10000;
+    const ends: number[] = [];
+    if (timeline.elements?.length)     ends.push(Math.max(...timeline.elements.map((e) => e.endMs)));
+    if (timeline.audio?.length)        ends.push(Math.max(...timeline.audio.map((a) => a.endMs)));
+    if (timeline.wordCaptions?.length) ends.push(Math.max(...timeline.wordCaptions.map((c) => c.endMs)));
+    if (timeline.text?.length)         ends.push(Math.max(...timeline.text.map((t) => t.endMs)));
+    return ends.length ? Math.max(...ends) : 10000;
+  }, [timeline]);
+
   if (!timeline) {
     return (
       <AbsoluteFill style={{ backgroundColor: "black", justifyContent: "center", alignItems: "center" }}>
@@ -50,6 +62,7 @@ export const AIVideo: React.FC<z.infer<typeof aiVideoSchema>> = ({ timeline }) =
           <div
             style={{
               fontSize: 96,
+              fontWeight: 800,
               lineHeight: 1.2,
               width: "85%",
               color: "black",
@@ -68,10 +81,13 @@ export const AIVideo: React.FC<z.infer<typeof aiVideoSchema>> = ({ timeline }) =
       </Sequence>
 
       {/* ── Background images with zoom + blur transitions ── */}
+      {/* Last element is extended to totalContentMs so there's no black gap if audio outlasts elements */}
       {timeline.elements.map((element, index) => {
+        const isLast = index === timeline.elements.length - 1;
+        const endMs = isLast ? Math.max(element.endMs, totalContentMs) : element.endMs;
         const { startFrame, duration } = calculateFrameTiming(
           element.startMs,
-          element.endMs,
+          endMs,
           { includeIntro: index === 0 },
         );
         return (

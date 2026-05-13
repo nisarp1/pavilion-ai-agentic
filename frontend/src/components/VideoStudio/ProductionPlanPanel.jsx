@@ -48,7 +48,7 @@ function readFileAsDataURL(file) {
 
 // ── Voiceover tab ─────────────────────────────────────────────────────────────
 
-function VoiceoverTab({ plan }) {
+function VoiceoverTab({ plan, onPlanRefresh }) {
   const dispatch = useDispatch()
   const audioUrl = useSelector(s => s.videoStudio.audioUrl)
 
@@ -78,7 +78,10 @@ function VoiceoverTab({ plan }) {
       props:    Object.keys(freshProps).length ? freshProps : undefined,
       audioUrl: url,
     }))
-  }, [plan.article_id, dispatch])
+    // Update the parent's productionPlan state so the script display reflects the new
+    // script_plain saved by the backend (prevents the "script reverts" bug).
+    if (onPlanRefresh) onPlanRefresh(freshPlan)
+  }, [plan.article_id, dispatch, onPlanRefresh])
 
   const handleGenerateElevenLabs = useCallback(async () => {
     if (!plan.article_id) { setElError('Run the pipeline on an article first'); return }
@@ -888,7 +891,7 @@ function AssetsGridTab() {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export default function ProductionPlanPanel({ plan }) {
+export default function ProductionPlanPanel({ plan, onPlanRefresh }) {
   const [tab, setTab] = useState('voiceover')
   const assets = useSelector(s => s.videoStudio.assets)
 
@@ -954,7 +957,7 @@ export default function ProductionPlanPanel({ plan }) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        {tab === 'voiceover' && <VoiceoverTab plan={plan} />}
+        {tab === 'voiceover' && <VoiceoverTab plan={plan} onPlanRefresh={onPlanRefresh} />}
         {tab === 'scenes'    && <ScenesTab    plan={plan} />}
         {tab === 'needed'   && <AssetsNeededTab assets={assets} />}
         {tab === 'assets'   && <AssetsGridTab />}

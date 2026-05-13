@@ -434,14 +434,13 @@ export default function VideoStudio() {
       {/* ── Middle: Preview + Properties + Plan ── */}
       <div className="flex gap-4 flex-shrink-0" style={{ height: 560 }}>
 
-        {/* Left: Preview + job status */}
+        {/* Left: Preview */}
         <div className="flex flex-col gap-3 flex-shrink-0">
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 flex-1 flex flex-col items-center justify-start">
             <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400 text-sm">Loading preview…</div>}>
               <RemotionPreview props={props} />
             </Suspense>
           </div>
-          <JobStatusPanel />
         </div>
 
         {/* Center: Properties panel */}
@@ -451,9 +450,16 @@ export default function VideoStudio() {
 
         {/* Right: Production Plan panel */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden" style={{ width: 380, flexShrink: 0 }}>
-          <ProductionPlanPanel plan={productionPlan} />
+          <ProductionPlanPanel plan={productionPlan} onPlanRefresh={setProductionPlan} />
         </div>
 
+      </div>
+
+      {/* ── Render status: fixed floating panel (bottom-right) ── */}
+      <div className="fixed bottom-6 right-6 z-50 w-80 pointer-events-none">
+        <div className="pointer-events-auto">
+          <JobStatusPanel />
+        </div>
       </div>
 
       {/* ── Bottom: Timeline ── */}

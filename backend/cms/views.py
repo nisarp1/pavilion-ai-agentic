@@ -1137,7 +1137,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            from agents.elevenlabs_agent import ElevenLabsAgent
+            from agents.elevenlabs_agent import ElevenLabsAgent, _mp3_duration_ms
             from agents.video_pipeline import _word_timings_to_captions
             agent = ElevenLabsAgent()
 
@@ -1159,11 +1159,11 @@ class ArticleViewSet(viewsets.ModelViewSet):
             # Return the relative /media/... URL — same pattern as the existing TTS pipeline.
             audio_url = article.instagram_reel_audio.url   # e.g. /media/articles/reels/...
 
-            # Use actual duration from word timings (last word end), fall back to bitrate estimate
-            if word_timings:
-                duration_seconds = round(word_timings[-1]['end_ms'] / 1000, 1)
-            else:
-                duration_seconds = round(len(audio_bytes) / (128 * 1000 / 8), 1)
+            # Parse actual MP3 frame headers for exact duration — more accurate than
+            # a fixed-bitrate estimate, and captures trailing silence after the last word.
+            mp3_dur_ms  = _mp3_duration_ms(audio_bytes)
+            wt_dur_ms   = word_timings[-1]['end_ms'] if word_timings else 0
+            duration_seconds = round(max(mp3_dur_ms, wt_dur_ms) / 1000, 2)
 
             # ── Build wordCaptions from ElevenLabs character-level timestamps ──
             # ElevenLabs returns precise character timestamps — far more accurate
@@ -1251,11 +1251,12 @@ class ArticleViewSet(viewsets.ModelViewSet):
             article.instagram_reel_audio.save(filename, ContentFile(audio_bytes), save=False)
             audio_url = article.instagram_reel_audio.url
 
-            if word_timings:
-                duration_seconds = round(word_timings[-1]['end_ms'] / 1000, 1)
-            else:
-                data_bytes = max(0, len(audio_bytes) - 44)
-                duration_seconds = round((data_bytes / 2 / SAMPLE_RATE), 1)
+            # Use actual WAV byte count for duration — more reliable than last word end_ms,
+            # which misses trailing silence after the final spoken word.
+            data_bytes = max(0, len(audio_bytes) - 44)
+            wav_duration_seconds = data_bytes / 2 / SAMPLE_RATE
+            wt_duration_seconds  = word_timings[-1]['end_ms'] / 1000 if word_timings else 0
+            duration_seconds = round(max(wav_duration_seconds, wt_duration_seconds), 2)
 
             word_captions = _word_timings_to_captions(word_timings) if word_timings else []
 

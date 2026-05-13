@@ -1,10 +1,9 @@
 import React from "react";
-import { AbsoluteFill, Img, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
-import { FPS, IMAGE_HEIGHT, IMAGE_WIDTH } from "../lib/constants";
+import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { FPS } from "../lib/constants";
 import { BackgroundElement } from "../lib/types";
 import { calculateBlur } from "../lib/utils";
 
-const EXTRA_SCALE = 0.2;
 const MAX_BLUR_PX = 25;
 
 const FALLBACK_GRADIENTS = [
@@ -20,67 +19,63 @@ export const Background: React.FC<{ item: BackgroundElement; index: number }> = 
   index,
 }) => {
   const frame = useCurrentFrame();
-  const localMs = (frame / FPS) * 1000;
-  const { width, height } = useVideoConfig();
+  const { durationInFrames } = useVideoConfig();
 
-  const imageRatio = IMAGE_HEIGHT / IMAGE_WIDTH;
-  const imgWidth = height;
-  const imgHeight = imgWidth * imageRatio;
-
-  let animScale = 1 + EXTRA_SCALE;
-  const currentScaleAnim = item.animations?.find(
-    (anim) =>
-      anim.type === "scale" && anim.startMs <= localMs && anim.endMs >= localMs,
-  );
-
-  if (currentScaleAnim) {
-    const progress =
-      (localMs - currentScaleAnim.startMs) /
-      (currentScaleAnim.endMs - currentScaleAnim.startMs);
-    animScale =
-      EXTRA_SCALE +
-      progress * (currentScaleAnim.to - currentScaleAnim.from) +
-      currentScaleAnim.from;
+  // Match preview exactly: baseZoom * interpolate(from → to)
+  const baseZoom = item.zoom ?? 1;
+  const animation = item.animations?.find((a) => a.type === "scale");
+  let scale = baseZoom;
+  if (animation && durationInFrames > 1) {
+    const progress = Math.min(1, frame / (durationInFrames - 1));
+    scale = baseZoom * interpolate(
+      progress,
+      [0, 1],
+      [animation.from ?? 1, animation.to ?? 1],
+      { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+    );
   }
 
-  const top = -(imgHeight * animScale - height) / 2;
-  const left = -(imgWidth * animScale - width) / 2;
+  const panX       = item.panX       ?? 50;
+  const panY       = item.panY       ?? 50;
+  const cropTop    = item.cropTop    ?? 0;
+  const cropRight  = item.cropRight  ?? 0;
+  const cropBottom = item.cropBottom ?? 0;
+  const cropLeft   = item.cropLeft   ?? 0;
+  const objectFit  = (item.objectFit as any) ?? "cover";
+  const hasCrop    = cropTop > 0 || cropRight > 0 || cropBottom > 0 || cropLeft > 0;
+
+  const localMs = (frame / FPS) * 1000;
   const blurFraction = calculateBlur({ item, localMs });
   const currentBlur = MAX_BLUR_PX * blurFraction;
   const filterStr = currentBlur > 0 ? `blur(${currentBlur}px)` : undefined;
 
+  const gradient = FALLBACK_GRADIENTS[index % FALLBACK_GRADIENTS.length];
+
   const hasImage = Boolean(item.imageUrl);
-  const isRemoteUrl = hasImage && item.imageUrl.startsWith("http");
-
-  if (!hasImage) {
-    return (
-      <AbsoluteFill
-        style={{
-          background: FALLBACK_GRADIENTS[index % FALLBACK_GRADIENTS.length],
-          filter: filterStr,
-          WebkitFilter: filterStr,
-        }}
-      />
-    );
-  }
-
-  const src = isRemoteUrl ? item.imageUrl : staticFile(item.imageUrl);
+  const isAbsoluteOrData =
+    hasImage &&
+    (item.imageUrl.startsWith("http") || item.imageUrl.startsWith("data:"));
 
   return (
-    <AbsoluteFill>
-      <Img
-        src={src}
-        style={{
-          width: imgWidth * animScale,
-          height: imgHeight * animScale,
-          position: "absolute",
-          top,
-          left,
-          objectFit: "cover",
-          filter: filterStr,
-          WebkitFilter: filterStr,
-        }}
-      />
+    <AbsoluteFill style={{ background: gradient }}>
+      {hasImage && (
+        <Img
+          src={isAbsoluteOrData ? item.imageUrl : staticFile(item.imageUrl)}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit,
+            objectPosition: `${panX}% ${panY}%`,
+            transform: `scale(${scale})`,
+            transformOrigin: "center center",
+            filter: filterStr,
+            WebkitFilter: filterStr,
+            ...(hasCrop && {
+              clipPath: `inset(${cropTop}% ${cropRight}% ${cropBottom}% ${cropLeft}%)`,
+            }),
+          }}
+        />
+      )}
     </AbsoluteFill>
   );
 };

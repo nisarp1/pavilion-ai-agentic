@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { FiCheckCircle, FiXCircle, FiLoader, FiDownload, FiX } from 'react-icons/fi'
 import { pollJob, clearJob } from '../../store/slices/videoStudioSlice'
+import api from '../../services/api'
 
 const STATUS_CONFIG = {
   pending:   { icon: FiLoader,       color: 'text-gray-500',  bg: 'bg-gray-50',   label: 'Queued…' },
@@ -15,6 +16,7 @@ export default function JobStatusPanel() {
   const dispatch = useDispatch()
   const { activeJob, polling } = useSelector(s => s.videoStudio)
   const timerRef = useRef(null)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     if (polling && activeJob?.id) {
@@ -33,7 +35,7 @@ export default function JobStatusPanel() {
   const isVideo = activeJob.job_type === 'render'
 
   return (
-    <div className={`rounded-xl border p-4 ${cfg.bg} relative`}>
+    <div className={`rounded-xl border p-4 shadow-lg ${cfg.bg} relative`}>
       <button
         onClick={() => dispatch(clearJob())}
         className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
@@ -53,16 +55,30 @@ export default function JobStatusPanel() {
       </div>
 
       {activeJob.status === 'done' && activeJob.output_url && (
-        <a
-          href={activeJob.output_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-3 flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors w-fit"
-          download
+        <button
+          onClick={async () => {
+            setDownloading(true)
+            try {
+              const res = await api.get(`/video/jobs/${activeJob.id}/download_url/`)
+              const url = res.data.url
+              const a = document.createElement('a')
+              a.href = url
+              a.target = '_blank'
+              a.rel = 'noopener noreferrer'
+              a.click()
+            } catch {
+              // fallback: open stored URL directly
+              window.open(activeJob.output_url, '_blank')
+            } finally {
+              setDownloading(false)
+            }
+          }}
+          disabled={downloading}
+          className="mt-3 flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors w-fit disabled:opacity-60"
         >
           <FiDownload size={15} />
-          {isVideo ? 'Download MP4' : 'Download ZIP'}
-        </a>
+          {downloading ? 'Getting link…' : (isVideo ? 'Download MP4' : 'Download ZIP')}
+        </button>
       )}
 
       {activeJob.status === 'failed' && activeJob.error_message && (

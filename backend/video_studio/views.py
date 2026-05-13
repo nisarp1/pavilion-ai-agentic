@@ -60,6 +60,22 @@ class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
         logger.info(f"VideoJob {job.id} queued (render) by {request.user}")
         return Response(VideoJobSerializer(job).data, status=status.HTTP_202_ACCEPTED)
 
+    # ── Download URL (fresh signed URL, never expires from user perspective) ───
+
+    @action(detail=True, methods=['get'], url_path='download_url')
+    def download_url(self, request, pk=None):
+        """Return a fresh 7-day signed GCS URL for the job's output file."""
+        job = self.get_object()
+        if not job.output_url:
+            return Response({'error': 'No output file yet'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            from .gcs import signed_url_for_gcs_url
+            url = signed_url_for_gcs_url(job.output_url)
+            return Response({'url': url})
+        except Exception as e:
+            logger.warning(f"Signed URL failed for job {job.id}: {e} — returning stored URL")
+            return Response({'url': job.output_url})
+
     # ── Track B: Fallback ZIP ─────────────────────────────────────────────────
 
     @action(detail=False, methods=['post'], url_path='export-fallback')

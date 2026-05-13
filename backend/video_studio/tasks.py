@@ -26,8 +26,29 @@ def render_video_task(self, job_id: str):
 
         # Merge audio URL into props so the renderer can embed it
         props = dict(job.props)
+        django_url = os.environ.get('DJANGO_INTERNAL_URL', 'http://django:8000').rstrip('/')
+
+        def _abs_url(url: str) -> str:
+            """Convert relative /media/ paths to absolute internal Django URLs."""
+            if url and url.startswith('/'):
+                return f"{django_url}{url}"
+            return url
+
         if job.audio_url:
-            props['audioSrc'] = job.audio_url
+            audio_url = _abs_url(job.audio_url)
+            if audio_url != job.audio_url:
+                logger.info(f"[VideoJob {job_id}] Rewrote audioSrc: {job.audio_url} → {audio_url}")
+            props['audioSrc'] = audio_url
+
+        # Rewrite relative URLs inside timeline (PavilionAIVideo composition)
+        timeline = props.get('timeline')
+        if isinstance(timeline, dict):
+            for audio_el in timeline.get('audio', []):
+                if isinstance(audio_el, dict) and audio_el.get('audioUrl'):
+                    audio_el['audioUrl'] = _abs_url(audio_el['audioUrl'])
+            for img_el in timeline.get('elements', []):
+                if isinstance(img_el, dict) and img_el.get('imageUrl'):
+                    img_el['imageUrl'] = _abs_url(img_el['imageUrl'])
 
         # Extract compositionId stored by the pipeline (pops it so it's not
         # passed as a Remotion prop — the renderer treats it separately)

@@ -20,6 +20,7 @@ FROM node:20-bookworm-slim
 # Chromium + font dependencies required by @remotion/renderer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
+    ffmpeg \
     fonts-noto \
     fonts-noto-cjk \
     libasound2 \

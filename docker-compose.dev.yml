@@ -70,6 +70,7 @@ services:
       REDIS_CACHE_URL: redis://redis:6379/1
       GOOGLE_APPLICATION_CREDENTIALS: /app/.gcp-secrets/service-account-key.json
       CLOUD_RUN_RENDERER_URL: http://remotion-renderer:8080
+      DJANGO_INTERNAL_URL: http://django:8000
       GCS_BUCKET_NAME: pavilion-media
       ENVIRONMENT: development
       DEBUG: 'true'

@@ -178,6 +178,23 @@ const videoStudioSlice = createSlice({
       if (audioUrl !== undefined) state.audioUrl = audioUrl
       if (assets !== undefined) state.assets = assets
 
+      // Sync uploaded asset URLs into timeline.elements BEFORE clip auto-generation
+      // so that when clips are built from timelineElements they already carry the
+      // user-uploaded imageUrls (not the empty originals from the backend plan).
+      // Without this, a browser refresh loses all asset-to-scene assignments in the preview.
+      if (assets?.length) {
+        const elements = state.props?.timeline?.elements
+        if (elements?.length) {
+          assets.forEach((asset, i) => {
+            if (!asset.url) return
+            const sceneIdx = asset.sceneIndex ?? i
+            if (elements[sceneIdx] !== undefined) {
+              elements[sceneIdx] = { ...elements[sceneIdx], imageUrl: asset.url }
+            }
+          })
+        }
+      }
+
       if (clips?.length) {
         state.clips = clips.map(c => ({ ...c }))
         const maxSeq = clips.reduce((max, c) => {

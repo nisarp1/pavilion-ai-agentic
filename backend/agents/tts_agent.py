@@ -141,7 +141,7 @@ class TTSAgent:
         logger.info(f"[TTSAgent] Generating audio for article {article_id} "
                     f"({len(chunks)} chunk(s), voice={voice})")
 
-        all_audio_bytes = b""
+        wav_chunks: list = []
         all_word_timings: list = []
         offset_ms = 0
         voice_used = voice
@@ -155,7 +155,6 @@ class TTSAgent:
                 logger.warning(f"[TTSAgent] Primary voice failed (chunk {i}): {e} — trying fallbacks")
                 audio_bytes, timings, voice_used = self._synthesize_with_fallback(chunk)
 
-            # Adjust timing offset for multi-chunk stitching
             chunk_duration_ms = self._estimate_duration_ms(audio_bytes)
             for t in timings:
                 all_word_timings.append({
@@ -164,7 +163,10 @@ class TTSAgent:
                     "end_ms":   t.get("end_ms", 0) + offset_ms,
                 })
             offset_ms += chunk_duration_ms
-            all_audio_bytes += audio_bytes
+            wav_chunks.append(audio_bytes)
+
+        # Stitch chunks into one valid WAV (naive concat produces wrong RIFF header)
+        all_audio_bytes = self._stitch_linear16_wavs(wav_chunks)
 
         # Upload to GCS
         gcs_path = f"{self._gcs_prefix}/{article_id}/voiceover_{uuid.uuid4().hex[:8]}.wav"
@@ -217,7 +219,7 @@ class TTSAgent:
         chunks = self._split_script(script)
         logger.info(f"[TTSAgent] synthesize_bytes: {len(chunks)} chunk(s), {len(script)} chars")
 
-        all_audio_bytes = b""
+        wav_chunks: list = []
         all_word_timings: list = []
         offset_ms = 0
 
@@ -236,11 +238,47 @@ class TTSAgent:
                     "end_ms":   t.get("end_ms", 0) + offset_ms,
                 })
             offset_ms += chunk_duration_ms
-            all_audio_bytes += audio_bytes
+            wav_chunks.append(audio_bytes)
 
-        return all_audio_bytes, all_word_timings
+        return self._stitch_linear16_wavs(wav_chunks), all_word_timings
 
     # ── Internal helpers ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _stitch_linear16_wavs(wav_chunks: list) -> bytes:
+        """
+        Combine multiple LINEAR16 mono WAV files into one valid WAV file.
+
+        Naive concatenation of WAV bytes produces an invalid file: the browser
+        reads only the first chunk's RIFF header and reports wrong duration.
+        This method strips each chunk's 44-byte header, concatenates the raw
+        PCM data, then writes a single fresh RIFF/WAVE container.
+        """
+        import struct
+        pcm_parts = []
+        sample_rate = SAMPLE_RATE
+
+        for chunk in wav_chunks:
+            if len(chunk) < 44:
+                pcm_parts.append(chunk)
+                continue
+            sr = struct.unpack_from('<I', chunk, 24)[0]
+            if sr:
+                sample_rate = sr
+            # Standard PCM WAV: 44-byte header, PCM data starts at byte 44
+            pcm_parts.append(chunk[44:])
+
+        all_pcm = b''.join(pcm_parts)
+        data_len = len(all_pcm)
+        header = struct.pack(
+            '<4sI4s'   # RIFF chunk
+            '4sIHHIIHH'  # fmt  chunk
+            '4sI',       # data chunk header
+            b'RIFF', 36 + data_len, b'WAVE',
+            b'fmt ', 16, 1, 1, sample_rate, sample_rate * 2, 2, 16,
+            b'data', data_len,
+        )
+        return header + all_pcm
 
     def _get_client(self):
         """Lazy-load Google Cloud TTS client."""

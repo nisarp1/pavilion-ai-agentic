@@ -55,9 +55,10 @@ export default function RemotionPreview({ props }) {
   const isSyncingRef        = useRef(false)  // kept for safety; isPlaying() guard is the real fix
   const waitingForIntroRef  = useRef(false)  // true while player is in the intro card, audio held
   const isTimelinePipelineRef = useRef(false) // mirror of isTimelinePipeline for use in closures
-  const [overlayDrag, setOverlayDrag] = useState(null)
-  const [audioReady,  setAudioReady]  = useState(false)
-  const [audioError,  setAudioError]  = useState(false)
+  const [overlayDrag,      setOverlayDrag]      = useState(null)
+  const [audioReady,       setAudioReady]       = useState(false)
+  const [audioError,       setAudioError]       = useState(false)
+  const [audioDurationMs,  setAudioDurationMs]  = useState(null)
 
   // ── Resolve audio URL to absolute ──────────────────────────────────────────
   // Relative Django media paths (/media/...) go through the Vite proxy at localhost:3001.
@@ -81,11 +82,13 @@ export default function RemotionPreview({ props }) {
       audio.src = ''
       setAudioReady(false)
       setAudioError(false)
+      setAudioDurationMs(null)
       return
     }
 
     setAudioReady(false)
     setAudioError(false)
+    setAudioDurationMs(null)
     audio.src = resolvedAudioUrl
     audio.preload = 'auto'
     audio.load()
@@ -140,16 +143,25 @@ export default function RemotionPreview({ props }) {
         if (player.isPlaying()) waitingForIntroRef.current = true
       } else {
         audio.currentTime = t
-        if (waitingForIntroRef.current && player.isPlaying()) {
-          waitingForIntroRef.current = false
+        waitingForIntroRef.current = false
+        // Always resume audio after seek if player is playing —
+        // the browser may pause the audio element internally during a seek.
+        if (player.isPlaying()) {
           audio.play().catch(() => {})
         }
       }
     }
 
     const onEnded = () => {
+      // Guard: if the audio element still has content remaining, the player ran out
+      // of frames before the audio finished (stale timeline duration in DB).
+      // Let the audio play through to its natural end instead of cutting it off.
+      const remaining = audio.duration - audio.currentTime
+      if (isFinite(remaining) && remaining > 0.3) {
+        waitingForIntroRef.current = false
+        return
+      }
       audio.pause()
-      audio.currentTime = 0
       audio.playbackRate = 1.0
       waitingForIntroRef.current = false
     }
@@ -316,8 +328,19 @@ export default function RemotionPreview({ props }) {
 
   // ── Timeline pipeline: use AIVideoComposition ─────────────────────────────
   const timelineTotalFrames = (() => {
-    if (!isTimelinePipeline || !props.timeline?.elements?.length) return 300 + 30
-    const lastEndMs = Math.max(...props.timeline.elements.map(e => e.endMs))
+    if (!isTimelinePipeline || !props.timeline) return 300 + 30
+    const tl = props.timeline
+    const candidates = []
+    if (tl.elements?.length)     candidates.push(Math.max(...tl.elements.map(e => e.endMs)))
+    if (tl.audio?.length)        candidates.push(Math.max(...tl.audio.map(a => a.endMs)))
+    if (tl.wordCaptions?.length) candidates.push(Math.max(...tl.wordCaptions.map(c => c.endMs)))
+    if (tl.text?.length)         candidates.push(Math.max(...tl.text.map(t => t.endMs)))
+    // Read actual audio duration directly from the DOM element — this is the ground truth.
+    // audioDurationMs state causes re-render after loadedmetadata so this value is fresh.
+    const elDur = audioRef.current?.duration
+    if (elDur && isFinite(elDur) && elDur > 0) candidates.push(Math.ceil(elDur * 1000))
+    if (!candidates.length) return 300 + 30
+    const lastEndMs = Math.max(...candidates)
     return Math.ceil((lastEndMs / 1000) * FPS) + 30
   })()
 
@@ -372,6 +395,8 @@ export default function RemotionPreview({ props }) {
         ref={audioRef}
         preload="auto"
         style={{ display: 'none' }}
+        onLoadedMetadata={(e) => { const d = e.target.duration; if (isFinite(d) && d > 0) setAudioDurationMs(Math.ceil(d * 1000)) }}
+        onDurationChange={(e) => { const d = e.target.duration; if (isFinite(d) && d > 0) setAudioDurationMs(Math.ceil(d * 1000)) }}
         onCanPlayThrough={() => { setAudioReady(true); setAudioError(false) }}
         onError={() => { setAudioError(true); setAudioReady(false) }}
         onLoadStart={() => { setAudioReady(false); setAudioError(false) }}
@@ -388,7 +413,7 @@ export default function RemotionPreview({ props }) {
           compositionHeight={1920}
           style={{ width: 270, height: 480 }}
           controls
-          loop
+          loop={false}
           autoPlay={false}
           // No volume controls needed — audio is handled natively, not by Remotion
           showVolumeControls={false}

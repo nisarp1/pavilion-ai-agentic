@@ -2,7 +2,7 @@ import { Caption, createTikTokStyleCaptions } from "@remotion/captions";
 import React, { useMemo } from "react";
 import { AbsoluteFill, Audio, Sequence } from "remotion";
 import { z } from "zod";
-import { FPS, INTRO_DURATION } from "../lib/constants";
+import { FPS, INTRO_DURATION, TAIL_BUFFER_FRAMES } from "../lib/constants";
 import { TimelineSchema } from "../lib/types";
 import { calculateFrameTiming } from "../lib/utils";
 import { ANEK_MALAYALAM } from "../fonts";
@@ -13,17 +13,46 @@ import { TopChrome } from "./TopChrome";
 
 export const aiVideoSchema = z.object({
   timeline: TimelineSchema.nullable(),
+  logoSrc:   z.string().optional(),
+  brandName: z.string().optional(),
+  accent:    z.string().optional(),
 });
 
-export const AIVideo: React.FC<z.infer<typeof aiVideoSchema>> = ({ timeline }) => {
+// Split pages that have more than maxTokens words into smaller sub-pages.
+// Each sub-page's durationMs extends to the next sub-page's start so there are no gaps.
+function limitTokensPerPage(pages: ReturnType<typeof createTikTokStyleCaptions>['pages'], maxTokens: number) {
+  const expanded: typeof pages = [];
+  for (const page of pages) {
+    if (page.tokens.length <= maxTokens) {
+      expanded.push({ ...page });
+      continue;
+    }
+    for (let i = 0; i < page.tokens.length; i += maxTokens) {
+      const tokens = page.tokens.slice(i, i + maxTokens);
+      expanded.push({
+        text: tokens.map(t => t.text).join('').trim(),
+        startMs: tokens[0].fromMs,
+        durationMs: tokens[tokens.length - 1].toMs - tokens[0].fromMs,
+        tokens,
+      });
+    }
+  }
+  for (let i = 0; i < expanded.length - 1; i++) {
+    expanded[i].durationMs = expanded[i + 1].startMs - expanded[i].startMs;
+  }
+  return expanded;
+}
+
+export const AIVideo: React.FC<z.infer<typeof aiVideoSchema>> = ({ timeline, logoSrc, brandName, accent }) => {
   const wordCaptions = (timeline?.wordCaptions ?? []) as Caption[];
 
-  const { pages } = useMemo(() => {
-    if (wordCaptions.length === 0) return { pages: [] };
-    return createTikTokStyleCaptions({
+  const pages = useMemo(() => {
+    if (wordCaptions.length === 0) return [];
+    const { pages: raw } = createTikTokStyleCaptions({
       captions: wordCaptions,
-      combineTokensWithinMilliseconds: 1200,
+      combineTokensWithinMilliseconds: 400,
     });
+    return limitTokensPerPage(raw, 6);
   }, [wordCaptions]);
 
   // True end time = max of all tracks so the last background image
@@ -82,10 +111,11 @@ export const AIVideo: React.FC<z.infer<typeof aiVideoSchema>> = ({ timeline }) =
       </Sequence>
 
       {/* ── Background images with zoom + blur transitions ── */}
-      {/* Last element is extended to totalContentMs so there's no black gap if audio outlasts elements */}
+      {/* Last element extends to totalContentMs + TAIL_BUFFER so there's no black at end of render */}
       {timeline.elements.map((element, index) => {
         const isLast = index === timeline.elements.length - 1;
-        const endMs = isLast ? Math.max(element.endMs, totalContentMs) : element.endMs;
+        const tailMs = isLast ? (TAIL_BUFFER_FRAMES / FPS) * 1000 : 0;
+        const endMs = isLast ? Math.max(element.endMs, totalContentMs) + tailMs : element.endMs;
         const { startFrame, duration } = calculateFrameTiming(
           element.startMs,
           endMs,
@@ -106,9 +136,11 @@ export const AIVideo: React.FC<z.infer<typeof aiVideoSchema>> = ({ timeline }) =
       {/* ── Captions: word-level TikTok highlight (preferred) or phrase fallback ── */}
       {pages.length > 0 ? (
         pages.map((page, i) => {
-          // Word timings are relative to audio start (t=0); offset by intro card.
+          // Use Math.floor for BOTH start and end so consecutive pages are
+          // exactly back-to-back with no 1-frame gaps or overlaps.
           const startFrame = Math.floor((page.startMs / 1000) * FPS) + INTRO_DURATION;
-          const durationFrames = Math.max(1, Math.ceil((page.durationMs / 1000) * FPS));
+          const endFrame   = Math.floor(((page.startMs + page.durationMs) / 1000) * FPS) + INTRO_DURATION;
+          const durationFrames = Math.max(1, endFrame - startFrame);
           return (
             <Sequence key={`wc-${i}`} from={startFrame} durationInFrames={durationFrames}>
               <MalayalamCaptionPage page={page} highlightColor="#FFE600" />
@@ -131,13 +163,15 @@ export const AIVideo: React.FC<z.infer<typeof aiVideoSchema>> = ({ timeline }) =
       )}
 
       {/* ── TopChrome: persistent logo + brand overlay ── */}
-      <TopChrome />
+      <TopChrome logoSrc={logoSrc} brandName={brandName} accent={accent} />
 
-      {/* ── Audio tracks ── */}
+      {/* ── Audio tracks — last track extended by tail buffer to match composition length ── */}
       {timeline.audio.map((element, index) => {
+        const isLastAudio = index === timeline.audio.length - 1;
+        const tailMs = isLastAudio ? (TAIL_BUFFER_FRAMES / FPS) * 1000 : 0;
         const { startFrame, duration } = calculateFrameTiming(
           element.startMs,
-          element.endMs,
+          element.endMs + tailMs,
           { addIntroOffset: true },
         );
         return (

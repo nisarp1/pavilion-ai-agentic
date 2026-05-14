@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { FPS } from "../lib/constants";
 import { BackgroundElement } from "../lib/types";
@@ -18,6 +18,7 @@ export const Background: React.FC<{ item: BackgroundElement; index: number }> = 
   item,
   index,
 }) => {
+  const [imgFailed, setImgFailed] = useState(false);
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
 
@@ -51,31 +52,37 @@ export const Background: React.FC<{ item: BackgroundElement; index: number }> = 
 
   const gradient = FALLBACK_GRADIENTS[index % FALLBACK_GRADIENTS.length];
 
-  const hasImage = Boolean(item.imageUrl);
-  const isAbsoluteOrData =
-    hasImage &&
-    (item.imageUrl.startsWith("http") || item.imageUrl.startsWith("data:"));
+  const hasImage = Boolean(item.imageUrl) && !imgFailed;
+  const isDataUri  = hasImage && item.imageUrl.startsWith("data:");
+  const isHttpUrl  = hasImage && item.imageUrl.startsWith("http");
+
+  const imgStyle: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    objectFit,
+    objectPosition: `${panX}% ${panY}%`,
+    transform: `scale(${scale})`,
+    transformOrigin: "center center",
+    filter: filterStr,
+    WebkitFilter: filterStr,
+    ...(hasCrop && {
+      clipPath: `inset(${cropTop}% ${cropRight}% ${cropBottom}% ${cropLeft}%)`,
+    }),
+  };
 
   return (
     <AbsoluteFill style={{ background: gradient }}>
-      {hasImage && (
+      {hasImage && isDataUri ? (
+        // Native <img> for data URIs — Remotion's <Img> routes them through
+        // the static bundle server which URL-encodes the data: prefix and 404s.
+        <img src={item.imageUrl} style={imgStyle} />
+      ) : hasImage ? (
         <Img
-          src={isAbsoluteOrData ? item.imageUrl : staticFile(item.imageUrl)}
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit,
-            objectPosition: `${panX}% ${panY}%`,
-            transform: `scale(${scale})`,
-            transformOrigin: "center center",
-            filter: filterStr,
-            WebkitFilter: filterStr,
-            ...(hasCrop && {
-              clipPath: `inset(${cropTop}% ${cropRight}% ${cropBottom}% ${cropLeft}%)`,
-            }),
-          }}
+          src={isHttpUrl ? item.imageUrl : staticFile(item.imageUrl)}
+          style={imgStyle}
+          onError={() => setImgFailed(true)}
         />
-      )}
+      ) : null}
     </AbsoluteFill>
   );
 };

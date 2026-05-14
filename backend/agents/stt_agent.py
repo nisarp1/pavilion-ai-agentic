@@ -33,8 +33,9 @@ def _wav_duration_s(audio_bytes: bytes, sample_rate: int = _WAV_SAMPLE_RATE) -> 
 def _estimate_duration_s(audio_bytes: bytes, encoding: str, sample_rate: int) -> float:
     if encoding == "LINEAR16":
         return _wav_duration_s(audio_bytes, sample_rate)
-    # MP3: ElevenLabs ≈ 128 kbps, Chirp3-HD ≈ 56 kbps — use 64 kbps as a safe midpoint
-    return len(audio_bytes) / (64_000 / 8)
+    # ElevenLabs MP3 ≈ 128 kbps — use that so we don't overestimate duration
+    # and unnecessarily try GCS upload for sub-60s audio.
+    return len(audio_bytes) / (128_000 / 8)
 
 
 def _upload_temp_gcs(audio_bytes: bytes, encoding: str) -> Optional[str]:

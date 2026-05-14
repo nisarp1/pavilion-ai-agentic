@@ -50,15 +50,19 @@ def run_reel_pipeline_task(self, article_id: int, options: dict = None):
         # ── Determine input ───────────────────────────────────────────────────
         reference_url = options.get("reference_url") or article.source_url or None
         text_prompt   = options.get("text_prompt") or None
-        article_data  = None
 
-        if not reference_url and not text_prompt:
-            # Fall back to article body
-            article_data = {
-                "title":   article.title,
-                "summary": article.summary,
-                "content": article.body,
-            }
+        # Always populate article_data — the context analyzer uses it as a
+        # fallback when URL extraction fails (paywall, 404, redirect, etc.).
+        # Without this, a failed URL fetch causes the pipeline to generate a
+        # reel about whatever Google Custom Search returns for the raw URL string.
+        article_data = {
+            "id":                     article.pk,
+            "title":                  article.title,
+            "summary":                article.summary,
+            "content":                article.body,
+            "category":               article.category or "",
+            "instagram_reel_script":  article.instagram_reel_script or "",
+        }
 
         _log("context", f"Input source: {'url' if reference_url else 'text' if text_prompt else 'article'}")
 
@@ -99,10 +103,14 @@ def run_reel_pipeline_task(self, article_id: int, options: dict = None):
             _log("tts", "No voiceover script generated — skipping TTS")
 
         # ── Persist to Article ────────────────────────────────────────────────
+        raw_audio_url = audio_result.get("audio_url", "")
+        # plan.audio_url is read by VideoStudio before reel_audio_url and accepts
+        # relative /media/... paths (stored in a JSON field, no URL validation).
+        if raw_audio_url:
+            plan["audio_url"] = raw_audio_url
+
         article.video_production_plan    = plan
         article.reel_generation_status   = "review"   # needs producer approval
-        article.reel_audio_url           = audio_result.get("audio_url", "")
-        article.video_audio_url          = audio_result.get("audio_url", "")  # legacy compat
         article.instagram_reel_script    = voiceover_script
         article.video_script             = voiceover_script
         article.video_status             = "completed"
@@ -110,13 +118,18 @@ def run_reel_pipeline_task(self, article_id: int, options: dict = None):
         update_fields = [
             "video_production_plan",
             "reel_generation_status",
-            "reel_audio_url",
-            "video_audio_url",
             "instagram_reel_script",
             "video_script",
             "video_status",
             "reel_pipeline_log",
         ]
+
+        # reel_audio_url / video_audio_url are URLFields — only store absolute URLs.
+        # Relative /media/... paths are accessible via plan.audio_url (JSON field).
+        if raw_audio_url.startswith("http://") or raw_audio_url.startswith("https://"):
+            article.reel_audio_url  = raw_audio_url
+            article.video_audio_url = raw_audio_url
+            update_fields += ["reel_audio_url", "video_audio_url"]
 
         article.save(update_fields=update_fields)
         _log("done", "Pipeline saved to Article — status: review")

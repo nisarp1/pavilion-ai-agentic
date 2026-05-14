@@ -53,10 +53,14 @@ export const TopChrome: React.FC<TopChromeProps> = ({
           boxSizing: "border-box",
         }}
       >
-        <Img
-          src={logoSrc || staticFile("logo.png")}
-          style={{ width: "100%", height: "100%", objectFit: "contain" }}
-        />
+        {logoSrc ? (
+          <Img
+            src={logoSrc}
+            style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          />
+        ) : (
+          <span style={{ color: "#fff", fontSize: 72, fontWeight: 800, fontFamily: "system-ui, sans-serif" }}>P</span>
+        )}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 22 }}>

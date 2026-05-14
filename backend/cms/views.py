@@ -996,90 +996,79 @@ class ArticleViewSet(viewsets.ModelViewSet):
                     result['article_id'] = article.id
                     result['article_slug'] = article.slug
                     
-                    # Generate TTS audio automatically
-                    try:
-                        from workers.tasks import generate_instagram_reel_audio
-                        # Save script to instagram_reel_script so TTS can read it
-                        article.instagram_reel_script = voiceover.get('script_plain', '')
-                        article.save(update_fields=['instagram_reel_script'])
-                        
-                        # Use highest quality voice 'best' (maps to Chirp3-HD/ElevenLabs)
-                        tts_result = generate_instagram_reel_audio(article, voice_name='best')
-                        if tts_result and tts_result.get('success') and article.instagram_reel_audio:
-                            # Use the relative media path — build_absolute_uri returns the
-                            # Docker-internal hostname (pavilion-django-dev) which the browser
-                            # can't resolve. The Vite proxy handles /media/ paths correctly.
-                            audio_url = article.instagram_reel_audio.url
+                    # ── ElevenLabs audio (preferred) or keep pipeline's Google TTS ──
+                    # The pipeline already generated Google TTS inside pipeline.run().
+                    # If ElevenLabs is configured, upgrade to it now and rebuild the
+                    # timeline so captions + audio share one authoritative source.
+                    # On any ElevenLabs failure we keep the pipeline's existing audio.
+                    import uuid as _uuid2
+                    import os as _os
+                    _logger_pipe = _logging.getLogger(__name__)
+
+                    el_key = _os.environ.get("ELEVENLABS_API_KEY", "")
+                    if el_key:
+                        try:
+                            from django.core.files.base import ContentFile as _CF
+                            from agents.elevenlabs_agent import ElevenLabsAgent as _ELAgent, _mp3_duration_ms as _mp3dur
+                            from agents.stt_agent import transcribe_for_word_timings as _stt
+                            from agents.video_pipeline import _word_timings_to_captions as _wt2cap, _chunk_word_timings as _wt2txt
+
+                            el_script = voiceover.get('script_plain', '')
+                            if not el_script:
+                                raise ValueError("No voiceover script to synthesise")
+
+                            _logger_pipe.info("[Pipeline] ElevenLabs synthesis starting...")
+                            _el = _ELAgent()
+                            el_bytes, el_timings = _el.synthesize_with_timings_chunked(script=el_script)
+
+                            # STT validation — replace approximate ElevenLabs timestamps
+                            try:
+                                stt_t = _stt(audio_bytes=el_bytes, language_code="ml-IN", encoding="MP3")
+                                if stt_t:
+                                    el_timings = stt_t
+                                    _logger_pipe.info(f"[Pipeline] STT replaced timings: {len(stt_t)} words")
+                            except Exception as _stt_e:
+                                _logger_pipe.warning(f"[Pipeline] STT skipped: {_stt_e}")
+
+                            # Save audio file
+                            el_fname = f'elevenlabs_{article.pk}_{_uuid2.uuid4().hex[:8]}.mp3'
+                            article.instagram_reel_audio.save(el_fname, _CF(el_bytes), save=False)
+                            article.elevenlabs_audio_url = article.instagram_reel_audio.url
+                            article.save(update_fields=['instagram_reel_audio', 'elevenlabs_audio_url'])
+
+                            audio_url    = article.instagram_reel_audio.url
+                            dur_ms       = _mp3dur(el_bytes)
+                            word_caps    = _wt2cap(el_timings) if el_timings else []
+                            text_caps    = _wt2txt(el_timings) if el_timings else []
+                            new_audio    = [{'startMs': 0, 'endMs': dur_ms, 'audioUrl': audio_url}]
+
                             result['audio_url'] = audio_url
-
-                            # Rebuild timeline.text from this audio's word timings so
-                            # captions and playback share one source (no cross-file drift).
-                            ml_word_timings = tts_result.get('word_timings', [])
-
-                            if ml_word_timings and result.get('timeline'):
-                                try:
-                                    from agents.video_pipeline import _chunk_word_timings, _word_timings_to_captions
-                                    ml_ms = [
-                                        {
-                                            'word':     t['word'],
-                                            'start_ms': int(t['start_s'] * 1000),
-                                            'end_ms':   int(t['end_s']   * 1000),
-                                        }
-                                        for t in ml_word_timings
-                                        if 'start_s' in t and 'end_s' in t
-                                    ]
-                                    if ml_ms:
-                                        total_ms      = ml_ms[-1]['end_ms']
-                                        new_text      = _chunk_word_timings(ml_ms)
-                                        new_captions  = _word_timings_to_captions(ml_ms)
-                                        new_audio     = [{'startMs': 0, 'endMs': total_ms, 'audioUrl': audio_url}]
-                                        result['timeline']['text']         = new_text
-                                        result['timeline']['wordCaptions'] = new_captions
-                                        result['timeline']['audio']        = new_audio
-                                        for _key in ('props', 'modular_props'):
-                                            _tl = result.get(_key, {}).get('timeline')
-                                            if _tl:
-                                                _tl['text']         = new_text
-                                                _tl['wordCaptions'] = new_captions
-                                                _tl['audio']        = new_audio
-                                except Exception as _tl_err:
-                                    import logging as _logging
-                                    _logging.getLogger(__name__).warning(
-                                        f"Timeline caption rebuild failed (non-fatal): {_tl_err}"
-                                    )
-
-                            ml_script = article.instagram_reel_script or ''
-                            en_captions = []
-                            if ml_word_timings and ml_script:
-                                try:
-                                    from workers.tasks import translate_to_english_captions
-                                    en_captions = translate_to_english_captions(
-                                        ml_word_timings, ml_script
-                                    )
-                                except Exception as cap_err:
-                                    import logging as _logging
-                                    _logging.getLogger(__name__).warning(
-                                        f"English caption generation failed (non-fatal): {cap_err}"
-                                    )
+                            for _tl_key in ('timeline',):
+                                _tl = result.get(_tl_key)
+                                if _tl:
+                                    _tl['audio']        = new_audio
+                                    _tl['wordCaptions'] = word_caps
+                                    _tl['text']         = text_caps
+                            for _pp_key in ('props', 'modular_props'):
+                                _pp_tl = (result.get(_pp_key) or {}).get('timeline')
+                                if _pp_tl:
+                                    _pp_tl['audio']        = new_audio
+                                    _pp_tl['wordCaptions'] = word_caps
+                                    _pp_tl['text']         = text_caps
 
                             article.video_production_plan = {
                                 **article.video_production_plan,
                                 'audio_url': audio_url,
-                                'timeline':  result.get('timeline', article.video_production_plan.get('timeline')),
-                                'props':     result.get('props',    article.video_production_plan.get('props')),
-                                'captions': {
-                                    'ml': ml_word_timings,
-                                    'en': en_captions,
-                                },
+                                'timeline':  result.get('timeline'),
+                                'props':     result.get('props'),
                             }
-                            result['captions'] = article.video_production_plan['captions']
-                            # reel_audio_url is a URLField (requires absolute URL) — skip it here.
-                            # The serializer's get_reel_audio_url reads from instagram_reel_audio instead.
                             article.save(update_fields=['video_production_plan'])
-                    except Exception as audio_err:
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.warning(f"Failed to auto-generate TTS audio: {audio_err}")
+                            _logger_pipe.info(f"[Pipeline] ElevenLabs audio saved → {audio_url}")
+
+                        except Exception as _el_err:
+                            _logger_pipe.warning(
+                                f"[Pipeline] ElevenLabs failed, keeping Google TTS audio: {_el_err}"
+                            )
                         
                 except Exception as save_err:
                     import logging
@@ -1104,6 +1093,26 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+
+    @action(detail=True, methods=['post'], url_path='save_plan_assets')
+    def save_plan_assets(self, request, pk=None):
+        """
+        Persist asset URLs and brand settings assigned in Video Studio back into
+        the article's video_production_plan so they survive page refresh.
+        """
+        article = self.get_object()
+        assets = request.data.get('assets', [])
+        brand  = request.data.get('brand', {})   # logoSrc, brandName, accent
+        if not isinstance(assets, list):
+            return Response({'error': 'assets must be a list'}, status=status.HTTP_400_BAD_REQUEST)
+
+        plan = article.video_production_plan or {}
+        plan['assets_needed'] = assets
+        if brand and isinstance(brand, dict):
+            plan['brand'] = brand
+        article.video_production_plan = plan
+        article.save(update_fields=['video_production_plan', 'updated_at'])
+        return Response({'status': 'ok', 'saved': len(assets)})
 
     @action(detail=True, methods=['post'], url_path='generate_elevenlabs_audio')
     def generate_elevenlabs_audio(self, request, pk=None):
@@ -1148,6 +1157,37 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 f"{len(word_timings)} word timings (chunked)"
             )
 
+            # ── STT validation: replace approximate ElevenLabs timestamps with
+            # accurate waveform-derived timestamps from Google Cloud STT.
+            # ElevenLabs character alignment sometimes breaks (stacks multiple words
+            # at the same ms). STT gives frame-accurate sync directly from the audio.
+            # Falls back silently if STT is unavailable or fails.
+            try:
+                from agents.stt_agent import transcribe_for_word_timings
+                _logger.info(f"[ElevenLabs] Running Google STT for accurate word timestamps...")
+                stt_timings = transcribe_for_word_timings(
+                    audio_bytes=audio_bytes,
+                    language_code="ml-IN",
+                    encoding="MP3",
+                )
+                if stt_timings:
+                    # STT timestamps are waveform-derived ground truth — always prefer them.
+                    # Linear index mapping was removed: if STT misses words at the start,
+                    # linear math shifts all subsequent timestamps to wrong positions.
+                    # Using STT directly means ≤5% of words may be missing from captions
+                    # (when STT can't recognise a word), but every caption that appears
+                    # is perfectly timed. That beats showing all words at wrong times.
+                    n_el_orig = len(word_timings)
+                    word_timings = stt_timings
+                    _logger.info(
+                        f"[ElevenLabs] STT replaced ElevenLabs alignment: "
+                        f"{len(stt_timings)} words (was {n_el_orig})"
+                    )
+                else:
+                    _logger.info("[ElevenLabs] STT returned 0 timings — keeping ElevenLabs alignment")
+            except Exception as _stt_err:
+                _logger.warning(f"[ElevenLabs] STT validation failed (non-fatal, keeping ElevenLabs): {_stt_err}")
+
             # Save as local Django media file — avoids GCS ACL issues entirely
             filename = f'elevenlabs_{article.pk}_{_uuid.uuid4().hex[:8]}.mp3'
             article.instagram_reel_audio.save(
@@ -1165,9 +1205,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
             wt_dur_ms   = word_timings[-1]['end_ms'] if word_timings else 0
             duration_seconds = round(max(mp3_dur_ms, wt_dur_ms) / 1000, 2)
 
-            # ── Build wordCaptions from ElevenLabs character-level timestamps ──
-            # ElevenLabs returns precise character timestamps — far more accurate
-            # than Google STT for ElevenLabs-generated audio. No STT step needed.
+            # ── Build wordCaptions from validated word timings ─────────────────
             word_captions = _word_timings_to_captions(word_timings) if word_timings else []
 
             # ── Update plan with new audio URL + word captions ────────────────

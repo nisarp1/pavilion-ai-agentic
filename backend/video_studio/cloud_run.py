@@ -4,7 +4,10 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT = int(os.environ.get('CLOUD_RUN_RENDER_TIMEOUT', '600'))
+# 25 minutes — covers PNG rendering of long videos with headroom.
+# PNG capture is ~2× slower than JPEG; a 60s video takes ~15 min.
+# Set CLOUD_RUN_RENDER_TIMEOUT in env to override.
+TIMEOUT = int(os.environ.get('CLOUD_RUN_RENDER_TIMEOUT', '1500'))
 
 
 def _auth_header(audience: str) -> dict:

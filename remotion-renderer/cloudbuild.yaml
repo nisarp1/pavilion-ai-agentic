@@ -45,7 +45,7 @@ steps:
       - '--platform=managed'
       - '--memory=8Gi'
       - '--cpu=8'
-      - '--timeout=600s'
+      - '--timeout=3600s'
       - '--concurrency=1'
       - '--max-instances=10'
       - '--no-allow-unauthenticated'

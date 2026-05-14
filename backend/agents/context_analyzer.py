@@ -97,6 +97,38 @@ def _extract_youtube(url: str) -> dict:
 
     except Exception as e:
         logger.warning(f"[ContextAnalyzer] yt-dlp failed for {url}: {e}")
+        # Try oEmbed as a free, no-auth fallback to at least get the video title
+        return _extract_youtube_oembed(url)
+
+
+def _extract_youtube_oembed(url: str) -> dict:
+    """
+    Fallback when yt-dlp is blocked: YouTube oEmbed API (free, no auth).
+    Returns title + author at minimum — better than raw URL as topic.
+    """
+    try:
+        oembed_url = f"https://www.youtube.com/oembed?url={url}&format=json"
+        resp = _requests.get(oembed_url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        title = data.get("title", "").strip()
+        if not title:
+            return {"ok": False, "error": "oEmbed returned no title"}
+        logger.info(f"[ContextAnalyzer] YouTube oEmbed fallback OK: {title!r}")
+        return {
+            "ok":          True,
+            "source_type": "youtube",
+            "title":       title,
+            "description": "",
+            "transcript":  "",
+            "channel":     data.get("author_name", ""),
+            "thumbnail":   data.get("thumbnail_url", ""),
+            "duration":    0,
+            "tags":        [],
+            "chapters":    [],
+        }
+    except Exception as e:
+        logger.warning(f"[ContextAnalyzer] YouTube oEmbed fallback failed: {e}")
         return {"ok": False, "error": str(e)}
 
 
@@ -276,6 +308,24 @@ def analyze_context(
 
             # raw_content: transcript (YouTube) or body (webpage) — the gold source
             raw = data.get("transcript") or data.get("body") or data.get("description", "")
+
+            # Many news sites render content via JavaScript or hide it behind paywalls.
+            # The static scraper returns a 200 with only navigation/paywall HTML (<200 chars).
+            # When that happens AND we have the actual article body in article_data, prefer it.
+            if len(raw) < 200 and article_data:
+                article_body    = (article_data.get("content") or article_data.get("body") or "").strip()
+                article_summary = (article_data.get("summary") or "").strip()
+                fallback        = article_body or article_summary
+                if len(fallback) > len(raw):
+                    logger.info(
+                        f"[ContextAnalyzer] Scraped content thin ({len(raw)} chars) — "
+                        f"using article body ({len(fallback)} chars) as raw_content"
+                    )
+                    raw = fallback
+                    # Preserve URL title as the topic (it's usually more descriptive)
+                    if not title and article_data.get("title"):
+                        context["topic"] = article_data["title"].strip()
+
             context["raw_content"] = raw
 
             # Supplemental research pass
@@ -292,23 +342,29 @@ def analyze_context(
             )
             return context
 
-        # URL fetch failed — try finding the article via Google Custom Search
+        # URL fetch failed — prefer article_data over Custom Search.
+        # Using the raw URL as a search query returns random related content
+        # that may have nothing to do with the actual article being reel-ified.
+        # article_data (title + body) is the ground truth for what this article is about.
         logger.warning(
-            f"[ContextAnalyzer] URL extraction failed ({data.get('error')}), "
-            f"trying Custom Search fallback"
+            f"[ContextAnalyzer] URL extraction failed ({data.get('error')})"
+            + (f" — falling back to article body" if article_data else " — trying Custom Search")
         )
-        search_snippets = _research_topic(reference_url, max_results=5)
-        if search_snippets:
-            # Use the first snippet's title as the topic
-            first = search_snippets[0]
-            topic_guess = first.split(":")[0].strip() if ":" in first else first[:100]
-            context["source_type"]  = "url_searched"
-            context["topic"]        = topic_guess
-            context["facts"]        = [f"Source URL: {reference_url}"] + search_snippets
-            context["raw_content"]  = "\n".join(search_snippets)
-            logger.info(f"[ContextAnalyzer] Custom Search fallback: topic={topic_guess!r}")
-            return context
-        text_prompt = text_prompt or reference_url
+        if article_data:
+            # Fall through to the article_data branch below
+            reference_url = None   # prevent recursion / second URL attempt
+        else:
+            search_snippets = _research_topic(reference_url, max_results=5)
+            if search_snippets:
+                first = search_snippets[0]
+                topic_guess = first.split(":")[0].strip() if ":" in first else first[:100]
+                context["source_type"]  = "url_searched"
+                context["topic"]        = topic_guess
+                context["facts"]        = [f"Source URL: {reference_url}"] + search_snippets
+                context["raw_content"]  = "\n".join(search_snippets)
+                logger.info(f"[ContextAnalyzer] Custom Search fallback: topic={topic_guess!r}")
+                return context
+            text_prompt = text_prompt or reference_url
 
     # ── 2. Text prompt ────────────────────────────────────────────────────────
     if text_prompt:

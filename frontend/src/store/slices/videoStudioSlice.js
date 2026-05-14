@@ -178,18 +178,16 @@ const videoStudioSlice = createSlice({
       if (audioUrl !== undefined) state.audioUrl = audioUrl
       if (assets !== undefined) state.assets = assets
 
-      // Sync uploaded asset URLs into timeline.elements BEFORE clip auto-generation
-      // so that when clips are built from timelineElements they already carry the
-      // user-uploaded imageUrls (not the empty originals from the backend plan).
-      // Without this, a browser refresh loses all asset-to-scene assignments in the preview.
+      // Sync uploaded asset URLs into timeline.elements BEFORE clip auto-generation.
+      // Always use array position (i) — never sceneIndex — so the order matches
+      // exactly what the user sees in the Assets grid.
       if (assets?.length) {
         const elements = state.props?.timeline?.elements
         if (elements?.length) {
           assets.forEach((asset, i) => {
             if (!asset.url) return
-            const sceneIdx = asset.sceneIndex ?? i
-            if (elements[sceneIdx] !== undefined) {
-              elements[sceneIdx] = { ...elements[sceneIdx], imageUrl: asset.url }
+            if (elements[i] !== undefined) {
+              elements[i] = { ...elements[i], imageUrl: asset.url }
             }
           })
         }
@@ -237,18 +235,18 @@ const videoStudioSlice = createSlice({
       }
     },
     setAssets(state, { payload }) {
-      state.assets = payload
+      // Normalise sceneIndex to match array position so it's always consistent
+      state.assets = payload.map((a, i) => ({ ...a, sceneIndex: i }))
       // Sync timeline elements and clips so preview updates immediately
       payload.forEach((asset, i) => {
         if (!asset.url) return
-        const sceneIdx = asset.sceneIndex ?? i
-        if (state.props?.timeline?.elements?.[sceneIdx] !== undefined) {
-          state.props.timeline.elements[sceneIdx] = {
-            ...state.props.timeline.elements[sceneIdx],
+        if (state.props?.timeline?.elements?.[i] !== undefined) {
+          state.props.timeline.elements[i] = {
+            ...state.props.timeline.elements[i],
             imageUrl: asset.url,
           }
         }
-        const clip = state.clips.find(c => c.id === `bg-slot-${sceneIdx}`)
+        const clip = state.clips.find(c => c.id === `bg-slot-${i}`)
         if (clip) clip.src = asset.url
       })
     },
@@ -257,16 +255,15 @@ const videoStudioSlice = createSlice({
       if (assetIdx === -1) return
       state.assets[assetIdx].url = url
       state.assets[assetIdx].status = url ? 'uploaded' : 'needed'
-      // Mirror into the corresponding timeline element
-      const sceneIdx = state.assets[assetIdx].sceneIndex ?? assetIdx
-      if (state.props?.timeline?.elements?.[sceneIdx] !== undefined) {
-        state.props.timeline.elements[sceneIdx] = {
-          ...state.props.timeline.elements[sceneIdx],
+      // Mirror into the corresponding timeline element by array position (not sceneIndex)
+      if (state.props?.timeline?.elements?.[assetIdx] !== undefined) {
+        state.props.timeline.elements[assetIdx] = {
+          ...state.props.timeline.elements[assetIdx],
           imageUrl: url,
         }
       }
       // Also update the auto-generated display clip src
-      const clip = state.clips.find(c => c.id === `bg-slot-${sceneIdx}`)
+      const clip = state.clips.find(c => c.id === `bg-slot-${assetIdx}`)
       if (clip) clip.src = url
     },
     reorderAssets(state, { payload: { fromIndex, toIndex } }) {
@@ -274,7 +271,8 @@ const videoStudioSlice = createSlice({
       const items = [...state.assets]
       const [moved] = items.splice(fromIndex, 1)
       items.splice(toIndex, 0, moved)
-      state.assets = items
+      // Update sceneIndex to match new array positions so future updateAssetUrl calls are correct
+      state.assets = items.map((a, i) => ({ ...a, sceneIndex: i }))
       // Rebuild timeline element imageUrls in the new order
       const elements = state.props?.timeline?.elements
       if (elements) {

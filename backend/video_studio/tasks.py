@@ -11,7 +11,8 @@ from celery import shared_task
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+@shared_task(bind=True, max_retries=2, default_retry_delay=60,
+             soft_time_limit=1800, time_limit=1860)  # 30 min soft + 31 min hard
 def render_video_task(self, job_id: str):
     """Trigger Cloud Run Remotion renderer and persist the resulting GCS video URL."""
     from .models import VideoJob
@@ -19,6 +20,12 @@ def render_video_task(self, job_id: str):
 
     try:
         job = VideoJob.objects.get(id=job_id)
+
+        # Guard: skip if a previous retry already completed the job
+        if job.status == VideoJob.STATUS_DONE and job.output_url:
+            logger.info(f"[VideoJob {job_id}] Already done — skipping duplicate render")
+            return {'job_id': job_id, 'video_url': job.output_url}
+
         job.status = VideoJob.STATUS_RENDERING
         job.save(update_fields=['status', 'updated_at'])
 
@@ -48,7 +55,21 @@ def render_video_task(self, job_id: str):
                     audio_el['audioUrl'] = _abs_url(audio_el['audioUrl'])
             for img_el in timeline.get('elements', []):
                 if isinstance(img_el, dict) and img_el.get('imageUrl'):
-                    img_el['imageUrl'] = _abs_url(img_el['imageUrl'])
+                    url = img_el['imageUrl']
+                    # Strip data URIs — Remotion's prefetch routes them through
+                    # the static bundle server which 404s. Fall back to gradient.
+                    if url.startswith('data:'):
+                        logger.info(f"[VideoJob {job_id}] Stripped data URI imageUrl (using gradient fallback)")
+                        img_el['imageUrl'] = ''
+                    else:
+                        img_el['imageUrl'] = _abs_url(url)
+
+        # Rewrite top-level image props so the renderer can fetch them
+        for top_key in ('logoSrc', 'heroSrc', 'playerImage'):
+            val = props.get(top_key, '')
+            if val and val.startswith('/'):
+                props[top_key] = _abs_url(val)
+                logger.info(f"[VideoJob {job_id}] Rewrote {top_key}: {val} → {props[top_key]}")
 
         # Extract compositionId stored by the pipeline (pops it so it's not
         # passed as a Remotion prop — the renderer treats it separately)

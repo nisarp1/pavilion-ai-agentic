@@ -100,14 +100,20 @@ export default function VideoStudio() {
         // Captions — word-level ML + sentence-level EN from the production plan
         const captions = plan?.captions || null
 
-        // Restore uploaded asset URLs from localStorage (survive browser refresh)
+        // Restore asset URLs: DB is the primary source (after save_plan_assets),
+        // localStorage is a secondary fallback for unsaved changes.
         const baseAssets = plan?.assets_needed || []
-        let assetsToLoad = baseAssets
+        let assetsToLoad = baseAssets.map(a =>
+          a.url ? { ...a, status: 'uploaded' } : a
+        )
         try {
           const stored = localStorage.getItem(`pavilion_assets_${articleIdParam}`)
           if (stored && baseAssets.length) {
             const storedAssets = JSON.parse(stored)
             assetsToLoad = baseAssets.map(a => {
+              // DB URL wins (it was explicitly saved)
+              if (a.url) return { ...a, status: 'uploaded' }
+              // Fall back to localStorage for unsaved uploads
               const sa = storedAssets.find(s => s.id === a.id)
               return sa?.url ? { ...a, url: sa.url, status: 'uploaded' } : a
             })
@@ -118,10 +124,13 @@ export default function VideoStudio() {
         setProductionPlan(plan)
         setShowGenPanel(false)
 
+        // Restore saved brand settings (logoSrc, brandName, accent) from DB
+        const brand = plan?.brand || {}
+
         dispatch(setVideoData({
           props:    Object.keys(propsData).length
-            ? { ...propsData, ...(captions ? { captions } : {}) }
-            : (captions ? { captions } : undefined),
+            ? { ...propsData, ...(captions ? { captions } : {}), ...brand }
+            : (captions ? { captions, ...brand } : (Object.keys(brand).length ? brand : undefined)),
           clips:    clips.length ? clips : undefined,
           audioUrl: audioUrlVal,
           assets:   assetsToLoad,

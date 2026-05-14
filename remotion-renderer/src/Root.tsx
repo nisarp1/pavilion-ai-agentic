@@ -8,7 +8,7 @@ import {
   captionedVideoSchema,
 } from "./templates/captioned_video";
 import { AIVideo, aiVideoSchema } from "./components/AIVideo";
-import { FPS, INTRO_DURATION } from "./lib/constants";
+import { FPS, INTRO_DURATION, TAIL_BUFFER_FRAMES } from "./lib/constants";
 import type { Timeline } from "./lib/types";
 import "./fonts";
 
@@ -31,7 +31,9 @@ const calculatePavilionReelMetadata = async ({
   return { durationInFrames: Math.max(totalFrames, 60) };
 };
 
-// Duration = max(last element endMs, last audio endMs, last caption endMs) + intro card
+// Duration = max(last element endMs, last audio endMs, last caption endMs) + intro card + tail buffer.
+// TAIL_BUFFER_FRAMES (3s) is also added to the last background/audio sequences in AIVideo.tsx
+// so that those sequences actually cover the full composition length.
 const calculateAIVideoMetadata = async ({
   props,
 }: {
@@ -48,7 +50,7 @@ const calculateAIVideoMetadata = async ({
   if (tl.text?.length)          candidates.push(Math.max(...tl.text.map((t: any) => t.endMs)));
   const lastMs = candidates.length ? Math.max(...candidates) : 10000;
   const contentFrames = Math.ceil((lastMs / 1000) * FPS);
-  return { durationInFrames: contentFrames + INTRO_DURATION };
+  return { durationInFrames: contentFrames + INTRO_DURATION + TAIL_BUFFER_FRAMES };
 };
 
 export const Root: React.FC = () => {

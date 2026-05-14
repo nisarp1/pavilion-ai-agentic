@@ -7,7 +7,7 @@ import {
   SortableContext, rectSortingStrategy, useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { updateAssetUrl, reorderAssets, setAssets, setAudioUrl, setVideoData } from '../../store/slices/videoStudioSlice'
+import { updateAssetUrl, reorderAssets, setAssets, setAudioUrl, setVideoData, updateProps } from '../../store/slices/videoStudioSlice'
 import {
   FiMic, FiFilm, FiPackage, FiCopy, FiCheck, FiUpload, FiLink,
   FiX, FiMenu, FiImage, FiVideo, FiList, FiPlus, FiEdit3, FiSave,
@@ -37,13 +37,24 @@ function CopyButton({ text }) {
   )
 }
 
-function readFileAsDataURL(file) {
-  return new Promise((res, rej) => {
-    const r = new FileReader()
-    r.onload = e => res(e.target.result)
-    r.onerror = rej
-    r.readAsDataURL(file)
-  })
+// Vite proxy uses changeOrigin:true, so Django builds absolute URLs with the
+// internal Docker hostname (pavilion-django-dev:8000) which the browser can't
+// resolve. Strip to just the path so the /media Vite proxy handles display,
+// and tasks.py can rewrite it to http://django:8000/media/... for Cloud Run.
+function toServablePath(raw) {
+  if (!raw) return ''
+  if (raw.startsWith('http')) {
+    try { return new URL(raw).pathname } catch {}
+  }
+  return raw
+}
+
+async function uploadFileToMedia(file) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('title', file.name)
+  const res = await api.post('/media/', form)
+  return toServablePath(res.data.file || res.data.url || '')
 }
 
 // ── Voiceover tab ─────────────────────────────────────────────────────────────
@@ -373,7 +384,7 @@ function MediaLibraryPicker({ onSelect, onClose }) {
           )}
           <div className="grid grid-cols-4 gap-2">
             {items.map((item, i) => {
-              const url = item.file || item.url || item.image || item.featured_image || ''
+              const url = toServablePath(item.file || item.url || item.image || item.featured_image || '')
               if (!url) return null
               return (
                 <button
@@ -413,8 +424,12 @@ function SortableAssetCard({ asset, index, onReplace, onRemove }) {
   const handleFileInput = useCallback(async (e) => {
     const file = e.target.files?.[0]
     if (file) {
-      const url = await readFileAsDataURL(file)
-      onReplace(asset.id, url, file)
+      try {
+        const url = await uploadFileToMedia(file)
+        onReplace(asset.id, url)
+      } catch {
+        showError('Upload failed — check your connection')
+      }
     }
     e.target.value = ''
   }, [asset.id, onReplace])
@@ -507,9 +522,11 @@ function SortableAssetCard({ asset, index, onReplace, onRemove }) {
 
 // ── Assets tab (Drive-like) ───────────────────────────────────────────────────
 
-function AssetsGridTab() {
+function AssetsGridTab({ articleId }) {
   const dispatch = useDispatch()
   const assets   = useSelector(s => s.videoStudio.assets)
+  const logoSrc  = useSelector(s => s.videoStudio.props?.logoSrc ?? '')
+  const brandName = useSelector(s => s.videoStudio.props?.brandName ?? '')
 
   const [activeId,      setActiveId]      = useState(null)
   const [isDroppingOn,  setIsDroppingOn]  = useState(false)
@@ -518,20 +535,13 @@ function AssetsGridTab() {
   const [showLibrary,   setShowLibrary]   = useState(false)
   const [libraryTarget, setLibraryTarget] = useState(null)
   const [busyMsg,       setBusyMsg]       = useState('')
+  const [saving,        setSaving]        = useState(false)
+  const logoFileRef = useRef()
 
   const bulkFileRef = useRef()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
   // ── helpers ────────────────────────────────────────────────────────────────
-
-  const saveToLibrary = useCallback(async (file) => {
-    try {
-      const form = new FormData()
-      form.append('file', file)
-      form.append('title', file.name)
-      await api.post('/media/', form)
-    } catch { /* best effort */ }
-  }, [])
 
   const saveUrlToLibrary = useCallback(async (url) => {
     try {
@@ -539,18 +549,39 @@ function AssetsGridTab() {
     } catch { /* best effort */ }
   }, [])
 
-  // Fill slots with uploaded files in order. Extra files extend the asset list.
-  // Builds the full new array locally then dispatches ONE setAssets to avoid stale closures.
+  const handleSave = useCallback(async () => {
+    if (!articleId) { showError('No article — run the AI pipeline first'); return }
+    setSaving(true)
+    try {
+      await api.post(`/articles/${articleId}/save_plan_assets/`, {
+        assets,
+        brand: { logoSrc, brandName },
+      })
+      showSuccess('Assets saved!')
+    } catch {
+      showError('Failed to save assets')
+    } finally {
+      setSaving(false)
+    }
+  }, [articleId, assets, logoSrc, brandName])
+
+  // Fill slots with uploaded files in order. Uploads each file to /media/ first
+  // so stored URLs are real server paths (not ephemeral data URIs).
   const assignFilesToSlots = useCallback(async (files) => {
     const accepted = Array.from(files).filter(
       f => f.type.startsWith('image/') || f.type.startsWith('video/')
     )
     if (!accepted.length) return
 
-    setBusyMsg(`Processing ${accepted.length} file${accepted.length > 1 ? 's' : ''}…`)
+    setBusyMsg(`Uploading ${accepted.length} file${accepted.length > 1 ? 's' : ''}…`)
 
-    // Read all data URLs in parallel
-    const urls = await Promise.all(accepted.map(readFileAsDataURL))
+    // Upload all to /media/ in parallel to get persistent server URLs
+    const results = await Promise.allSettled(accepted.map(f => uploadFileToMedia(f)))
+    const urls = results.map((r, i) => {
+      if (r.status === 'fulfilled') return r.value
+      showError(`Failed to upload ${accepted[i].name}`)
+      return ''
+    })
 
     // Build the complete new assets array locally
     const newAssets = assets.map(a => ({ ...a }))
@@ -581,14 +612,11 @@ function AssetsGridTab() {
           url,
         })
       }
-
-      // Fire-and-forget library save
-      saveToLibrary(file)
     }
 
     dispatch(setAssets(newAssets))
     setBusyMsg('')
-  }, [assets, dispatch, saveToLibrary])
+  }, [assets, dispatch])
 
   // ── event handlers ────────────────────────────────────────────────────────
 
@@ -639,11 +667,12 @@ function AssetsGridTab() {
         if (item.type.startsWith('image/')) {
           const file = item.getAsFile()
           if (file) {
-            const url = await readFileAsDataURL(file)
-            const emptySlot = assets.find(a => !a.url)
-            if (emptySlot) {
-              dispatch(updateAssetUrl({ id: emptySlot.id, url }))
-              saveToLibrary(file)
+            try {
+              const url = await uploadFileToMedia(file)
+              const emptySlot = assets.find(a => !a.url)
+              if (emptySlot) dispatch(updateAssetUrl({ id: emptySlot.id, url }))
+            } catch {
+              showError('Paste upload failed')
             }
           }
           return
@@ -652,12 +681,11 @@ function AssetsGridTab() {
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  }, [assets, dispatch, saveToLibrary])
+  }, [assets, dispatch])
 
-  const handleReplace = useCallback(async (assetId, url, file) => {
+  const handleReplace = useCallback((assetId, url) => {
     dispatch(updateAssetUrl({ id: assetId, url }))
-    if (file) saveToLibrary(file)
-  }, [dispatch, saveToLibrary])
+  }, [dispatch])
 
   const handleRemove = useCallback((assetId) => {
     dispatch(updateAssetUrl({ id: assetId, url: '' }))
@@ -681,6 +709,19 @@ function AssetsGridTab() {
     }
   }, [libraryTarget, assets, dispatch])
 
+  const handleLogoFileInput = useCallback(async (e) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      try {
+        const url = await uploadFileToMedia(file)
+        dispatch(updateProps({ logoSrc: url }))
+      } catch {
+        showError('Logo upload failed')
+      }
+    }
+    e.target.value = ''
+  }, [dispatch])
+
   // ── counts ────────────────────────────────────────────────────────────────
 
   const ready = assets.filter(a => a.url).length
@@ -691,6 +732,41 @@ function AssetsGridTab() {
 
   return (
     <div className="space-y-3">
+
+      {/* Brand / TopChrome settings */}
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-2.5 space-y-2">
+        <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Brand (TopChrome)</h4>
+        <div className="flex items-center gap-2">
+          {/* Logo thumbnail / upload */}
+          <div
+            className="relative flex-shrink-0 w-14 h-14 rounded-lg border-2 border-dashed border-gray-300 bg-white overflow-hidden flex items-center justify-center cursor-pointer hover:border-purple-400 transition-colors"
+            onClick={() => logoFileRef.current?.click()}
+            title="Upload logo"
+          >
+            {logoSrc
+              ? <img src={logoSrc} alt="logo" className="w-full h-full object-contain p-1" />
+              : <FiImage size={18} className="text-gray-300" />
+            }
+            <div className="absolute bottom-0 right-0 bg-purple-600 text-white rounded-tl text-[8px] px-1 py-0.5 font-bold">LOGO</div>
+          </div>
+          <input ref={logoFileRef} type="file" accept="image/*" className="hidden" onChange={handleLogoFileInput} />
+
+          {/* Brand name */}
+          <div className="flex-1 min-w-0">
+            <label className="text-[9px] text-gray-400 font-medium block mb-0.5">Channel Name</label>
+            <input
+              type="text"
+              value={brandName}
+              onChange={e => dispatch(updateProps({ brandName: e.target.value }))}
+              placeholder="PAVILION TV"
+              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-purple-400 bg-white"
+            />
+          </div>
+        </div>
+        <p className="text-[9px] text-gray-400">
+          Click logo box to upload · appears top-left in every video · click Save to persist
+        </p>
+      </div>
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -755,6 +831,16 @@ function AssetsGridTab() {
             title="Add empty slot"
           >
             <FiPlus size={11} />
+          </button>
+        )}
+        {articleId && (
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-1 text-[11px] px-2.5 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors font-semibold shadow-sm ml-auto"
+            title="Save assets to this article"
+          >
+            <FiSave size={11} /> {saving ? 'Saving…' : 'Save'}
           </button>
         )}
       </div>
@@ -960,11 +1046,9 @@ export default function ProductionPlanPanel({ plan, onPlanRefresh }) {
         {tab === 'voiceover' && <VoiceoverTab plan={plan} onPlanRefresh={onPlanRefresh} />}
         {tab === 'scenes'    && <ScenesTab    plan={plan} />}
         {tab === 'needed'   && <AssetsNeededTab assets={assets} />}
-        {tab === 'assets'   && <AssetsGridTab />}
+        {tab === 'assets'   && <AssetsGridTab articleId={plan?.article_id} />}
       </div>
     </div>
   )
 }
 
-// exported for paste handler
-export { readFileAsDataURL }

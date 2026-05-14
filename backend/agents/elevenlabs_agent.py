@@ -378,4 +378,17 @@ class ElevenLabsAgent:
         else:
             logger.warning("[ElevenLabs] No alignment data in response — captions will be proportional")
 
+        # ElevenLabs alignment often fails for Malayalam (returns only 1-2 words
+        # for a full script). Detect this and fall back to proportional distribution.
+        expected_words = len([w for w in script.split() if w.strip()])
+        if len(word_timings) < max(3, expected_words // 5):
+            logger.warning(
+                f"[ElevenLabs] Alignment returned only {len(word_timings)} words "
+                f"for a {expected_words}-word script — using proportional fallback"
+            )
+            from agents.tts_agent import _proportional_word_timings
+            dur_ms = _mp3_duration_ms(audio_bytes)
+            words = [w for w in script.split() if w.strip()]
+            word_timings = _proportional_word_timings(words, dur_ms)
+
         return audio_bytes, word_timings

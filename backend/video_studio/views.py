@@ -17,6 +17,17 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 
 
+def _strip_data_uris(obj):
+    """Recursively replace data: URI strings with '' to keep DB rows small."""
+    if isinstance(obj, dict):
+        return {k: _strip_data_uris(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_strip_data_uris(item) for item in obj]
+    if isinstance(obj, str) and obj.startswith('data:'):
+        return ''
+    return obj
+
+
 class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Read jobs via list/retrieve.
@@ -44,12 +55,15 @@ class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
 
         from .tasks import render_video_task
 
+        props = _strip_data_uris(data['props'])
+        clips = _strip_data_uris(data.get('clips', []))
+
         job = VideoJob.objects.create(
             tenant=request.tenant,
             created_by=request.user,
             job_type=VideoJob.TYPE_RENDER,
-            props=data['props'],
-            clips=data.get('clips', []),
+            props=props,
+            clips=clips,
             audio_url=audio_url,
             article_id=data.get('article_id'),
         )
@@ -98,12 +112,15 @@ class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
 
         from .tasks import export_fallback_task
 
+        props = _strip_data_uris(data['props'])
+        clips = _strip_data_uris(data.get('clips', []))
+
         job = VideoJob.objects.create(
             tenant=request.tenant,
             created_by=request.user,
             job_type=VideoJob.TYPE_FALLBACK,
-            props=data['props'],
-            clips=data.get('clips', []),
+            props=props,
+            clips=clips,
             audio_url=audio_url,
             asset_urls=asset_urls,
             article_id=data.get('article_id'),

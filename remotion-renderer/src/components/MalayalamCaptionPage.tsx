@@ -10,7 +10,7 @@ import {
 } from "remotion";
 import { ANEK_MALAYALAM } from "../fonts";
 
-const FONT_SIZE = 80;
+const FONT_SIZE = 82;
 
 export const MalayalamCaptionPage: React.FC<{
   readonly page: TikTokPage;
@@ -24,7 +24,7 @@ export const MalayalamCaptionPage: React.FC<{
     frame,
     fps,
     config: { damping: 200 },
-    durationInFrames: 5,
+    durationInFrames: 4,
   });
 
   return (
@@ -33,49 +33,61 @@ export const MalayalamCaptionPage: React.FC<{
         justifyContent: "center",
         alignItems: "center",
         top: undefined,
-        bottom: 160,
-        height: 320,
-        padding: "0 48px",
+        bottom: 140,
+        height: 280,
+        padding: "0 40px",
       }}
     >
+      {/* Dark pill background — YouTube CC style */}
       <div
         style={{
-          fontSize: FONT_SIZE,
-          fontFamily: ANEK_MALAYALAM,
-          fontWeight: 800,
-          color: "white",
-          WebkitTextStroke: "14px black",
-          paintOrder: "stroke",
-          lineHeight: 1.35,
-          textAlign: "center",
-          width: "100%",
-          wordBreak: "break-word",
+          background: "rgba(0,0,0,0.72)",
+          borderRadius: 18,
+          padding: "16px 32px",
+          display: "inline-block",
+          maxWidth: "100%",
           transform: makeTransform([
-            scale(interpolate(enter, [0, 1], [0.85, 1])),
-            translateY(interpolate(enter, [0, 1], [40, 0])),
+            scale(interpolate(enter, [0, 1], [0.92, 1])),
+            translateY(interpolate(enter, [0, 1], [24, 0])),
           ]),
         }}
       >
-        {page.tokens.map((t) => {
-          const startRelativeToSequence = t.fromMs - page.startMs;
-          const endRelativeToSequence = t.toMs - page.startMs;
-          const active =
-            startRelativeToSequence <= timeInMs &&
-            endRelativeToSequence > timeInMs;
+        <div
+          style={{
+            fontSize: FONT_SIZE,
+            fontFamily: ANEK_MALAYALAM,
+            fontWeight: 800,
+            lineHeight: 1.3,
+            textAlign: "center",
+            wordBreak: "break-word",
+          }}
+        >
+          {page.tokens.map((t) => {
+            const startRelativeToSequence = t.fromMs - page.startMs;
+            const endRelativeToSequence = t.toMs - page.startMs;
+            const active =
+              startRelativeToSequence <= timeInMs &&
+              endRelativeToSequence > timeInMs;
 
-          return (
-            <span
-              key={t.fromMs}
-              style={{
-                display: "inline",
-                whiteSpace: "pre-wrap",
-                color: active ? highlightColor : "white",
-              }}
-            >
-              {t.text}
-            </span>
-          );
-        })}
+            return (
+              <span
+                key={t.fromMs}
+                style={{
+                  display: "inline",
+                  whiteSpace: "pre-wrap",
+                  color: active ? highlightColor : "white",
+                  // Active word gets a subtle scale-up via text-shadow glow
+                  textShadow: active
+                    ? `0 0 24px ${highlightColor}88`
+                    : "none",
+                  transition: "color 0.05s",
+                }}
+              >
+                {t.text}
+              </span>
+            );
+          })}
+        </div>
       </div>
     </AbsoluteFill>
   );

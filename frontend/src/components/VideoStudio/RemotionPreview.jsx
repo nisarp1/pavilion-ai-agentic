@@ -51,10 +51,12 @@ export default function RemotionPreview({ props }) {
   const playerRef = useRef(null)
   const audioRef  = useRef(null)   // native <audio> element — bypasses Remotion audio pipeline
   const dispatch  = useDispatch()
-  const { clips, currentFrame, audioUrl, selectedClipId } = useSelector(s => s.videoStudio)
+  const { clips, currentFrame, audioUrl, selectedClipId, assets } = useSelector(s => s.videoStudio)
   const isSyncingRef        = useRef(false)  // kept for safety; isPlaying() guard is the real fix
   const waitingForIntroRef  = useRef(false)  // true while player is in the intro card, audio held
   const isTimelinePipelineRef = useRef(false) // mirror of isTimelinePipeline for use in closures
+  const seekDebounceRef     = useRef(null)    // debounce timer for scrub seekTo
+  const currentFrameRef     = useRef(currentFrame) // latest frame, readable inside timeout closure
   const [overlayDrag,      setOverlayDrag]      = useState(null)
   const [audioReady,       setAudioReady]       = useState(false)
   const [audioError,       setAudioError]       = useState(false)
@@ -74,11 +76,13 @@ export default function RemotionPreview({ props }) {
   isTimelinePipelineRef.current = isTimelinePipeline
 
   // ── Native audio element: load & buffer whenever URL changes ───────────────
+  // In timeline pipeline mode, audio lives inside <Audio> in AIVideoComposition,
+  // so Remotion Player handles scrubbing sync natively. Skip native audio there.
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
 
-    if (!resolvedAudioUrl) {
+    if (isTimelinePipeline || !resolvedAudioUrl) {
       audio.src = ''
       setAudioReady(false)
       setAudioError(false)
@@ -92,7 +96,7 @@ export default function RemotionPreview({ props }) {
     audio.src = resolvedAudioUrl
     audio.preload = 'auto'
     audio.load()
-  }, [resolvedAudioUrl])
+  }, [resolvedAudioUrl, isTimelinePipeline])
 
   // ── Sync native audio with Remotion Player events ──────────────────────────
   useEffect(() => {
@@ -235,17 +239,41 @@ export default function RemotionPreview({ props }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  // Keep a ref so the debounce timeout always reads the latest frame value.
+  currentFrameRef.current = currentFrame
+
   // ── Timeline playhead → Player seek ────────────────────────────────────────
   // IMPORTANT: Only seek when the player is PAUSED (user scrubbing the ruler).
   // During playback, frameupdate already updates Redux state. Calling seekTo()
   // here during playback creates a 30fps feedback loop that re-seeks the player
   // every single frame, interrupting audio playback and causing the garbled sound.
+  //
+  // The debounce (1 video frame = 33ms) collapses rapid mouse-drag events into a
+  // single seekTo() call per settled position.  Without it, dozens of seeks queue
+  // up faster than the browser can process them, leaving the audio element's
+  // currentTime lagging behind the visual playhead.
   useEffect(() => {
     const player = playerRef.current
     if (!player) return
     if (player.isPlaying()) return   // ← breaks the feedback loop
-    player.seekTo(currentFrame)
+
+    clearTimeout(seekDebounceRef.current)
+    seekDebounceRef.current = setTimeout(() => {
+      const p = playerRef.current
+      if (p && !p.isPlaying()) p.seekTo(currentFrameRef.current)
+    }, Math.ceil(1000 / FPS))  // 33ms — one frame at 30fps
   }, [currentFrame])
+
+  // ── Force composition re-render when assets or brand props change ──────────
+  // @remotion/player doesn't always re-render the composition when inputProps
+  // change on a paused player. Seeking to the current frame forces it.
+  useEffect(() => {
+    const player = playerRef.current
+    if (!player || player.isPlaying()) return
+    const timer = setTimeout(() => player.seekTo(player.getCurrentFrame()), 50)
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assets, props?.logoSrc, props?.brandName, props?.accent])
 
   // ── Player frame → Redux currentFrame (during playback) ────────────────────
   useEffect(() => {
@@ -341,7 +369,9 @@ export default function RemotionPreview({ props }) {
     if (elDur && isFinite(elDur) && elDur > 0) candidates.push(Math.ceil(elDur * 1000))
     if (!candidates.length) return 300 + 30
     const lastEndMs = Math.max(...candidates)
-    return Math.ceil((lastEndMs / 1000) * FPS) + 30
+    // Must mirror calculateAIVideoMetadata in Root.tsx exactly:
+    // contentFrames + INTRO_DURATION + TAIL_BUFFER_FRAMES
+    return Math.ceil((lastEndMs / 1000) * FPS) + INTRO_FRAMES + 90
   })()
 
   // ── Legacy pipeline: convert clips to scenes for PavilionReelComposition ──
@@ -361,7 +391,12 @@ export default function RemotionPreview({ props }) {
   })
 
   const legacyInputProps = { ...props, audioSrc: undefined, scenes, suppressCaptions: true }
-  const timelineInputProps = { timeline: props?.timeline ?? null }
+  const timelineInputProps = {
+    timeline:  props?.timeline  ?? null,
+    logoSrc:   props?.logoSrc   ?? '',
+    brandName: props?.brandName ?? '',
+    accent:    props?.accent    ?? '',
+  }
 
   const inputProps     = isTimelinePipeline ? timelineInputProps : legacyInputProps
   const activeComp     = isTimelinePipeline ? AIVideoComposition : PavilionReelComposition
@@ -415,8 +450,7 @@ export default function RemotionPreview({ props }) {
           controls
           loop={false}
           autoPlay={false}
-          // No volume controls needed — audio is handled natively, not by Remotion
-          showVolumeControls={false}
+          showVolumeControls={isTimelinePipeline}
           acknowledgeRemotionLicense
         />
 
@@ -480,7 +514,25 @@ export default function RemotionPreview({ props }) {
       </p>
 
       {/* ── Voiceover status badge ── */}
-      {resolvedAudioUrl ? (
+      {isTimelinePipeline ? (
+        /* Timeline mode: audio is inside Remotion composition — Player handles sync */
+        (() => {
+          const tlAudio = props?.timeline?.audio?.[0]
+          return tlAudio?.audioUrl ? (
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-green-50 border border-green-200 rounded-lg">
+              <span style={{ fontSize: 11 }}>🔊</span>
+              <span className="text-[10px] text-green-700 font-mono truncate max-w-[200px]" title={tlAudio.audioUrl}>
+                {tlAudio.audioUrl.split('/').pop()}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 border border-gray-200 rounded-lg">
+              <span style={{ fontSize: 11 }}>🔇</span>
+              <span className="text-[10px] text-gray-400">No voiceover</span>
+            </div>
+          )
+        })()
+      ) : resolvedAudioUrl ? (
         <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] transition-all ${
           audioError
             ? 'bg-red-50 border-red-200 text-red-600'

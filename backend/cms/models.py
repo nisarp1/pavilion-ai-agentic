@@ -10,6 +10,7 @@ from slugify import slugify
 import os
 from .utils import process_image_to_webp
 from .models_poster import PosterTemplate
+from .models_canva import CanvaTemplate  # noqa: F401
 from tenants.models import Tenant
 
 
@@ -373,7 +374,30 @@ class Article(models.Model):
         blank=True,
         help_text="Per-agent execution log from the reel pipeline"
     )
-    
+
+    # Social Post Generator pipeline fields
+    social_post_status = models.CharField(
+        max_length=20,
+        default='idle',
+        choices=[
+            ('idle',    'Idle'),
+            ('queued',  'Queued'),
+            ('running', 'Running'),
+            ('done',    'Done'),
+            ('failed',  'Failed'),
+        ],
+    )
+    social_post_plan = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "SocialPostCrew output keyed by template slot keys. "
+            "Also carries _template_pk, _template_name, _canva_template_id."
+        ),
+    )
+    social_post_celery_task_id = models.CharField(max_length=255, blank=True, default='')
+    canva_export_log = models.JSONField(default=list, blank=True)
+
     # Social Media Content
     social_media_poster_text = models.TextField(blank=True, help_text="Short, punchy text for social media poster")
     social_media_caption = models.TextField(blank=True, help_text="Engaging caption for social media post")

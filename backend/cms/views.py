@@ -4,12 +4,16 @@ API views for CMS.
 from rest_framework import viewsets, status, permissions, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.utils import timezone
-from datetime import timedelta
+from datetime import timedelta, datetime
 import os
+import re
 import hashlib
+import uuid
 from PIL import Image
 from io import BytesIO
 from django.db.models import Q
@@ -1337,6 +1341,132 @@ class ArticleViewSet(viewsets.ModelViewSet):
             )
 
 
+    # ── Social Post Generator actions ─────────────────────────────────────────
+
+    @action(detail=True, methods=['post'], url_path='generate_social_post')
+    def generate_social_post(self, request, pk=None):
+        """
+        Trigger the Social Post Generator pipeline for an article.
+
+        Body params (all optional):
+          source_url        (str)  — social/web URL to scrape
+          plain_text        (str)  — raw text input (alternative to URL)
+          vibe_override     (str)  — tone instruction, e.g. "celebratory"
+          canva_template_id (int)  — CanvaTemplate PK; omit for auto-detect
+        """
+        import logging as _logging
+        _logger = _logging.getLogger(__name__)
+
+        article = self.get_object()
+
+        from agents.social_tasks import generate_social_post_task
+
+        options = {
+            'source_url':        request.data.get('source_url', ''),
+            'plain_text':        request.data.get('plain_text', ''),
+            'vibe_override':     request.data.get('vibe_override', ''),
+            'canva_template_id': request.data.get('canva_template_id'),
+            'tenant_id':         getattr(request.tenant, 'pk', None),
+        }
+
+        task = generate_social_post_task.apply_async(args=[article.pk, options], queue='social')
+        article.social_post_status          = 'queued'
+        article.social_post_celery_task_id  = task.id
+        article.save(update_fields=['social_post_status', 'social_post_celery_task_id'])
+
+        _logger.info('[SocialPost] Queued task %s for article %d', task.id, article.pk)
+        return Response({
+            'status':     'queued',
+            'task_id':    task.id,
+            'article_id': article.pk,
+        })
+
+    @action(detail=True, methods=['get'], url_path='social_post_status')
+    def social_post_status_view(self, request, pk=None):
+        """
+        Poll social post generation status.
+        Returns status + full plan JSON when done.
+        """
+        article = self.get_object()
+        plan    = article.social_post_plan or {}
+        return Response({
+            'status':                article.social_post_status,
+            'task_id':               article.social_post_celery_task_id,
+            'plan':                  plan if article.social_post_status == 'done' else None,
+            'selected_template_name': plan.get('_template_name'),
+            'log':                   (article.canva_export_log or [])[-10:],
+        })
+
+    @action(detail=True, methods=['get'], url_path='export_canva_csv')
+    def export_canva_csv(self, request, pk=None):
+        """
+        Download a Canva-compatible CSV for the article's social post plan.
+
+        Column headers are the Canva element names from the selected template's
+        slot schema. First column is always Template_ID.
+        Returns a direct file-download response.
+        """
+        import csv
+        from django.http import HttpResponse
+
+        article = self.get_object()
+        plan    = article.social_post_plan or {}
+
+        if not plan:
+            return Response(
+                {'error': 'No social post plan found. Run the Social Post Generator first.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Load the CanvaTemplate that was used for this plan
+        template      = None
+        template_name = plan.get('_template_name', 'canva')
+        template_pk   = plan.get('_template_pk')
+        if template_pk:
+            try:
+                from cms.models_canva import CanvaTemplate
+                template = CanvaTemplate.objects.get(pk=template_pk)
+            except Exception:
+                pass
+
+        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', template_name)[:30]
+        filename  = f'canva_{safe_name}_article_{article.pk}.csv'
+
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        # UTF-8 BOM so Excel opens Malayalam characters correctly
+        response.write('﻿')
+
+        if template:
+            all_slots = template.all_slots_flat()
+            columns   = ['Template_ID'] + [s['canva_name'] for s in all_slots]
+            row       = {'Template_ID': template.canva_template_id}
+            for slot in all_slots:
+                row[slot['canva_name']] = plan.get(slot['key'], '')
+        else:
+            # Generic fallback — fixed columns
+            columns = [
+                'Template_ID', 'Headline', 'Subheadline', 'Stat_1', 'Stat_2',
+                'Background_Image_URL', 'Player_Cutout_URL', 'Accent_Color', 'Caption',
+            ]
+            row = {
+                'Template_ID':          plan.get('_canva_template_id', ''),
+                'Headline':             plan.get('Headline', ''),
+                'Subheadline':          plan.get('Subheadline', ''),
+                'Stat_1':               plan.get('Stat_1', ''),
+                'Stat_2':               plan.get('Stat_2', ''),
+                'Background_Image_URL': plan.get('Background_Image', ''),
+                'Player_Cutout_URL':    plan.get('Player_Cutout', ''),
+                'Accent_Color':         plan.get('Accent_Color', ''),
+                'Caption':              plan.get('Caption', ''),
+            }
+
+        writer = csv.DictWriter(response, fieldnames=columns, extrasaction='ignore')
+        writer.writeheader()
+        writer.writerow(row)
+        return response
+
+
 class CategoryViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing categories and subcategories.
@@ -1765,6 +1895,68 @@ class WebStoryViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
+class CanvaTemplateViewSet(viewsets.ModelViewSet):
+    """
+    CRUD for CanvaTemplate objects.
+
+    Each template describes one Canva design already in the workspace.
+    The `slots` JSONField drives both the SocialPostCrew agent prompts and
+    the CSV column headers for bulk-create uploads.
+
+    Permissions:
+      list / retrieve        → any authenticated tenant member
+      create / update        → editor or admin
+      destroy                → admin only
+    """
+    from cms.models_canva import CanvaTemplate as _CT
+    queryset = _CT.objects.all()
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [HasReadAccessToTenant()]
+        elif self.action in ['create', 'update', 'partial_update']:
+            return [IsEditorOrAdminOfTenant()]
+        return [IsAdminOfTenant()]
+
+    def get_serializer_class(self):
+        from cms.serializers import CanvaTemplateSerializer
+        return CanvaTemplateSerializer
+
+    def get_queryset(self):
+        from cms.models_canva import CanvaTemplate
+        return CanvaTemplate.objects.filter(
+            tenant=self.request.tenant,
+            is_active=True,
+        ).order_by('content_type', 'name')
+
+    def perform_create(self, serializer):
+        serializer.save(tenant=self.request.tenant)
+
+    @action(detail=True, methods=['get'], url_path='test-sheet')
+    def test_sheet_connection(self, request, pk=None):
+        """
+        GET /api/canva-templates/{id}/test-sheet/
+
+        Verify the linked Google Sheet is accessible and headers match.
+        Returns sheet status, service account email, header comparison, and row count.
+        """
+        template = self.get_object()
+        from agents.sheets_push import test_sheet_connection as _test, get_service_account_email
+        result = _test(template)
+        result['service_account_email'] = get_service_account_email()
+        return Response(result)
+
+    @action(detail=False, methods=['get'], url_path='service-account-email')
+    def service_account_email(self, request):
+        """
+        GET /api/canva-templates/service-account-email/
+
+        Return the GCP service account email the manager needs to share sheets with.
+        """
+        from agents.sheets_push import get_service_account_email
+        return Response({'email': get_service_account_email()})
+
+
 def resize_media_view(request):
     """
     Resize media on the fly and cache it.
@@ -1875,3 +2067,105 @@ def resize_media_view(request):
         logger = logging.getLogger(__name__)
         logger.error(f"Resize error: {e}")
         return HttpResponseBadRequest(f"Error resizing image")
+
+
+class SocialStudioGenerateView(APIView):
+    """
+    POST /api/social-studio/generate/
+
+    Standalone Social Post Generator endpoint — article is optional.
+    Accepts any combination of: article_id, source_url, plain_text, image file.
+    Auto-creates a draft Article when no article_id is provided so results
+    are always stored and pollable.
+
+    Multipart form fields:
+      article_id        (int,  optional)
+      source_url        (str,  optional)
+      plain_text        (str,  optional)
+      vibe_override     (str,  optional)
+      canva_template_id (int,  optional)
+      image             (file, optional)
+    """
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from agents.social_tasks import generate_social_post_task
+        from django.utils.text import slugify
+
+        article_id        = request.data.get('article_id') or ''
+        source_url        = request.data.get('source_url', '').strip()
+        plain_text        = request.data.get('plain_text', '').strip()
+        vibe_override     = request.data.get('vibe_override', '').strip()
+        canva_template_id = request.data.get('canva_template_id') or None
+        image_file        = request.FILES.get('image')
+
+        if not any([article_id, source_url, plain_text, image_file]):
+            return Response(
+                {'error': 'Provide at least one input: article, URL, text, or image.'},
+                status=400,
+            )
+
+        # ── Get or auto-create Article ─────────────────────────────────────────
+        if article_id:
+            article = get_object_or_404(Article, pk=article_id, tenant=request.tenant)
+        else:
+            if plain_text:
+                title = plain_text[:100].strip()
+            elif source_url:
+                title = source_url[:100]
+            else:
+                title = f'Social Post {datetime.now().strftime("%d %b %Y %H:%M")}'
+
+            base_slug = slugify(title[:80]) or f'social-post-{uuid.uuid4().hex[:8]}'
+            slug, counter = base_slug, 1
+            while Article.objects.filter(slug=slug).exists():
+                slug = f'{base_slug}-{counter}'
+                counter += 1
+
+            article = Article.objects.create(
+                title=title,
+                slug=slug,
+                tenant=request.tenant,
+                status='draft',
+                body=plain_text or '',
+                source_url=source_url or '',
+            )
+
+        # ── Save uploaded / pasted image ───────────────────────────────────────
+        if image_file:
+            try:
+                name, content = process_image_to_webp(image_file)
+                if name and content:
+                    article.featured_image.save(name, content, save=True)
+                else:
+                    article.featured_image.save(image_file.name, image_file, save=True)
+            except Exception:
+                try:
+                    article.featured_image.save(image_file.name, image_file, save=True)
+                except Exception:
+                    pass
+
+        # ── Dispatch Celery task ───────────────────────────────────────────────
+        options = {
+            'source_url':        source_url,
+            'plain_text':        plain_text,
+            'vibe_override':     vibe_override,
+            'canva_template_id': canva_template_id,
+            'tenant_id':         getattr(request.tenant, 'pk', None),
+        }
+
+        task = generate_social_post_task.apply_async(args=[article.pk, options], queue='social')
+        article.social_post_status         = 'queued'
+        article.social_post_celery_task_id = task.id
+        article.canva_export_log           = []
+        article.save(update_fields=[
+            'social_post_status', 'social_post_celery_task_id', 'canva_export_log',
+        ])
+
+        return Response({
+            'status':        'queued',
+            'task_id':       task.id,
+            'article_id':    article.pk,
+            'article_title': article.title,
+        })

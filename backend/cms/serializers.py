@@ -4,6 +4,7 @@ Serializers for CMS API.
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Article, Category, Media, WebStory, WebStorySlide
+from .models_canva import CanvaTemplate
 from workers.tasks import generate_article_task
 
 
@@ -116,6 +117,9 @@ class ArticleSerializer(serializers.ModelSerializer):
             # ── Reel pipeline fields ──────────────────────────────────────────
             'video_production_plan',
             'reel_generation_status', 'reel_video_url', 'elevenlabs_audio_url',
+            # ── Social Post Generator fields ──────────────────────────────────
+            'social_post_status', 'social_post_plan',
+            'social_post_celery_task_id', 'canva_export_log',
             # ─────────────────────────────────────────────────────────────────
             'created_at', 'updated_at', 'published_at', 'publish_at',
             'generation_started_at', 'generation_completed_at',
@@ -126,6 +130,7 @@ class ArticleSerializer(serializers.ModelSerializer):
             'generation_started_at', 'generation_completed_at',
             'video_error', 'newsroomx_status', 'newsroomx_error', 'newsroomx_video_url',
             'celery_task_id',
+            'social_post_status', 'social_post_celery_task_id', 'canva_export_log',
         ]
     
     def create(self, validated_data):
@@ -382,3 +387,26 @@ class WebStoryListSerializer(serializers.ModelSerializer):
     def get_slide_count(self, obj):
         return obj.slides.count()
 
+
+
+class CanvaTemplateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for CanvaTemplate.
+
+    The `slots` JSONField is read/written as-is — the frontend and Django admin
+    are responsible for maintaining the correct structure:
+      {"text": [...], "image": [...], "color": [...]}
+    """
+    content_type_display = serializers.CharField(
+        source='get_content_type_display', read_only=True
+    )
+
+    class Meta:
+        model  = CanvaTemplate
+        fields = [
+            'id', 'name', 'content_type', 'content_type_display',
+            'canva_template_id', 'description', 'slots', 'team_colors',
+            'google_sheet_id', 'sheet_tab_name',
+            'is_active', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'content_type_display']

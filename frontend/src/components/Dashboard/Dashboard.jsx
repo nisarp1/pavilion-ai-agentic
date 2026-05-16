@@ -16,6 +16,7 @@ import {
   FiUser,
   FiSettings,
   FiVideo,
+  FiZap,
 } from 'react-icons/fi'
 import { useState } from 'react'
 import TenantSwitcher from '../Auth/TenantSwitcher'
@@ -45,6 +46,7 @@ function Dashboard() {
     { path: '/categories', label: 'Categories', icon: FiTag },
     { path: '/rss-feeds', label: 'RSS Feeds', icon: FiRss },
     { path: '/video-studio', label: 'Video Studio', icon: FiVideo },
+    { path: '/social-studio', label: 'Social Studio', icon: FiZap },
     { path: '/invite', label: 'Invite Member', icon: FiUserPlus, adminOnly: true },
     { path: '/profile', label: 'My Profile', icon: FiUser },
     { path: '/settings', label: 'Settings', icon: FiSettings, adminOnly: true },

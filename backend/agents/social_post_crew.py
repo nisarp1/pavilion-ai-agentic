@@ -1,0 +1,354 @@
+"""
+SocialPostCrew — 3-agent CrewAI pipeline for generating Canva-ready social posts.
+
+Flow:
+  1. SportsJournalist  — extracts facts from source content, writes English copy
+                         fitted to the template's exact slot schema
+  2. MalayalamLocalizer — translates all text slots into authentic Malayalam,
+                          respects per-slot word-count limits, honours vibe override
+  3. ArtDirector       — validates lengths, picks Accent_Color, emits final strict JSON
+
+The selected CanvaTemplate is serialised into a human-readable "slot brief" that is
+injected verbatim into every agent's task prompt.  Agents generate content ONLY for
+the declared slots — no more, no less.
+"""
+import os
+import json
+import re
+import logging
+
+from crewai import Agent, Task, Crew, Process
+
+logger = logging.getLogger(__name__)
+
+# Generic fallback schema used when no CanvaTemplate is available.
+_GENERIC_SLOTS = {
+    'text': [
+        {'key': 'Headline',     'canva_name': 'Headline',     'max_words': 10},
+        {'key': 'Subheadline',  'canva_name': 'Subheadline',  'max_words': 20},
+        {'key': 'Stat_1',       'canva_name': 'Stat_1',       'max_words': 5},
+        {'key': 'Stat_2',       'canva_name': 'Stat_2',       'max_words': 5},
+        {'key': 'Caption',      'canva_name': 'Caption',      'max_words': 50},
+    ],
+    'image': [
+        {'key': 'Background_Image', 'canva_name': 'Background_Image', 'needs_cutout': False},
+        {'key': 'Player_Cutout',    'canva_name': 'Player_Cutout',    'needs_cutout': True},
+    ],
+    'color': [
+        {'key': 'Accent_Color', 'canva_name': 'Accent_Color'},
+    ],
+}
+
+
+def _build_slot_brief(template) -> str:
+    """
+    Serialise a CanvaTemplate's slot schema into a human-readable block
+    that is injected into every agent task prompt.
+    """
+    if template is None:
+        slots = _GENERIC_SLOTS
+        header = (
+            "TEMPLATE: Generic (no Canva template selected)\n"
+            "LAYOUT: Standard social post with headline, stats, player image, caption.\n"
+        )
+    else:
+        slots = template.slots if template.slots else _GENERIC_SLOTS
+        header = (
+            f'TEMPLATE: "{template.name}" ({template.get_content_type_display()})\n'
+            f"LAYOUT: {template.description or 'Visual layout not described.'}\n"
+        )
+
+    text_slots  = slots.get('text',  [])
+    image_slots = slots.get('image', [])
+    color_slots = slots.get('color', [])
+
+    lines = [header]
+
+    lines.append(
+        "TEXT SLOTS — You MUST fill every slot listed below. "
+        "Values will be in Malayalam after translation:"
+    )
+    for s in text_slots:
+        limit = f"  (≤{s['max_words']} words)" if s.get('max_words') else ""
+        lines.append(
+            f'  • {s["key"]:25s}→  Canva element: "{s["canva_name"]}"{limit}'
+        )
+
+    if image_slots:
+        lines.append(
+            "\nIMAGE SLOTS — Provide an English image search query for each "
+            "(3-5 words, specific to the news event):"
+        )
+        for s in image_slots:
+            cutout_note = "  [BACKGROUND REMOVAL REQUIRED]" if s.get('needs_cutout') else ""
+            lines.append(
+                f'  • {s["key"]:25s}→  Canva element: "{s["canva_name"]}"{cutout_note}'
+            )
+
+    if color_slots:
+        lines.append("\nCOLOR SLOTS — Provide a hex colour code for each:")
+        for s in color_slots:
+            lines.append(
+                f'  • {s["key"]:25s}→  Canva element: "{s["canva_name"]}"'
+            )
+
+    return "\n".join(lines)
+
+
+def _all_slot_keys(template) -> list:
+    """Return all slot key strings for the given template (or generic fallback)."""
+    slots = (template.slots if (template and template.slots) else _GENERIC_SLOTS)
+    result = []
+    for category in ('text', 'image', 'color'):
+        result.extend(s['key'] for s in slots.get(category, []))
+    return result
+
+
+class SocialPostCrew:
+    """
+    3-agent CrewAI pipeline.
+
+    Usage:
+        crew = SocialPostCrew()
+        plan = crew.run_pipeline(
+            source_context = analyze_context(...),
+            vibe_override  = "celebratory",
+            template       = CanvaTemplate.objects.get(pk=1),  # or None
+        )
+        # plan keys == template's slot keys + _template_pk / _template_name / _canva_template_id
+    """
+
+    def __init__(self):
+        model_name = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash-lite')
+        if not model_name.startswith('gemini/') and not model_name.startswith('vertex_ai/'):
+            model_name = f'gemini/{model_name}'
+        self.llm_model = model_name
+
+    # ── Agents ────────────────────────────────────────────────────────────────
+
+    def _journalist_agent(self) -> Agent:
+        return Agent(
+            role='Sports Journalist & Fact Extractor',
+            goal=(
+                'Parse the provided sports news content and produce English copy '
+                'that fills EXACTLY the text slot schema provided. '
+                'Also generate an English image-search query for each image slot.'
+            ),
+            backstory=(
+                'You are a seasoned sports journalist covering cricket, football, '
+                'and athletics for a Kerala news brand. You identify the single most '
+                'compelling fact in a story, extract clean stats, and know exactly '
+                'what 3-5 word search query will surface the best player action photo.'
+            ),
+            verbose=True,
+            allow_delegation=False,
+            llm=self.llm_model,
+        )
+
+    def _localizer_agent(self) -> Agent:
+        return Agent(
+            role='Malayalam Sports Localizer',
+            goal=(
+                'Translate every TEXT slot value from English into authentic, punchy '
+                'Malayalam. Numbers and stats remain unchanged. '
+                'Honour the vibe_override tone instruction if one is provided. '
+                'Honour the max_words limit for each slot.'
+            ),
+            backstory=(
+                "You are the lead Malayalam copy editor at Pavilion, Kerala's premier "
+                "sports news brand. Your Malayalam reads like original editorial — not a "
+                "translation. You use authentic sports slang, avoid Wikipedia tone, and "
+                "hook the reader from the first word."
+            ),
+            verbose=True,
+            allow_delegation=False,
+            llm=self.llm_model,
+        )
+
+    def _art_director_agent(self) -> Agent:
+        return Agent(
+            role='Art Director',
+            goal=(
+                'Assemble the final output JSON. '
+                'Validate that every TEXT slot respects its max_words limit — truncate if needed. '
+                'Pick an Accent_Color hex that suits the sport/team context. '
+                'Output ONLY a single valid JSON object with no markdown fences.'
+            ),
+            backstory=(
+                'You are the visual brand guardian for Pavilion. You know that cricket '
+                'posts use blue/gold, football uses green/white, and athlete spotlights '
+                'use orange/black. You always output strict JSON with exactly the keys '
+                'required — no extra keys, no missing keys.'
+            ),
+            verbose=True,
+            allow_delegation=False,
+            llm=self.llm_model,
+        )
+
+    # ── Pipeline ──────────────────────────────────────────────────────────────
+
+    def run_pipeline(
+        self,
+        source_context: dict,
+        vibe_override: str = '',
+        template=None,           # CanvaTemplate instance or None (generic mode)
+    ) -> dict:
+        """
+        Run the 3-agent sequential pipeline.
+
+        Args:
+            source_context:  Output of analyze_context() — must have keys:
+                             topic, raw_content, facts (list of str), thumbnail_url
+            vibe_override:   Optional tone instruction, e.g. "aggressive", "celebratory"
+            template:        CanvaTemplate model instance, or None for generic mode
+
+        Returns:
+            dict with keys matching template slot keys + _template_pk, _template_name,
+            _canva_template_id
+        """
+        topic       = source_context.get('topic', '')
+        raw_content = (source_context.get('raw_content') or '')[:3000]
+        facts_list  = source_context.get('facts') or []
+        facts_block = '\n'.join(f'- {f}' for f in facts_list[:15]) if facts_list else raw_content[:800]
+
+        slot_brief   = _build_slot_brief(template)
+        expected_keys = _all_slot_keys(template)
+        vibe_block   = f'\n\nVIBE / TONE INSTRUCTION: {vibe_override}' if vibe_override else ''
+
+        logger.info(
+            '[SocialPostCrew] Starting pipeline | topic=%r | template=%s | vibe=%r',
+            topic[:60], getattr(template, 'name', 'Generic'), vibe_override,
+        )
+
+        journalist  = self._journalist_agent()
+        localizer   = self._localizer_agent()
+        art_director = self._art_director_agent()
+
+        # ── Task 1: English fact extraction ──────────────────────────────────
+        journalist_task = Task(
+            description=(
+                f"You are given the following sports news content.\n\n"
+                f"TOPIC: {topic}\n\n"
+                f"KEY FACTS:\n{facts_block}\n\n"
+                f"RAW CONTENT:\n{raw_content}"
+                f"{vibe_block}\n\n"
+                "---\n"
+                f"{slot_brief}\n\n"
+                "---\n"
+                "Your job:\n"
+                "1. Fill every TEXT slot listed above with concise ENGLISH copy that fits "
+                "the template layout described.\n"
+                "2. For every IMAGE slot, write a 3-5 word English search query that will "
+                "return a great photo for that slot.\n"
+                "3. For every COLOR slot, leave the value as an empty string — the Art "
+                "Director will handle colours.\n\n"
+                "Output a JSON object whose keys are EXACTLY the slot keys listed above "
+                "(text slots suffixed with _EN, image and color slots as-is).\n"
+                "Example text slot: \"Headline_EN\": \"Kohli smashes century\"\n"
+                "Example image slot: \"Background_Image\": \"cricket stadium crowd night\"\n"
+                "No markdown fences. Output only the JSON object."
+            ),
+            expected_output=(
+                "A valid JSON object containing _EN-suffixed keys for every text slot, "
+                "plus raw-key entries for every image and color slot."
+            ),
+            agent=journalist,
+        )
+
+        # ── Task 2: Malayalam localisation ───────────────────────────────────
+        localizer_task = Task(
+            description=(
+                "The journalist has produced English copy for each slot. "
+                "Your job is to translate every TEXT slot value into authentic Malayalam.\n\n"
+                f"{slot_brief}\n\n"
+                "Rules:\n"
+                "- TEXT slots: translate from _EN value to Malayalam. Use the slot key WITHOUT _EN suffix.\n"
+                "- Stat values (numbers, scores) stay unchanged inside the Malayalam string.\n"
+                "- Respect the max_words limit for each slot; truncate if needed.\n"
+                f"- Apply tone: {vibe_override or 'default energetic sports tone'}.\n"
+                "- IMAGE and COLOR slot values: copy them unchanged from the journalist output.\n\n"
+                "Output a JSON object with EXACTLY these keys (no _EN suffix on text slots): "
+                f"{json.dumps(expected_keys)}\n"
+                "No markdown fences. Output only the JSON object."
+            ),
+            expected_output=(
+                "A valid JSON object with all slot keys in their final form, "
+                "text values in Malayalam, image values as English queries, "
+                "color values empty or as provided."
+            ),
+            agent=localizer,
+        )
+
+        # ── Task 3: Art direction + final assembly ────────────────────────────
+        art_task = Task(
+            description=(
+                "Assemble the final output from the localizer's JSON.\n\n"
+                f"{slot_brief}\n\n"
+                "Your jobs:\n"
+                "1. Validate every TEXT slot against its max_words limit. Truncate at word "
+                "boundary if exceeded.\n"
+                "2. For every COLOR slot, choose a hex colour that fits the sport and team "
+                "context (use team_colors from the template description if mentioned, "
+                "otherwise choose an appropriate colour).\n"
+                "3. Confirm every IMAGE slot has a non-empty English search query.\n"
+                "4. Output a SINGLE strict JSON object — no markdown fences, no extra keys.\n\n"
+                f"Required keys exactly: {json.dumps(expected_keys)}\n\n"
+                "Example:\n"
+                '{"Headline": "കോലി സെഞ്ച്വറി", "Stat_1": "ഓട്ടം: 142", '
+                '"Background_Image": "cricket stadium crowd", "Accent_Color": "#FF6B00"}'
+            ),
+            expected_output=(
+                f"A single valid JSON object with exactly these keys: {expected_keys}. "
+                "Text values in Malayalam, image values as English search queries, "
+                "color values as hex strings."
+            ),
+            agent=art_director,
+        )
+
+        crew = Crew(
+            agents=[journalist, localizer, art_director],
+            tasks=[journalist_task, localizer_task, art_task],
+            process=Process.sequential,
+        )
+
+        result     = crew.kickoff()
+        raw_output = str(result).strip()
+
+        # ── Post-processing ───────────────────────────────────────────────────
+        # Strip markdown fences the LLM may have added
+        raw_output = re.sub(r'^```[a-zA-Z]*\s*', '', raw_output)
+        raw_output = re.sub(r'\s*```$', '', raw_output.strip())
+
+        # Extract the first {...} block
+        match = re.search(r'\{.*\}', raw_output, re.DOTALL)
+        if not match:
+            logger.error('[SocialPostCrew] No JSON block in output: %s', raw_output[:500])
+            raise ValueError(f'SocialPostCrew: no JSON block in crew output. Preview: {raw_output[:300]}')
+
+        try:
+            plan = json.loads(match.group(0))
+        except json.JSONDecodeError as exc:
+            logger.error('[SocialPostCrew] JSON parse error: %s | raw: %s', exc, raw_output[:500])
+            raise ValueError(f'SocialPostCrew: JSON parse failed — {exc}') from exc
+
+        # Remove any stray _EN suffixed keys the LLM may have kept
+        plan = {k.rstrip('_EN') if k.endswith('_EN') else k: v for k, v in plan.items()}
+
+        # Ensure all required keys are present; fill missing ones with safe defaults
+        for s in (template.slots if (template and template.slots) else _GENERIC_SLOTS).get('text', []):
+            plan.setdefault(s['key'], '')
+        for s in (template.slots if (template and template.slots) else _GENERIC_SLOTS).get('image', []):
+            plan.setdefault(s['key'], topic[:50])  # search query fallback
+        for s in (template.slots if (template and template.slots) else _GENERIC_SLOTS).get('color', []):
+            plan.setdefault(s['key'], '#FF6B00')
+
+        # Attach template metadata for downstream use (CSV export, status endpoint)
+        plan['_template_pk']       = template.pk if template else None
+        plan['_template_name']     = template.name if template else 'Generic'
+        plan['_canva_template_id'] = template.canva_template_id if template else ''
+
+        logger.info(
+            '[SocialPostCrew] Pipeline complete | template=%s | keys=%s',
+            plan['_template_name'], [k for k in plan if not k.startswith('_')],
+        )
+        return plan

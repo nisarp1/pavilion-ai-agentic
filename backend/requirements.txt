@@ -32,6 +32,8 @@ google-cloud-speech>=2.0.0
 google-api-python-client>=2.100.0
 google-auth>=2.20.0
 google-auth-httplib2>=0.2.0
+gspread>=6.0.0
+google-genai>=1.0.0
 
 # HTTP & Networking
 requests>=2.28.0
@@ -70,3 +72,6 @@ async-timeout>=4.0.2
 
 # ElevenLabs TTS (premium Malayalam voiceover, manually triggered)
 elevenlabs>=1.0.0
+
+# LiteLLM (required by crewai for Vertex AI / gemini/ model prefix routing)
+litellm>=1.40.0

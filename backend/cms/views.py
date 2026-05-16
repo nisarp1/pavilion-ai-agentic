@@ -1407,6 +1407,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
         Returns a direct file-download response.
         """
         import csv
+        import io
         from django.http import HttpResponse
 
         article = self.get_object()
@@ -1432,19 +1433,38 @@ class ArticleViewSet(viewsets.ModelViewSet):
         safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', template_name)[:30]
         filename  = f'canva_{safe_name}_article_{article.pk}.csv'
 
-        response = HttpResponse(content_type='text/csv; charset=utf-8')
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        # UTF-8 BOM so Excel opens Malayalam characters correctly
-        response.write('﻿')
+        def _slot_value(slot_key, raw):
+            """
+            Return the value to write for this slot.
+
+            Squad_List  → always newline-separated (one player per line)
+            Match_Header / Match_Teams → literal \\n replaced with real newline
+            everything else → as-is
+            """
+            if isinstance(raw, list):
+                raw = '\n'.join(str(x) for x in raw)
+            val = str(raw) if raw is not None else ''
+
+            if slot_key == 'Squad_List':
+                # Replace literal backslash-n written by the LLM
+                val = val.replace('\\n', '\n')
+                # Split on every possible separator the LLM might have used
+                import re as _re
+                parts = _re.split(r'\s*[,;]\s*|\n', val)
+                parts = [p.strip().strip('"\'') for p in parts if p.strip()]
+                val = '\n'.join(parts)
+            elif slot_key in ('Match_Header', 'Match_Teams'):
+                val = val.replace('\\n', '\n')
+
+            return val
 
         if template:
             all_slots = template.all_slots_flat()
             columns   = ['Template_ID'] + [s['canva_name'] for s in all_slots]
             row       = {'Template_ID': template.canva_template_id}
             for slot in all_slots:
-                row[slot['canva_name']] = plan.get(slot['key'], '')
+                row[slot['canva_name']] = _slot_value(slot['key'], plan.get(slot['key'], ''))
         else:
-            # Generic fallback — fixed columns
             columns = [
                 'Template_ID', 'Headline', 'Subheadline', 'Stat_1', 'Stat_2',
                 'Background_Image_URL', 'Player_Cutout_URL', 'Accent_Color', 'Caption',
@@ -1461,9 +1481,17 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 'Caption':              plan.get('Caption', ''),
             }
 
-        writer = csv.DictWriter(response, fieldnames=columns, extrasaction='ignore')
+        # io.StringIO with newline='' is required so the csv module correctly
+        # quotes cells that contain embedded newlines (RFC 4180).
+        buf = io.StringIO(newline='')
+        writer = csv.DictWriter(buf, fieldnames=columns, extrasaction='ignore')
         writer.writeheader()
         writer.writerow(row)
+
+        # UTF-8 BOM so Excel opens Malayalam characters without garbling
+        content = '﻿' + buf.getvalue()
+        response = HttpResponse(content.encode('utf-8'), content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
 
 

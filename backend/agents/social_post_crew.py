@@ -21,6 +21,35 @@ from crewai import Agent, Task, Crew, Process
 
 logger = logging.getLogger(__name__)
 
+# Slots that the agent should NOT generate for predicted_xi templates.
+# Section_Title is a fixed design element set in Canva — not editorial copy.
+_PREDICTED_XI_SKIP_SLOTS = {'Section_Title'}
+
+# Per-slot format hints injected into the journalist prompt for predicted_xi.
+_PREDICTED_XI_FORMAT_HINTS = """
+PREDICTED XI FORMAT RULES (apply strictly):
+
+Match_Header — 2 lines separated by \\n (no translation needed):
+  Line 1: match label and venue in UPPER CASE  e.g. "1ST T20I, CANBERRA"
+  Line 2: date in UPPER CASE                   e.g. "OCT 29, 2025"
+
+Match_Teams — 2 lines separated by \\n (no translation needed):
+  Line 1: first team name in UPPER CASE        e.g. "AUSTRALIA"
+  Line 2: "VS " + second team in UPPER CASE    e.g. "VS INDIA"
+
+Squad_List — 11 starting players, ONE per line, joined with \\n:
+  Transliterate player names into Malayalam script.
+  Append (C) after the captain. Append (WK) after the wicket-keeper.
+  Example: "മിച്ചൽ മാർഷ് (C)\\nട്രാവിസ് ഹെഡ്\\nജോഷ് ഫിലിപ്പ് (WK)\\n..."
+
+Substitutes_List — bench/substitute players on ONE line, comma-separated:
+  Transliterate names into Malayalam script.
+  Example: "ജോഷ് ഇൻഗ്ലിസ്, സെവിയർ കൂണി, ആരോൺ ഹാർഡി"
+
+Team_Logo_Left / Team_Logo_Right — English image search query (3-5 words) for the team logo.
+  Example: "Australia cricket team logo"
+"""
+
 # Generic fallback schema used when no CanvaTemplate is available.
 _GENERIC_SLOTS = {
     'text': [
@@ -38,6 +67,29 @@ _GENERIC_SLOTS = {
         {'key': 'Accent_Color', 'canva_name': 'Accent_Color'},
     ],
 }
+
+
+def _normalise_squad_list(value) -> str:
+    """
+    Always return a newline-separated player list regardless of how the LLM
+    formatted it (list, comma-separated string, literal-\\n string, etc.)
+    """
+    import re as _re
+    if isinstance(value, list):
+        players = [str(p) for p in value]
+    else:
+        raw = str(value)
+        # Replace literal backslash-n that LLMs write instead of real newlines
+        raw = raw.replace('\\n', '\n')
+        # Split on newlines, semicolons, or commas — whichever was used
+        players = _re.split(r'[\n;,]+', raw)
+    players = [p.strip().strip('"\'') for p in players]
+    players = [p for p in players if p]
+    return '\n'.join(players)
+
+
+def _is_predicted_xi(template) -> bool:
+    return template is not None and getattr(template, 'content_type', '') == 'predicted_xi'
 
 
 def _build_slot_brief(template) -> str:
@@ -58,11 +110,17 @@ def _build_slot_brief(template) -> str:
             f"LAYOUT: {template.description or 'Visual layout not described.'}\n"
         )
 
-    text_slots  = slots.get('text',  [])
+    is_xi = _is_predicted_xi(template)
+    skip  = _PREDICTED_XI_SKIP_SLOTS if is_xi else set()
+
+    text_slots  = [s for s in slots.get('text',  []) if s['key'] not in skip]
     image_slots = slots.get('image', [])
     color_slots = slots.get('color', [])
 
     lines = [header]
+
+    if is_xi:
+        lines.append(_PREDICTED_XI_FORMAT_HINTS)
 
     lines.append(
         "TEXT SLOTS — You MUST fill every slot listed below. "
@@ -98,9 +156,10 @@ def _build_slot_brief(template) -> str:
 def _all_slot_keys(template) -> list:
     """Return all slot key strings for the given template (or generic fallback)."""
     slots = (template.slots if (template and template.slots) else _GENERIC_SLOTS)
+    skip  = _PREDICTED_XI_SKIP_SLOTS if _is_predicted_xi(template) else set()
     result = []
     for category in ('text', 'image', 'color'):
-        result.extend(s['key'] for s in slots.get(category, []))
+        result.extend(s['key'] for s in slots.get(category, []) if s['key'] not in skip)
     return result
 
 
@@ -334,12 +393,31 @@ class SocialPostCrew:
         # Remove any stray _EN suffixed keys the LLM may have kept
         plan = {k.rstrip('_EN') if k.endswith('_EN') else k: v for k, v in plan.items()}
 
-        # Ensure all required keys are present; fill missing ones with safe defaults
-        for s in (template.slots if (template and template.slots) else _GENERIC_SLOTS).get('text', []):
-            plan.setdefault(s['key'], '')
-        for s in (template.slots if (template and template.slots) else _GENERIC_SLOTS).get('image', []):
-            plan.setdefault(s['key'], topic[:50])  # search query fallback
-        for s in (template.slots if (template and template.slots) else _GENERIC_SLOTS).get('color', []):
+        # Normalise predicted_xi multi-line slots regardless of how the LLM formatted them.
+        if _is_predicted_xi(template):
+            plan['Squad_List'] = _normalise_squad_list(plan.get('Squad_List', ''))
+
+            for key in ('Match_Header', 'Match_Teams'):
+                if isinstance(plan.get(key), str):
+                    plan[key] = plan[key].replace('\\n', '\n')
+
+            subs = plan.get('Substitutes_List', '')
+            if isinstance(subs, list):
+                plan['Substitutes_List'] = ', '.join(str(p).strip() for p in subs if str(p).strip())
+
+        _slots = (template.slots if (template and template.slots) else _GENERIC_SLOTS)
+        _skip  = _PREDICTED_XI_SKIP_SLOTS if _is_predicted_xi(template) else set()
+
+        # Ensure all required keys are present; fill missing ones with safe defaults.
+        # Skipped slots (e.g. Section_Title) are kept empty — they're fixed in Canva.
+        for s in _slots.get('text', []):
+            if s['key'] in _skip:
+                plan[s['key']] = ''
+            else:
+                plan.setdefault(s['key'], '')
+        for s in _slots.get('image', []):
+            plan.setdefault(s['key'], topic[:50])
+        for s in _slots.get('color', []):
             plan.setdefault(s['key'], '#FF6B00')
 
         # Attach template metadata for downstream use (CSV export, status endpoint)

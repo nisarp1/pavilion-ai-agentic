@@ -8,6 +8,7 @@ CONTENT_TYPE_CHOICES = [
     ('quote_card',      'Quote Card'),
     ('match_result',    'Match Result'),
     ('ticker',          'Ticker / Breaking'),
+    ('predicted_xi',    'Predicted XI'),
 ]
 
 

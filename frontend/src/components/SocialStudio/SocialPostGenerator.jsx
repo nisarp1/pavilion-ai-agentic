@@ -704,7 +704,7 @@ function SlotCard({ label, canvaName, value, type, needsCutout }) {
             onError={e => { e.target.style.display = 'none' }}
           />
         ) : (
-          <p className={`text-sm ${value ? 'text-gray-900' : 'text-gray-400 italic'} break-words`}>
+          <p className={`text-sm ${value ? 'text-gray-900' : 'text-gray-400 italic'} break-words whitespace-pre-line`}>
             {value || '(empty)'}
           </p>
         )}

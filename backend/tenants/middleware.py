@@ -32,8 +32,7 @@ class TenantMiddleware(MiddlewareMixin):
                 try:
                     tenant = Tenant.objects.get(subdomain=subdomain, is_active=True)
                 except Tenant.DoesNotExist:
-                    # Last resort: Get the first active tenant or None
-                    tenant = Tenant.objects.filter(is_active=True).first()
+                    tenant = None
         except Exception:
             # If database is unavailable, silently fail and set tenant to None
             # This allows the app to continue operating (e.g., for health checks)

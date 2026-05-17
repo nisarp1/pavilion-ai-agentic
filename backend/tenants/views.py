@@ -356,7 +356,10 @@ class GoogleOAuthCallbackView(APIView):
         if not credential:
             return Response({'error': 'credential is required'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), None)
+            client_id = settings.GOOGLE_OAUTH_CLIENT_ID or None
+            idinfo = id_token.verify_oauth2_token(credential, google_requests.Request(), client_id)
+            if not idinfo.get('email_verified'):
+                return Response({'error': 'Google account email not verified'}, status=status.HTTP_401_UNAUTHORIZED)
             email = idinfo.get('email')
             if not email:
                 return Response({'error': 'Email not found in Google token'}, status=status.HTTP_400_BAD_REQUEST)

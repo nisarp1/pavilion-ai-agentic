@@ -7,11 +7,17 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
     TokenVerifyView,
 )
+
+
+class AuthRateThrottle(AnonRateThrottle):
+    """Stricter throttle for authentication endpoints (10/minute per IP)."""
+    rate = '10/minute'
 
 def api_root(request):
     """Root endpoint that provides API information."""
@@ -72,16 +78,16 @@ urlpatterns = [
     path('debug-media/', debug_media_view),
     path('admin/', admin.site.urls),
 
-    # Auth endpoints
-    path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # Auth endpoints (rate-limited)
+    path('api/auth/login/', TokenObtainPairView.as_view(throttle_classes=[AuthRateThrottle]), name='token_obtain_pair'),
+    path('api/auth/refresh/', TokenRefreshView.as_view(throttle_classes=[AuthRateThrottle]), name='token_refresh'),
     path('api/auth/verify/', TokenVerifyView.as_view(), name='token_verify'),
-    path('api/auth/register/', RegisterView.as_view(), name='register'),
-    path('api/auth/google/callback/', GoogleOAuthCallbackView.as_view(), name='google_oauth_callback'),
+    path('api/auth/register/', RegisterView.as_view(throttle_classes=[AuthRateThrottle]), name='register'),
+    path('api/auth/google/callback/', GoogleOAuthCallbackView.as_view(throttle_classes=[AuthRateThrottle]), name='google_oauth_callback'),
     path('api/auth/profile/', UserProfileView.as_view(), name='user_profile'),
     path('api/auth/change-password/', ChangePasswordView.as_view(), name='change_password'),
-    path('api/auth/password-reset/', PasswordResetRequestView.as_view(), name='password_reset_request'),
-    path('api/auth/password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
+    path('api/auth/password-reset/', PasswordResetRequestView.as_view(throttle_classes=[AuthRateThrottle]), name='password_reset_request'),
+    path('api/auth/password-reset/confirm/', PasswordResetConfirmView.as_view(throttle_classes=[AuthRateThrottle]), name='password_reset_confirm'),
 
     # App URLs
     path('api/', include('cms.urls')),

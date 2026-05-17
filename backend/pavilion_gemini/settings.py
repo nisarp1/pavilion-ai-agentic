@@ -16,20 +16,21 @@ env = environ.Env(
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env('SECRET_KEY', default='django-insecure-change-me-in-production')
+_secret_key_default = 'django-insecure-change-me-in-production'
+SECRET_KEY = env('SECRET_KEY', default=_secret_key_default)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env('DEBUG', default=True)
+DEBUG = env('DEBUG', default=False)
 
 # Environment (development, staging, production)
 ENVIRONMENT = env('ENVIRONMENT', default='development')
 
-# Allow all Railway domains + configured hosts + Cloud Run
+if ENVIRONMENT == 'production' and SECRET_KEY == _secret_key_default:
+    raise RuntimeError("SECRET_KEY must be set to a secure value in production.")
+
+# ALLOWED_HOSTS: always use explicit list — never wildcard in production
 _default_allowed_hosts = ['localhost', '127.0.0.1', '.railway.app', '.up.railway.app', '.run.app']
-if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('DATABASE_URL') or os.environ.get('CLOUD_SQL_INSTANCE'):
-    ALLOWED_HOSTS = ['*']
-else:
-    ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=_default_allowed_hosts)
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=_default_allowed_hosts)
 
 # Application definition
 INSTALLED_APPS = [
@@ -43,6 +44,7 @@ INSTALLED_APPS = [
     # Third-party apps
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'django_extensions',
     
@@ -211,6 +213,18 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# HTTPS / security headers (active when not in DEBUG mode)
+if not DEBUG:
+    SECURE_HSTS_SECONDS = 31536000          # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -219,6 +233,15 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '60/minute',
+        'user': '300/minute',
+        'auth': '10/minute',       # applied per-view on login/register/pw-reset
+    },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'EXCEPTION_HANDLER': 'pavilion_gemini.exceptions.pavilion_exception_handler',
@@ -372,6 +395,9 @@ GOOGLE_CUSTOM_SEARCH_API_KEY  = env('GOOGLE_CUSTOM_SEARCH_API_KEY',  default='')
 GOOGLE_CUSTOM_SEARCH_ENGINE_ID = env('GOOGLE_CUSTOM_SEARCH_ENGINE_ID', default='')
 # ─────────────────────────────────────────────────────────────────────────────
 
+
+# Google OAuth (used to verify Google ID tokens on login)
+GOOGLE_OAUTH_CLIENT_ID = env('GOOGLE_OAUTH_CLIENT_ID', default='')
 
 # Frontend URL (used for invite links, password reset emails)
 FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:3001')

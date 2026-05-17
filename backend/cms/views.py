@@ -623,10 +623,10 @@ class ArticleViewSet(viewsets.ModelViewSet):
             'article_id': article.id
         })
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], permission_classes=[IsAdminOfTenant])
     def video_diag(self, request):
         """
-        Diagnostic endpoint to check status of API keys and environment.
+        Admin-only diagnostic endpoint to check status of API keys and environment.
         """
         import os
         
@@ -1713,16 +1713,37 @@ class MediaViewSet(viewsets.ModelViewSet):
             
         try:
             import requests
+            import ipaddress
+            import socket
             from django.core.files.base import ContentFile
             from urllib.parse import urlparse
             import os
-            
+
+            # SSRF guard: only allow http/https to public internet addresses
+            parsed = urlparse(image_url)
+            if parsed.scheme not in ('http', 'https'):
+                return Response({'error': 'Only http/https URLs are allowed'}, status=status.HTTP_400_BAD_REQUEST)
+            hostname = parsed.hostname or ''
+            if not hostname:
+                return Response({'error': 'Invalid URL'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                resolved_ip = ipaddress.ip_address(socket.gethostbyname(hostname))
+                if resolved_ip.is_private or resolved_ip.is_loopback or resolved_ip.is_link_local:
+                    return Response({'error': 'URL resolves to a private/internal address'}, status=status.HTTP_400_BAD_REQUEST)
+            except (socket.gaierror, ValueError):
+                return Response({'error': 'Unable to resolve URL hostname'}, status=status.HTTP_400_BAD_REQUEST)
+
             # Download image
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
-            response = requests.get(image_url, headers=headers, timeout=15)
+            response = requests.get(image_url, headers=headers, timeout=15, allow_redirects=True)
             response.raise_for_status()
+
+            # Validate content type is actually an image
+            content_type = response.headers.get('Content-Type', '')
+            if not content_type.startswith('image/'):
+                return Response({'error': 'URL does not point to an image'}, status=status.HTTP_400_BAD_REQUEST)
             
             # Determine filename
             parsed_url = urlparse(image_url)

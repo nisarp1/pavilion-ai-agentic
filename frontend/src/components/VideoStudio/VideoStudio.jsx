@@ -275,7 +275,15 @@ export default function VideoStudio() {
         showSuccess(`✅ Pipeline complete! Upload ${neededCount} asset${neededCount !== 1 ? 's' : ''} in the Assets tab.${savedMsg}`)
       }
     } catch (err) {
-      showError('Pipeline failed: ' + (err.response?.data?.error || err.message))
+      const errMsg = err.response?.data?.error || err.message || ''
+      const is429 = err.response?.status === 429 || errMsg.includes('429') || errMsg.toLowerCase().includes('quota')
+      if (is429) {
+        const retryMatch = errMsg.match(/retry[^\d]*(\d+(?:\.\d+)?)/i)
+        const waitSecs = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 60
+        showError(`⚠️ Gemini quota reached (free tier limit). Please wait ~${waitSecs}s then try again, or check your plan at aistudio.google.com.`)
+      } else {
+        showError('Pipeline failed: ' + errMsg)
+      }
     } finally {
       setPipelineRunning(false)
     }

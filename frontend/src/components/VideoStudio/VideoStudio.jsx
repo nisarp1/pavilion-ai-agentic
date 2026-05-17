@@ -122,7 +122,6 @@ export default function VideoStudio() {
 
         setEditingJob({ ...article, kind: 'project', production_plan: plan })
         setProductionPlan(plan ? { ...plan, article_id: plan.article_id ?? article.id } : null)
-        setShowGenPanel(false)
 
         // Restore saved brand settings (logoSrc, brandName, accent) from DB
         const brand = plan?.brand || {}
@@ -192,7 +191,6 @@ export default function VideoStudio() {
   const handleNew = () => {
     dispatch(resetProps())
     setProductionPlan(null)
-    setShowGenPanel(true)
     setSearchParams({ new: '1' })
   }
 

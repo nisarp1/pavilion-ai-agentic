@@ -121,7 +121,7 @@ export default function VideoStudio() {
         } catch {}
 
         setEditingJob({ ...article, kind: 'project', production_plan: plan })
-        setProductionPlan(plan)
+        setProductionPlan(plan ? { ...plan, article_id: plan.article_id ?? article.id } : null)
         setShowGenPanel(false)
 
         // Restore saved brand settings (logoSrc, brandName, accent) from DB

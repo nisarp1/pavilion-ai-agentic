@@ -1,7 +1,8 @@
 import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useSearchParams } from 'react-router-dom'
-import { FiCloud, FiPackage, FiRefreshCw, FiRotateCcw, FiRotateCw, FiArrowLeft, FiChevronDown, FiChevronUp } from 'react-icons/fi'
+import { FiCloud, FiPackage, FiRefreshCw, FiRotateCcw, FiRotateCw, FiArrowLeft } from 'react-icons/fi'
+import RefContextPanel from './RefContextPanel'
 import { showSuccess, showError } from '../../utils/toast'
 import {
   submitRenderJob,
@@ -44,12 +45,10 @@ export default function VideoStudio() {
 
   const [editingJob,    setEditingJob]    = useState(null)
   const [loadingArticle, setLoadingArticle] = useState(false)
-  const [referenceUrl,  setReferenceUrl]  = useState('')
   const [videoFormat,   setVideoFormat]   = useState('reel')
   const [includeAvatar, setIncludeAvatar] = useState(false)
   const [pipelineRunning, setPipelineRunning] = useState(false)
   const [productionPlan,  setProductionPlan]  = useState(null)
-  const [showGenPanel,    setShowGenPanel]    = useState(false)
 
   // ── MUST come before any early returns – React Rules of Hooks ───────────────
 
@@ -193,13 +192,7 @@ export default function VideoStudio() {
   const handleNew = () => {
     dispatch(resetProps())
     setProductionPlan(null)
-    setReferenceUrl('')
     setShowGenPanel(true)
-    setSearchParams({})   // clear ?article= → list view (but we switch immediately below)
-    // We still want to go to editor for a blank project — use a special marker
-    // Since no article ID exists for a new blank project, manage via a transient flag.
-    // Simplest: set a fake "new" param so viewMode becomes 'editor'.
-    // We'll use ?new=1 for blank new videos.
     setSearchParams({ new: '1' })
   }
 
@@ -221,7 +214,6 @@ export default function VideoStudio() {
 
       setEditingJob(job)
       setProductionPlan(plan)
-      setShowGenPanel(false)
       dispatch(setVideoData({
         props:    Object.keys(propsData).length ? propsData : undefined,
         clips:    clips.length ? clips : undefined,
@@ -256,26 +248,10 @@ export default function VideoStudio() {
     }
   }
 
-  const handleAgenticRecreation = async () => {
-    // Allow generation from an article even if no URL is typed
-    const hasArticle = editingJob?.id && editingJob?.kind === 'project'
-    if (!referenceUrl && !hasArticle) {
-      showError('Please provide a reference URL, topic, or open an article first')
-      return
-    }
+  const handleAgenticRecreation = async (payload) => {
     setPipelineRunning(true)
-    showSuccess(`AI Pipeline started (${videoFormat})! Analyzing context, writing script, planning scenes...`)
+    showSuccess(`AI Pipeline started (${payload.video_format || videoFormat})! Analyzing context…`)
     try {
-      const isUrl = referenceUrl.startsWith('http')
-      const payload = {
-        // Always send article_id when editing an article
-        ...(hasArticle ? { article_id: editingJob.id } : {}),
-        // URL or text_prompt override/supplement article context
-        ...(referenceUrl && isUrl  ? { url: referenceUrl } : {}),
-        ...(referenceUrl && !isUrl ? { text_prompt: referenceUrl } : {}),
-        video_format: videoFormat,
-        include_avatar: includeAvatar,
-      }
       const response = await api.post('/articles/recreate_reel_agentic/', payload)
       if (response.data.status === 'success') {
         const plan = response.data
@@ -376,19 +352,6 @@ export default function VideoStudio() {
 
         <div className="w-px h-5 bg-gray-200 flex-shrink-0" />
 
-        {/* AI Generate toggle */}
-        <button
-          onClick={() => setShowGenPanel(v => !v)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors flex-shrink-0 ${
-            showGenPanel
-              ? 'bg-purple-600 text-white border-purple-600'
-              : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
-          }`}
-        >
-          🪄 AI Generate
-          {showGenPanel ? <FiChevronUp size={12} /> : <FiChevronDown size={12} />}
-        </button>
-
         <button onClick={handleRender} disabled={loading} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 text-white font-semibold text-xs rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors shadow-sm flex-shrink-0">
           <FiCloud size={13} /> Render
         </button>
@@ -397,48 +360,18 @@ export default function VideoStudio() {
         </button>
       </div>
 
-      {/* ── Row 2: AI Generation panel (collapsible) ── */}
-      {showGenPanel && (
-        <div className="flex items-center gap-2 px-1 py-2 flex-shrink-0 bg-purple-50 border border-purple-100 rounded-xl mt-2">
-          <input
-            type="text"
-            placeholder={editingJob?.id ? "Optional: paste a URL to override article context" : "Paste reference URL or topic…"}
-            className="flex-1 min-w-0 bg-white border border-purple-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 placeholder-purple-300"
-            value={referenceUrl}
-            onChange={e => setReferenceUrl(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAgenticRecreation()}
-          />
-          <select
-            value={videoFormat}
-            onChange={e => setVideoFormat(e.target.value)}
-            className="bg-white border border-purple-200 rounded-lg px-2 py-1.5 text-xs font-medium text-purple-700 focus:outline-none flex-shrink-0"
-          >
-            <option value="reel">📱 Reel</option>
-            <option value="short">🎬 Short</option>
-            <option value="long">🖥️ Long</option>
-          </select>
-          <label className="flex items-center gap-1 text-xs text-purple-700 cursor-pointer flex-shrink-0 select-none">
-            <input type="checkbox" checked={includeAvatar} onChange={e => setIncludeAvatar(e.target.checked)} className="accent-purple-600" />
-            Avatar
-          </label>
-          <button
-            onClick={handleAgenticRecreation}
-            disabled={pipelineRunning}
-            className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg shadow transition-colors whitespace-nowrap flex-shrink-0 disabled:opacity-50"
-          >
-            {pipelineRunning ? '⏳ Running…' : '🪄 Generate'}
-          </button>
-          {productionPlan && (
-            <button
-              onClick={handleDownloadBrief}
-              title="Download production brief"
-              className="px-2 py-1.5 text-purple-600 hover:text-purple-800 text-xs font-medium border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors flex-shrink-0"
-            >
-              📥 Brief
-            </button>
-          )}
-        </div>
-      )}
+      {/* ── Row 2: Reference / context panel ── */}
+      <RefContextPanel
+        editingJob={editingJob}
+        productionPlan={productionPlan}
+        videoFormat={videoFormat}
+        setVideoFormat={setVideoFormat}
+        includeAvatar={includeAvatar}
+        setIncludeAvatar={setIncludeAvatar}
+        pipelineRunning={pipelineRunning}
+        onGenerate={handleAgenticRecreation}
+        onDownloadBrief={handleDownloadBrief}
+      />
 
       {error && (
         <div className="px-1 pb-2 flex-shrink-0">

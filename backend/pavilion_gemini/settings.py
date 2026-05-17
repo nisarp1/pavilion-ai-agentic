@@ -98,47 +98,30 @@ WSGI_APPLICATION = 'pavilion_gemini.wsgi.application'
 import dj_database_url
 
 # Database
-# Cloud SQL with unix socket via cloud-sql-python-connector
+# Production: Cloud SQL via private IP (Cloud Run VPC connector)
+# Development: DATABASE_URL env var or SQLite fallback
 if ENVIRONMENT == 'production':
-    # Get database credentials from environment
-    db_instance = env('CLOUD_SQL_INSTANCE', default='')
+    db_host = env('DB_HOST', default='')       # Cloud SQL private IP
     db_user = env('DB_USER', default='pavilion_app')
     db_password = env('DB_PASSWORD', default='')
-    db_name = env('DB_NAME', default='pavilion_agentic')
+    db_name = env('DB_NAME', default='pavilion_newsai')
+    db_port = env('DB_PORT', default='5432')
 
-    if db_instance:
-        try:
-            from cloud_sql_python_connector import Connector
-
-            # Using Cloud SQL Connector for unix socket support
-            connector = Connector()
-
-            def getconn():
-                return connector.connect(
-                    db_instance,
-                    "postgresql",
-                    user=db_user,
-                    password=db_password,
-                    db=db_name
-                )
-
-            DATABASES = {
-                'default': {
-                    'ENGINE': 'django.db.backends.postgresql',
-                    'CREATOR': getconn,
-                }
+    if db_host:
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'HOST': db_host,
+                'PORT': db_port,
+                'NAME': db_name,
+                'USER': db_user,
+                'PASSWORD': db_password,
+                'CONN_MAX_AGE': 600,
+                'OPTIONS': {'sslmode': 'disable'},  # private VPC — no TLS needed
             }
-        except ImportError:
-            # Fall back to DATABASE_URL if cloud-sql-python-connector not installed
-            DATABASES = {
-                'default': dj_database_url.config(
-                    default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
-                    conn_max_age=600,
-                    conn_health_checks=True,
-                )
-            }
+        }
     else:
-        # Fallback to DATABASE_URL if available
+        # Fallback: DATABASE_URL (e.g. Cloud SQL Proxy or other)
         DATABASES = {
             'default': dj_database_url.config(
                 default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
@@ -147,7 +130,7 @@ if ENVIRONMENT == 'production':
             )
         }
 else:
-    # Development: Use DATABASE_URL or sqlite
+    # Development: DATABASE_URL or SQLite
     DATABASES = {
         'default': dj_database_url.config(
             default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
@@ -199,13 +182,16 @@ STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 WHITENOISE_USE_FINDERS = True
 WHITENOISE_AUTOREFRESH = True
 
-# CSRF Settings (Required for Railway/Vercel)
-CSRF_TRUSTED_ORIGINS = [
-    'https://' + host for host in ALLOWED_HOSTS if host not in ['*', 'localhost', '127.0.0.1']
+# CSRF trusted origins
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
+    'https://newsai.pavilionend.in',
+    'http://localhost:3001',
+    'http://localhost:8000',
+]) + [
+    'https://' + host
+    for host in ALLOWED_HOSTS
+    if host not in ('*', 'localhost', '127.0.0.1') and not host.startswith('.')
 ]
-# Fallback for wildcard
-if '*' in ALLOWED_HOSTS:
-    CSRF_TRUSTED_ORIGINS += ['https://*.railway.app', 'https://*.vercel.app', 'https://pavilion-ai-production.up.railway.app']
 
 # Trust the X-Forwarded-Proto header for SSL (Required for Railway)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

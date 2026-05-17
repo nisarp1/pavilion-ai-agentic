@@ -1,37 +1,53 @@
 #!/bin/bash
 set -e
 
-# Ensure we're in the backend directory
+# PAVILION_MODE controls what this container runs:
+#   web    (default) — gunicorn Django app
+#   worker           — Celery task worker
+#   beat             — Celery beat scheduler
+MODE="${PAVILION_MODE:-web}"
+
 cd /app/backend || exit 1
 
-echo "Starting Django application..."
-echo "Working directory: $(pwd)"
-echo "Python version: $(python --version)"
-echo "Checking environment: DATABASE_URL is $([ -z "$DATABASE_URL" ] && echo "NOT SET" || echo "SET")"
+echo "=== Pavilion AI — mode: ${MODE} ==="
+echo "Python: $(python --version) | PORT: ${PORT:-8080}"
 
-# Small delay to allow Cloud SQL Proxy to fully establish connection
-echo "Waiting for cloud resources to be ready..."
+# Small delay to let Cloud SQL Auth Proxy (or Cloud Run connection) settle
 sleep 5
 
-# Run migrations
-echo "Running database migrations..."
-python manage.py migrate --noinput
+if [ "$MODE" = "web" ]; then
+    echo "Running migrations..."
+    python manage.py migrate --noinput
 
-# Collect static files (if needed)
-if [ "$DEBUG" = "False" ]; then
     echo "Collecting static files..."
-    python manage.py collectstatic --noinput || true
+    python manage.py collectstatic --noinput --clear 2>/dev/null || true
+
+    echo "Starting gunicorn..."
+    exec gunicorn \
+        --workers=4 \
+        --worker-class=sync \
+        --bind="0.0.0.0:${PORT:-8080}" \
+        --timeout=120 \
+        --keep-alive=5 \
+        --access-logfile=- \
+        --error-logfile=- \
+        --log-level=info \
+        pavilion_gemini.wsgi:application
+
+elif [ "$MODE" = "worker" ]; then
+    echo "Starting Celery worker..."
+    exec celery -A pavilion_gemini worker \
+        --loglevel=info \
+        --concurrency=4 \
+        -Q default,social,celery
+
+elif [ "$MODE" = "beat" ]; then
+    echo "Starting Celery beat scheduler..."
+    exec celery -A pavilion_gemini beat \
+        --loglevel=info \
+        --scheduler django_celery_beat.schedulers:DatabaseScheduler
+
+else
+    echo "ERROR: Unknown PAVILION_MODE='${MODE}'. Expected: web | worker | beat"
+    exit 1
 fi
-
-echo "✓ Application ready, starting gunicorn..."
-
-# Start gunicorn
-exec gunicorn \
-    --workers=4 \
-    --worker-class=sync \
-    --bind=0.0.0.0:8080 \
-    --timeout=120 \
-    --access-logfile=- \
-    --error-logfile=- \
-    --log-level=info \
-    pavilion_gemini.wsgi:application

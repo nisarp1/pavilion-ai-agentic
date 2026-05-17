@@ -1,40 +1,42 @@
-# Google Cloud Build — build & push the Remotion renderer image
-# Usage: gcloud builds submit --config cloudbuild.yaml .
-#
-# Required substitutions (set in Cloud Build trigger or pass via --substitutions):
-#   _PROJECT_ID   : GCP project ID
-#   _REGION       : Cloud Run region (e.g. asia-south1)
-#   _SERVICE_NAME : Cloud Run service name (e.g. pavilion-remotion-renderer)
-#   _GCS_BUCKET   : GCS bucket for rendered videos
+# Cloud Build — Pavilion AI Remotion Renderer CI/CD
+# Run manually when renderer code changes:
+#   gcloud builds submit --config remotion-renderer/cloudbuild.yaml .
+# Or set up a separate trigger filtered to remotion-renderer/** path
 
 substitutions:
-  _PROJECT_ID: 'your-gcp-project-id'
+  _PROJECT_ID: 'pavilion-ai-agentic-v2'
   _REGION: 'asia-south1'
-  _SERVICE_NAME: 'pavilion-remotion-renderer'
-  _GCS_BUCKET: 'your-gcs-bucket-name'
-  _IMAGE: 'gcr.io/$_PROJECT_ID/$_SERVICE_NAME'
+  _SERVICE_NAME: 'pavilion-renderer'
+  _GCS_BUCKET: 'pavilion-newsai-media'
+  _IMAGE: 'asia-south1-docker.pkg.dev/$_PROJECT_ID/pavilion-images/$_SERVICE_NAME'
 
 steps:
-  # 1. Build the Docker image (bundling happens inside)
-  - name: 'gcr.io/cloud-builders/docker'
+  # 1. Build the renderer image (bundles Remotion at build time)
+  - id: build
+    name: 'gcr.io/cloud-builders/docker'
     args:
       - build
       - '--tag=$_IMAGE:$SHORT_SHA'
       - '--tag=$_IMAGE:latest'
       - '--cache-from=$_IMAGE:latest'
       - '.'
-    dir: '.'
+    dir: 'remotion-renderer'
     timeout: '1200s'
 
   # 2. Push both tags
-  - name: 'gcr.io/cloud-builders/docker'
+  - id: push-sha
+    name: 'gcr.io/cloud-builders/docker'
     args: ['push', '$_IMAGE:$SHORT_SHA']
+    waitFor: ['build']
 
-  - name: 'gcr.io/cloud-builders/docker'
+  - id: push-latest
+    name: 'gcr.io/cloud-builders/docker'
     args: ['push', '$_IMAGE:latest']
+    waitFor: ['build']
 
-  # 3. Deploy to Cloud Run
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  # 3. Deploy to Cloud Run (internal — no public access)
+  - id: deploy
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - run
@@ -43,13 +45,18 @@ steps:
       - '--image=$_IMAGE:$SHORT_SHA'
       - '--region=$_REGION'
       - '--platform=managed'
+      - '--no-allow-unauthenticated'
+      - '--service-account=pavilion-cloudrun@$_PROJECT_ID.iam.gserviceaccount.com'
       - '--memory=8Gi'
       - '--cpu=8'
       - '--timeout=3600s'
       - '--concurrency=1'
+      - '--min-instances=0'
       - '--max-instances=10'
-      - '--no-allow-unauthenticated'
+      - '--no-cpu-throttling'
       - '--set-env-vars=GCS_BUCKET_NAME=$_GCS_BUCKET'
+      - '--set-secrets=GOOGLE_CREDENTIALS_JSON=pavilion-google-credentials-json:latest'
+    waitFor: ['push-sha']
 
 images:
   - '$_IMAGE:$SHORT_SHA'

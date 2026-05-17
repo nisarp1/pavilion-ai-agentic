@@ -984,7 +984,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
                 try:
                     meta = result.get('metadata', {})
                     voiceover = result.get('voiceover', {})
-                    article_title = meta.get('title', f"Video: {(reference_url or text_prompt)[:60]}")
+                    article_title = meta.get('title') or f"Video: {(reference_url or text_prompt or 'Untitled')[:60]}"
                     
                     article = Article(
                         title=article_title,
@@ -1079,10 +1079,8 @@ class ArticleViewSet(viewsets.ModelViewSet):
                             )
                         
                 except Exception as save_err:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"Failed to auto-save video article: {save_err}")
-                    # Pipeline still succeeded, just couldn't save as article
+                    import traceback as _tb
+                    logger.error(f"Failed to auto-save video article: {save_err}\n{_tb.format_exc()}")
                     result['article_id'] = None
                 
                 return Response(result)

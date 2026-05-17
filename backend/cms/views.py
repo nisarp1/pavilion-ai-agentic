@@ -117,6 +117,10 @@ class ArticleViewSet(viewsets.ModelViewSet):
             except Exception:
                 queryset = queryset.filter(category=category_filter)
 
+        exclude_category = self.request.query_params.get('exclude_category', None)
+        if exclude_category:
+            queryset = queryset.exclude(category=exclude_category)
+
         search = self.request.query_params.get('search', '').strip()
         if search:
             queryset = queryset.filter(

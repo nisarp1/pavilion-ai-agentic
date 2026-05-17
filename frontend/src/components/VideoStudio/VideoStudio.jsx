@@ -15,15 +15,15 @@ import {
   duplicateClip,
   selectClip,
 } from '../../store/slices/videoStudioSlice'
+import JobStatusPanel from './JobStatusPanel'
+import TimelineEditor from './TimelineEditor'
+import PropertiesPanel from './PropertiesPanel'
+import ProductionPlanPanel from './ProductionPlanPanel'
 import VideoList from './VideoList'
 import api from '../../services/api'
 
-// Lazy-load editor-only panels — not needed on the list view, keeping the initial chunk small
-const RemotionPreview    = lazy(() => import('./RemotionPreview'))
-const TimelineEditor     = lazy(() => import('./TimelineEditor'))
-const PropertiesPanel    = lazy(() => import('./PropertiesPanel'))
-const ProductionPlanPanel = lazy(() => import('./ProductionPlanPanel'))
-const JobStatusPanel     = lazy(() => import('./JobStatusPanel'))
+// RemotionPreview is lazy-loaded separately — @remotion/player is large and only needed in editor
+const RemotionPreview = lazy(() => import('./RemotionPreview'))
 
 // ── VIEW MODES ────────────────────────────────────────────────────────────────
 // URL drives the mode:

@@ -183,6 +183,10 @@ class TTSAgent:
             gcs_uri = None
             if audio_url.startswith("https://storage.googleapis.com") or audio_url.startswith("gcs://"):
                 gcs_uri = f"gs://{self._gcs_bucket}/{gcs_path}"
+            logger.info(
+                f"[TTSAgent] Running STT on {duration_seconds:.1f}s audio "
+                f"({'GCS URI' if gcs_uri else 'inline bytes → GCS upload if >57s'})"
+            )
             stt_timings = transcribe_for_word_timings(
                 audio_bytes=all_audio_bytes,
                 language_code="ml-IN",
@@ -193,7 +197,14 @@ class TTSAgent:
             if stt_timings:
                 all_word_timings = stt_timings
                 logger.info(
-                    f"[TTSAgent] STT replaced proportional timings: {len(stt_timings)} real words"
+                    f"[TTSAgent] STT succeeded: {len(stt_timings)} real word timings "
+                    f"(replaced proportional estimates)"
+                )
+            else:
+                logger.warning(
+                    f"[TTSAgent] STT returned 0 timings for {duration_seconds:.1f}s audio — "
+                    f"using proportional fallback ({len(all_word_timings)} words). "
+                    f"Captions may be out of sync."
                 )
         except Exception as _stt_err:
             logger.warning(f"[TTSAgent] STT step failed, keeping proportional: {_stt_err}")
@@ -244,14 +255,36 @@ class TTSAgent:
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     @staticmethod
+    def _find_wav_pcm_offset(data: bytes) -> tuple[int, int]:
+        """
+        Parse WAV header to find the actual PCM data start offset and sample rate.
+        Handles non-standard headers with extra chunks (e.g. 'fact').
+        Returns (pcm_start_offset, sample_rate).
+        """
+        import struct
+        if len(data) < 12 or data[:4] != b'RIFF' or data[8:12] != b'WAVE':
+            return 44, SAMPLE_RATE  # fallback to standard layout
+        # Sample rate is always at offset 24 in the fmt chunk (standard layout)
+        sr = struct.unpack_from('<I', data, 24)[0] if len(data) > 28 else SAMPLE_RATE
+        # Walk chunks to find 'data'
+        pos = 12
+        while pos + 8 <= len(data):
+            chunk_id = data[pos:pos + 4]
+            chunk_size = struct.unpack_from('<I', data, pos + 4)[0]
+            if chunk_id == b'data':
+                return pos + 8, sr or SAMPLE_RATE
+            pos += 8 + chunk_size + (chunk_size % 2)  # WAV chunks are word-aligned
+        return 44, sr or SAMPLE_RATE  # fallback
+
+    @staticmethod
     def _stitch_linear16_wavs(wav_chunks: list) -> bytes:
         """
         Combine multiple LINEAR16 mono WAV files into one valid WAV file.
 
         Naive concatenation of WAV bytes produces an invalid file: the browser
         reads only the first chunk's RIFF header and reports wrong duration.
-        This method strips each chunk's 44-byte header, concatenates the raw
-        PCM data, then writes a single fresh RIFF/WAVE container.
+        This method locates the actual PCM data in each chunk (handling non-standard
+        WAV headers), concatenates the raw PCM data, then writes a fresh RIFF/WAVE container.
         """
         import struct
         pcm_parts = []
@@ -261,11 +294,10 @@ class TTSAgent:
             if len(chunk) < 44:
                 pcm_parts.append(chunk)
                 continue
-            sr = struct.unpack_from('<I', chunk, 24)[0]
+            pcm_start, sr = TTSAgent._find_wav_pcm_offset(chunk)
             if sr:
                 sample_rate = sr
-            # Standard PCM WAV: 44-byte header, PCM data starts at byte 44
-            pcm_parts.append(chunk[44:])
+            pcm_parts.append(chunk[pcm_start:])
 
         all_pcm = b''.join(pcm_parts)
         data_len = len(all_pcm)

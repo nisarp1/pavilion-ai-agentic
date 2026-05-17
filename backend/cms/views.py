@@ -1856,6 +1856,9 @@ class WebStoryViewSet(viewsets.ModelViewSet):
         status_filter = self.request.query_params.get('status')
         if status_filter:
             queryset = queryset.filter(status=status_filter)
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            queryset = queryset.filter(title__icontains=search)
 
         published_after = self.request.query_params.get('published_after')
         if published_after:

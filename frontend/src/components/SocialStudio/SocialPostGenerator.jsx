@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../services/api'
+import ContentCombobox from '../common/ContentCombobox'
 
 const POLL_INTERVAL_MS = 3000
 
@@ -48,8 +49,10 @@ export default function SocialPostGenerator() {
   const [articles, setArticles]             = useState([])
   const [videos, setVideos]                 = useState([])
   const [webStories, setWebStories]         = useState([])
-  const [selectedVideoId, setSelectedVideoId]     = useState('')
-  const [selectedWebStoryId, setSelectedWebStoryId] = useState('')
+  // Combobox selection objects { id, title }
+  const [selectedArticle, setSelectedArticle]   = useState(null)
+  const [selectedVideo, setSelectedVideo]       = useState(null)
+  const [selectedWebStory, setSelectedWebStory] = useState(null)
   const [sourceUrl, setSourceUrl]           = useState('')
   const [plainText, setPlainText]           = useState('')
   const [vibeOverride, setVibeOverride]     = useState('')
@@ -86,6 +89,16 @@ export default function SocialPostGenerator() {
   useEffect(() => {
     if (articleIdParam) setArticleId(articleIdParam)
   }, [articleIdParam])
+
+  // ── Search helpers for comboboxes ──────────────────────────────────────────
+  const searchArticles = useCallback(async (q) => {
+    const r = await api.get('articles/', { params: { search: q } })
+    return Array.isArray(r.data) ? r.data : (r.data.results || [])
+  }, [])
+
+  // Derive string IDs from selected objects
+  const selectedVideoId   = selectedVideo?.id   ? String(selectedVideo.id)   : ''
+  const selectedWebStoryId = selectedWebStory?.id ? String(selectedWebStory.id) : ''
 
   // ── Polling ────────────────────────────────────────────────────────────────
   const startPolling = useCallback((aid) => {
@@ -135,6 +148,7 @@ export default function SocialPostGenerator() {
 
   // ── Generate ───────────────────────────────────────────────────────────────
   const handleGenerate = async () => {
+    const effectiveArticleId = selectedArticle ? String(selectedArticle.id) : articleId
     if (contentType === 'video' && !selectedVideoId) {
       setError('Select a video to generate from.')
       return
@@ -143,7 +157,7 @@ export default function SocialPostGenerator() {
       setError('Select a web story to generate from.')
       return
     }
-    if (contentType === 'article' && !articleId && !sourceUrl && !plainText && !pastedImage) {
+    if (contentType === 'article' && !effectiveArticleId && !sourceUrl && !plainText && !pastedImage) {
       setError('Select an article or add a URL / text / image.')
       return
     }
@@ -157,7 +171,7 @@ export default function SocialPostGenerator() {
       let resp
       if (pastedImage?.file) {
         const fd = new FormData()
-        if (contentType === 'article' && articleId)   fd.append('article_id',   articleId)
+        if (contentType === 'article' && effectiveArticleId) fd.append('article_id', effectiveArticleId)
         if (contentType === 'video')                  fd.append('video_job_id', selectedVideoId)
         if (contentType === 'webstory')               fd.append('webstory_id',  selectedWebStoryId)
         if (sourceUrl)      fd.append('source_url',        sourceUrl)
@@ -170,7 +184,7 @@ export default function SocialPostGenerator() {
         })
       } else {
         resp = await api.post('social-studio/generate/', {
-          article_id:        contentType === 'article' ? (articleId || undefined) : undefined,
+          article_id:        contentType === 'article' ? (effectiveArticleId || undefined) : undefined,
           video_job_id:      contentType === 'video'   ? selectedVideoId : undefined,
           webstory_id:       contentType === 'webstory'? selectedWebStoryId : undefined,
           source_url:        sourceUrl || undefined,
@@ -199,13 +213,9 @@ export default function SocialPostGenerator() {
   const _articleTitle = () => {
     let raw = plan?.Headline || plan?.headline
     if (!raw) {
-      if (contentType === 'video') {
-        raw = videos.find(v => String(v.id) === String(selectedVideoId))?.title
-      } else if (contentType === 'webstory') {
-        raw = webStories.find(w => String(w.id) === String(selectedWebStoryId))?.title
-      } else {
-        raw = articles.find(a => String(a.id) === String(articleId))?.title
-      }
+      if (contentType === 'video')        raw = selectedVideo?.title
+      else if (contentType === 'webstory') raw = selectedWebStory?.title
+      else                                 raw = selectedArticle?.title
     }
     raw = raw || `post_${Date.now()}`
     return raw.replace(/[^a-zA-Z0-9ഀ-ൿ\s]/g, '').trim().replace(/\s+/g, '_').slice(0, 80)
@@ -287,8 +297,9 @@ export default function SocialPostGenerator() {
                   onClick={() => {
                     setContentType(ct.key)
                     setArticleId('')
-                    setSelectedVideoId('')
-                    setSelectedWebStoryId('')
+                    setSelectedArticle(null)
+                    setSelectedVideo(null)
+                    setSelectedWebStory(null)
                   }}
                   className={`flex-1 py-2 text-sm font-medium transition-colors ${
                     contentType === ct.key
@@ -303,44 +314,49 @@ export default function SocialPostGenerator() {
 
             {/* Article picker */}
             {contentType === 'article' && (
-              <select
-                className="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                value={articleId}
-                onChange={e => setArticleId(e.target.value)}
-              >
-                <option value="">— None (auto-create draft) —</option>
-                {articles.map(a => (
-                  <option key={a.id} value={a.id}>#{a.id} {(a.title || '').slice(0, 50)}</option>
-                ))}
-              </select>
+              <div className="mt-2">
+                <ContentCombobox
+                  items={articles}
+                  onSearch={searchArticles}
+                  value={selectedArticle}
+                  onChange={setSelectedArticle}
+                  placeholder="Search articles by title…"
+                  allowNone
+                  noneLabel="— None (auto-create draft) —"
+                  renderBadge={a => a.status ? (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 flex-shrink-0">{a.status}</span>
+                  ) : null}
+                />
+              </div>
             )}
 
             {/* Video picker */}
             {contentType === 'video' && (
-              <select
-                className="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                value={selectedVideoId}
-                onChange={e => setSelectedVideoId(e.target.value)}
-              >
-                <option value="">— Select a video —</option>
-                {videos.map(v => (
-                  <option key={v.id} value={v.id}>{(v.title || `Video ${v.id}`).slice(0, 55)}</option>
-                ))}
-              </select>
+              <div className="mt-2">
+                <ContentCombobox
+                  items={videos}
+                  value={selectedVideo}
+                  onChange={setSelectedVideo}
+                  placeholder="Search videos by title…"
+                  renderBadge={v => v.status ? (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${
+                      v.status === 'done' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                    }`}>{v.status}</span>
+                  ) : null}
+                />
+              </div>
             )}
 
             {/* Web Story picker */}
             {contentType === 'webstory' && (
-              <select
-                className="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                value={selectedWebStoryId}
-                onChange={e => setSelectedWebStoryId(e.target.value)}
-              >
-                <option value="">— Select a web story —</option>
-                {webStories.map(w => (
-                  <option key={w.id} value={w.id}>{(w.title || `Story ${w.id}`).slice(0, 55)}</option>
-                ))}
-              </select>
+              <div className="mt-2">
+                <ContentCombobox
+                  items={webStories}
+                  value={selectedWebStory}
+                  onChange={setSelectedWebStory}
+                  placeholder="Search web stories by title…"
+                />
+              </div>
             )}
           </div>
 

@@ -65,18 +65,21 @@ export default function RefContextPanel({
       .finally(() => setSocialLoading(false))
   }, [sourceType])
 
-  // Search articles with debounce (include ALL articles — no category exclude — user may want video_project too)
+  // Load 10 most recent articles on tab switch; then live-search on query change
   useEffect(() => {
     if (sourceType !== 'article') return
     if (articleDebounceRef.current) clearTimeout(articleDebounceRef.current)
     articleDebounceRef.current = setTimeout(() => {
       setArticleLoading(true)
-      const params = { page_size: 30 }
+      const params = {}
       if (articleSearch) params.search = articleSearch
       api.get('/articles/', { params })
-        .then(res => setArticleResults(Array.isArray(res.data) ? res.data : (res.data.results || [])))
+        .then(res => {
+          const all = Array.isArray(res.data) ? res.data : (res.data.results || [])
+          setArticleResults(articleSearch ? all : all.slice(0, 10))
+        })
         .finally(() => setArticleLoading(false))
-    }, 300)
+    }, articleSearch ? 280 : 0)
   }, [articleSearch, sourceType])
 
   // Paste handler for image tab
@@ -383,33 +386,34 @@ export default function RefContextPanel({
               }
             </div>
 
-            {/* Results list */}
-            <div className="max-h-36 overflow-y-auto space-y-0.5">
-              {!articleLoading && articleResults.length === 0 && (
-                <p className="text-xs text-purple-300 text-center py-3">
-                  {articleSearch ? 'No articles match your search' : 'No articles found'}
-                </p>
-              )}
-              {articleResults.map(art => {
-                const isSelected = selectedArticle?.id === art.id
-                const statusCls = STATUS_COLORS[art.status] || 'bg-gray-100 text-gray-600'
-                return (
-                  <button
-                    key={art.id}
-                    onClick={() => setSelectedArticle(isSelected ? null : art)}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center gap-2 ${
-                      isSelected ? 'bg-purple-100 text-purple-800 font-medium' : 'bg-white text-gray-700 hover:bg-purple-50'
-                    }`}
-                  >
-                    {isSelected && <FiCheck size={11} className="text-purple-600 flex-shrink-0" />}
-                    <span className="truncate flex-1">{art.title || '(No title)'}</span>
-                    <span className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium ${statusCls}`}>
-                      {art.status}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
+            {/* Results list — hidden once an article is selected and user isn't actively searching */}
+            {(!selectedArticle || articleSearch) && (
+              <div className="max-h-36 overflow-y-auto space-y-0.5">
+                {!articleLoading && articleResults.length === 0 && (
+                  <p className="text-xs text-purple-300 text-center py-3">
+                    {articleSearch ? 'No articles match your search' : 'No articles found'}
+                  </p>
+                )}
+                {articleResults.map(art => {
+                  const statusCls = STATUS_COLORS[art.status] || 'bg-gray-100 text-gray-600'
+                  return (
+                    <button
+                      key={art.id}
+                      onClick={() => {
+                        setSelectedArticle(art)
+                        setArticleSearch('')  // clear search → hides results list
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center gap-2 bg-white text-gray-700 hover:bg-purple-50"
+                    >
+                      <span className="truncate flex-1">{art.title || '(No title)'}</span>
+                      <span className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium ${statusCls}`}>
+                        {art.status}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 

@@ -142,7 +142,7 @@ def call_gemini_grounded(prompt: str, *, model: str | None = None) -> str | None
     Returns response text, or None on failure.
     """
     from agents.gemini_client import get_client, get_model_name
-    from google.genai import types as gtypes
+    import google.genai.types as gtypes
 
     try:
         client = get_client()

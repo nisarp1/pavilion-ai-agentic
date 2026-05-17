@@ -317,7 +317,7 @@ class StyleAnalyzerAgent:
     ) -> dict:
         """Analyze using extracted keyframe images (inline bytes — works on Vertex AI)."""
         from agents.gemini_client import generate_with_parts
-        from google.genai import types as gtypes
+        import google.genai.types as gtypes
 
         frames = extract_keyframes(video_path, tmp_dir, max_keyframes)
         if not frames:
@@ -348,7 +348,7 @@ class StyleAnalyzerAgent:
     def _analyze_video(self, video_url: str, video_path: str) -> dict:
         """Analyze using full video upload via Files API (Vertex AI compatible)."""
         from agents.gemini_client import get_client, get_model_name
-        from google.genai import types as gtypes
+        import google.genai.types as gtypes
         import time as t
 
         client = get_client()

@@ -13,8 +13,8 @@ Usage:
 import os
 import logging
 
-from google import genai
-from google.genai import types
+import google.genai as genai
+import google.genai.types as types
 
 logger = logging.getLogger(__name__)
 

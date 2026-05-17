@@ -4,6 +4,12 @@ import api from '../../services/api'
 
 const POLL_INTERVAL_MS = 3000
 
+const CONTENT_TYPES = [
+  { key: 'article',   label: 'Article' },
+  { key: 'video',     label: 'Video' },
+  { key: 'webstory',  label: 'Web Story' },
+]
+
 const VIBE_SUGGESTIONS = ['celebratory', 'urgent', 'analytical', 'aggressive', 'emotional', 'factual']
 
 const STATUS_LABELS = {
@@ -34,9 +40,16 @@ export default function SocialPostGenerator() {
   const [searchParams] = useSearchParams()
   const articleIdParam = searchParams.get('article')
 
+  // ── Content source type ────────────────────────────────────────────────────
+  const [contentType, setContentType]       = useState('article')
+
   // ── Form state ─────────────────────────────────────────────────────────────
   const [articleId, setArticleId]           = useState(articleIdParam || '')
   const [articles, setArticles]             = useState([])
+  const [videos, setVideos]                 = useState([])
+  const [webStories, setWebStories]         = useState([])
+  const [selectedVideoId, setSelectedVideoId]     = useState('')
+  const [selectedWebStoryId, setSelectedWebStoryId] = useState('')
   const [sourceUrl, setSourceUrl]           = useState('')
   const [plainText, setPlainText]           = useState('')
   const [vibeOverride, setVibeOverride]     = useState('')
@@ -60,9 +73,12 @@ export default function SocialPostGenerator() {
   // ── Load templates + articles + SA email on mount ─────────────────────────
   useEffect(() => {
     api.get('canva-templates/').then(r => setCanvaTemplates(r.data.results || r.data)).catch(() => {})
-    api.get('articles/?status=draft&limit=50').then(r => {
-      setArticles(r.data.results || r.data)
-    }).catch(() => {})
+    // Articles: most recently updated first (default PAGE_SIZE=20)
+    api.get('articles/').then(r => setArticles(r.data.results || r.data)).catch(() => {})
+    // Videos: lightweight picker, no pagination (pagination_class=None on backend)
+    api.get('/video/jobs/?picker=1').then(r => setVideos(r.data.results || r.data)).catch(e => console.warn('Video jobs load failed:', e))
+    // Web stories: newest first
+    api.get('webstories/').then(r => setWebStories(r.data.results || r.data)).catch(() => {})
     api.get('canva-templates/service-account-email/').then(r => setSaEmail(r.data.email || '')).catch(() => {})
     return () => clearInterval(pollRef.current)
   }, [])
@@ -119,8 +135,16 @@ export default function SocialPostGenerator() {
 
   // ── Generate ───────────────────────────────────────────────────────────────
   const handleGenerate = async () => {
-    if (!articleId && !sourceUrl && !plainText && !pastedImage) {
-      setError('Add at least one input — select an article, paste a URL, enter text, or drop an image.')
+    if (contentType === 'video' && !selectedVideoId) {
+      setError('Select a video to generate from.')
+      return
+    }
+    if (contentType === 'webstory' && !selectedWebStoryId) {
+      setError('Select a web story to generate from.')
+      return
+    }
+    if (contentType === 'article' && !articleId && !sourceUrl && !plainText && !pastedImage) {
+      setError('Select an article or add a URL / text / image.')
       return
     }
     setError('')
@@ -133,10 +157,12 @@ export default function SocialPostGenerator() {
       let resp
       if (pastedImage?.file) {
         const fd = new FormData()
-        if (articleId)        fd.append('article_id',        articleId)
-        if (sourceUrl)        fd.append('source_url',        sourceUrl)
-        if (plainText)        fd.append('plain_text',        plainText)
-        if (vibeOverride)     fd.append('vibe_override',     vibeOverride)
+        if (contentType === 'article' && articleId)   fd.append('article_id',   articleId)
+        if (contentType === 'video')                  fd.append('video_job_id', selectedVideoId)
+        if (contentType === 'webstory')               fd.append('webstory_id',  selectedWebStoryId)
+        if (sourceUrl)      fd.append('source_url',        sourceUrl)
+        if (plainText)      fd.append('plain_text',        plainText)
+        if (vibeOverride)   fd.append('vibe_override',     vibeOverride)
         if (selectedTemplateId) fd.append('canva_template_id', selectedTemplateId)
         fd.append('image', pastedImage.file, pastedImage.file.name || 'image.jpg')
         resp = await api.post('social-studio/generate/', fd, {
@@ -144,7 +170,9 @@ export default function SocialPostGenerator() {
         })
       } else {
         resp = await api.post('social-studio/generate/', {
-          article_id:        articleId || undefined,
+          article_id:        contentType === 'article' ? (articleId || undefined) : undefined,
+          video_job_id:      contentType === 'video'   ? selectedVideoId : undefined,
+          webstory_id:       contentType === 'webstory'? selectedWebStoryId : undefined,
           source_url:        sourceUrl || undefined,
           plain_text:        plainText || undefined,
           vibe_override:     vibeOverride || undefined,
@@ -153,15 +181,14 @@ export default function SocialPostGenerator() {
       }
 
       const aid = resp.data.article_id
-      if (aid && !articleId) {
+      if (aid) {
         setArticleId(String(aid))
-        // Add auto-created article to the list so title resolves in CSV filename
         setArticles(prev => {
           if (prev.find(a => String(a.id) === String(aid))) return prev
           return [{ id: aid, title: resp.data.article_title || `Post #${aid}` }, ...prev]
         })
       }
-      startPolling(aid || articleId)
+      startPolling(aid)
     } catch (err) {
       setError('Failed to start pipeline: ' + (err.response?.data?.error || err.message))
       setGenerating(false)
@@ -170,8 +197,17 @@ export default function SocialPostGenerator() {
   }
 
   const _articleTitle = () => {
-    const art = articles.find(a => String(a.id) === String(articleId))
-    const raw = art?.title || plan?.Headline || plan?.headline || `post_${articleId}`
+    let raw = plan?.Headline || plan?.headline
+    if (!raw) {
+      if (contentType === 'video') {
+        raw = videos.find(v => String(v.id) === String(selectedVideoId))?.title
+      } else if (contentType === 'webstory') {
+        raw = webStories.find(w => String(w.id) === String(selectedWebStoryId))?.title
+      } else {
+        raw = articles.find(a => String(a.id) === String(articleId))?.title
+      }
+    }
+    raw = raw || `post_${Date.now()}`
     return raw.replace(/[^a-zA-Z0-9ഀ-ൿ\s]/g, '').trim().replace(/\s+/g, '_').slice(0, 80)
   }
 
@@ -193,9 +229,11 @@ export default function SocialPostGenerator() {
     }
   }
 
-  const handleOpenInCanva = async (canvaUrl) => {
-    await handleDownloadCSV(`${_articleTitle()}.csv`)
+  const handleOpenInCanva = (canvaUrl) => {
+    // Open window first (must be synchronous in the click handler — browsers block popups after async)
     window.open(canvaUrl, '_blank', 'noopener,noreferrer')
+    // Download CSV in the background after
+    handleDownloadCSV(`${_articleTitle()}.csv`)
   }
 
   const handleLinkSheet = async () => {
@@ -238,21 +276,72 @@ export default function SocialPostGenerator() {
 
         <div className="px-6 py-4 space-y-4 flex-1">
 
-          {/* Article selector — optional */}
+          {/* Content Source selector */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Article <span className="text-gray-400 font-normal">(optional — auto-created if left blank)</span>
-            </label>
-            <select
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              value={articleId}
-              onChange={e => setArticleId(e.target.value)}
-            >
-              <option value="">— None (auto-create draft) —</option>
-              {articles.map(a => (
-                <option key={a.id} value={a.id}>#{a.id} {(a.title || '').slice(0, 50)}</option>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Content Source</label>
+            <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+              {CONTENT_TYPES.map(ct => (
+                <button
+                  key={ct.key}
+                  type="button"
+                  onClick={() => {
+                    setContentType(ct.key)
+                    setArticleId('')
+                    setSelectedVideoId('')
+                    setSelectedWebStoryId('')
+                  }}
+                  className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                    contentType === ct.key
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {ct.label}
+                </button>
               ))}
-            </select>
+            </div>
+
+            {/* Article picker */}
+            {contentType === 'article' && (
+              <select
+                className="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                value={articleId}
+                onChange={e => setArticleId(e.target.value)}
+              >
+                <option value="">— None (auto-create draft) —</option>
+                {articles.map(a => (
+                  <option key={a.id} value={a.id}>#{a.id} {(a.title || '').slice(0, 50)}</option>
+                ))}
+              </select>
+            )}
+
+            {/* Video picker */}
+            {contentType === 'video' && (
+              <select
+                className="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                value={selectedVideoId}
+                onChange={e => setSelectedVideoId(e.target.value)}
+              >
+                <option value="">— Select a video —</option>
+                {videos.map(v => (
+                  <option key={v.id} value={v.id}>{(v.title || `Video ${v.id}`).slice(0, 55)}</option>
+                ))}
+              </select>
+            )}
+
+            {/* Web Story picker */}
+            {contentType === 'webstory' && (
+              <select
+                className="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                value={selectedWebStoryId}
+                onChange={e => setSelectedWebStoryId(e.target.value)}
+              >
+                <option value="">— Select a web story —</option>
+                {webStories.map(w => (
+                  <option key={w.id} value={w.id}>{(w.title || `Story ${w.id}`).slice(0, 55)}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Source URL */}

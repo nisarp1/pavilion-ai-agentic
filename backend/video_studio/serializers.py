@@ -2,6 +2,36 @@ from rest_framework import serializers
 from .models import VideoJob
 
 
+class VideoJobPickerSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for picker dropdowns — omits large props/clips fields."""
+    title = serializers.SerializerMethodField()
+    article_id = serializers.PrimaryKeyRelatedField(source='article', read_only=True)
+
+    class Meta:
+        model = VideoJob
+        fields = ['id', 'title', 'status', 'article_id', 'created_at']
+        read_only_fields = fields
+
+    def get_title(self, obj):
+        props = obj.props or {}
+        # 1. Explicit title injected at job creation
+        t = props.get('title')
+        if t:
+            return t
+        # 2. PavilionReel manual-editor headline
+        t = props.get('scene1Headline')
+        if t:
+            return t
+        # 3. Title buried in timeline metadata
+        t = (props.get('timeline') or {}).get('title')
+        if t:
+            return t
+        # 4. Fall back to linked article title
+        if obj.article_id and obj.article:
+            return obj.article.title
+        return f"Video {str(obj.id)[:8]}"
+
+
 class VideoJobSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     title = serializers.SerializerMethodField()
@@ -21,9 +51,13 @@ class VideoJobSerializer(serializers.ModelSerializer):
         return obj.created_by.get_full_name() or obj.created_by.username if obj.created_by else None
 
     def get_title(self, obj):
-        """Extract a human-readable title from props."""
         props = obj.props or {}
-        return props.get('title') or props.get('scene1Headline') or f"Video Job {str(obj.id)[:8]}"
+        t = props.get('title') or props.get('scene1Headline') or (props.get('timeline') or {}).get('title')
+        if t:
+            return t
+        if obj.article_id and obj.article:
+            return obj.article.title
+        return f"Video {str(obj.id)[:8]}"
 
     def get_video_format(self, obj):
         """Extract video format from props."""

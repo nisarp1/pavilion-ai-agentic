@@ -2103,18 +2103,12 @@ class SocialStudioGenerateView(APIView):
     """
     POST /api/social-studio/generate/
 
-    Standalone Social Post Generator endpoint — article is optional.
-    Accepts any combination of: article_id, source_url, plain_text, image file.
-    Auto-creates a draft Article when no article_id is provided so results
-    are always stored and pollable.
-
-    Multipart form fields:
-      article_id        (int,  optional)
-      source_url        (str,  optional)
-      plain_text        (str,  optional)
-      vibe_override     (str,  optional)
-      canva_template_id (int,  optional)
-      image             (file, optional)
+    Accepts content from any of three source types:
+      article_id        (int)  — existing Article
+      video_job_id      (uuid) — VideoJob; uses linked article or extracts from props
+      webstory_id       (int)  — WebStory; uses title + summary + slide captions
+    Plus optional free-form inputs that supplement or replace a structured source:
+      source_url, plain_text, vibe_override, canva_template_id, image (file)
     """
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     permission_classes = [permissions.IsAuthenticated]
@@ -2124,22 +2118,55 @@ class SocialStudioGenerateView(APIView):
         from django.utils.text import slugify
 
         article_id        = request.data.get('article_id') or ''
+        video_job_id      = request.data.get('video_job_id') or ''
+        webstory_id       = request.data.get('webstory_id') or ''
         source_url        = request.data.get('source_url', '').strip()
         plain_text        = request.data.get('plain_text', '').strip()
         vibe_override     = request.data.get('vibe_override', '').strip()
         canva_template_id = request.data.get('canva_template_id') or None
         image_file        = request.FILES.get('image')
 
-        if not any([article_id, source_url, plain_text, image_file]):
+        if not any([article_id, video_job_id, webstory_id, source_url, plain_text, image_file]):
             return Response(
-                {'error': 'Provide at least one input: article, URL, text, or image.'},
+                {'error': 'Provide at least one input: article, video, web story, URL, text, or image.'},
                 status=400,
             )
 
-        # ── Get or auto-create Article ─────────────────────────────────────────
-        if article_id:
+        article = None
+
+        # ── Resolve Video source ───────────────────────────────────────────────
+        if video_job_id:
+            from video_studio.models import VideoJob
+            job = get_object_or_404(VideoJob, pk=video_job_id, tenant=request.tenant)
+            if job.article_id:
+                article = job.article
+            else:
+                props = job.props or {}
+                title = (
+                    props.get('title') or props.get('scene1Headline')
+                    or f'Video {str(job.pk)[:8]}'
+                )
+                scene_texts = []
+                for scene in props.get('scenes', []):
+                    for key in ('headline', 'body', 'text', 'caption'):
+                        val = scene.get(key, '')
+                        if val:
+                            scene_texts.append(val)
+                plain_text = '\n'.join(filter(None, [title] + scene_texts + [plain_text]))
+
+        # ── Resolve Web Story source ───────────────────────────────────────────
+        elif webstory_id:
+            ws = get_object_or_404(WebStory, pk=webstory_id, tenant=request.tenant)
+            captions = list(ws.slides.values_list('caption', flat=True))
+            parts = [ws.title, ws.summary] + [c for c in captions if c]
+            plain_text = '\n'.join(filter(None, parts + [plain_text]))
+
+        # ── Resolve Article source ─────────────────────────────────────────────
+        elif article_id:
             article = get_object_or_404(Article, pk=article_id, tenant=request.tenant)
-        else:
+
+        # ── Auto-create Article if none resolved ───────────────────────────────
+        if article is None:
             if plain_text:
                 title = plain_text[:100].strip()
             elif source_url:

@@ -10,6 +10,7 @@ from tenants.permissions import HasReadAccessToTenant
 from .models import VideoJob
 from .serializers import (
     VideoFallbackRequestSerializer,
+    VideoJobPickerSerializer,
     VideoJobSerializer,
     VideoRenderRequestSerializer,
 )
@@ -35,9 +36,19 @@ class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
     """
     serializer_class = VideoJobSerializer
     permission_classes = [IsAuthenticated, HasReadAccessToTenant]
+    pagination_class = None  # Return all jobs — picker dropdowns need the full list
+
+    def get_serializer_class(self):
+        if self.action == 'list' or self.request.query_params.get('picker'):
+            return VideoJobPickerSerializer
+        return VideoJobSerializer
 
     def get_queryset(self):
-        return VideoJob.objects.filter(tenant=self.request.tenant)
+        qs = VideoJob.objects.filter(tenant=self.request.tenant).select_related('article')
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs
 
     # ── Track A: Cloud Render ─────────────────────────────────────────────────
 
@@ -58,6 +69,17 @@ class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
         props = _strip_data_uris(data['props'])
         clips = _strip_data_uris(data.get('clips', []))
 
+        # Inject title from linked article so picker dropdowns always have a readable label
+        article_id = data.get('article_id')
+        if article_id and not props.get('title') and not props.get('scene1Headline'):
+            try:
+                from cms.models import Article
+                art = Article.objects.filter(pk=article_id).values('title').first()
+                if art and art['title']:
+                    props = {**props, 'title': art['title']}
+            except Exception:
+                pass
+
         job = VideoJob.objects.create(
             tenant=request.tenant,
             created_by=request.user,
@@ -65,7 +87,7 @@ class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
             props=props,
             clips=clips,
             audio_url=audio_url,
-            article_id=data.get('article_id'),
+            article_id=article_id,
         )
         task = render_video_task.delay(str(job.id))
         job.celery_task_id = task.id
@@ -115,6 +137,16 @@ class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
         props = _strip_data_uris(data['props'])
         clips = _strip_data_uris(data.get('clips', []))
 
+        article_id = data.get('article_id')
+        if article_id and not props.get('title') and not props.get('scene1Headline'):
+            try:
+                from cms.models import Article
+                art = Article.objects.filter(pk=article_id).values('title').first()
+                if art and art['title']:
+                    props = {**props, 'title': art['title']}
+            except Exception:
+                pass
+
         job = VideoJob.objects.create(
             tenant=request.tenant,
             created_by=request.user,
@@ -123,7 +155,7 @@ class VideoJobViewSet(viewsets.ReadOnlyModelViewSet):
             clips=clips,
             audio_url=audio_url,
             asset_urls=asset_urls,
-            article_id=data.get('article_id'),
+            article_id=article_id,
         )
         task = export_fallback_task.delay(str(job.id))
         job.celery_task_id = task.id

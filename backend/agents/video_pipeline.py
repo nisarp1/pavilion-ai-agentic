@@ -23,41 +23,10 @@ logger = logging.getLogger(__name__)
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _get_gemini_model_name() -> str:
-    """Return plain model name for the google-generativeai client (no prefix)."""
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
-    # Strip CrewAI / LiteLLM prefixes if present
-    for prefix in ("gemini/", "vertex_ai/"):
-        if model.startswith(prefix):
-            model = model[len(prefix):]
-    return model
-
-
 def _call_gemini(prompt: str) -> str:
-    """
-    Call Gemini via google-generativeai (same SDK used by workers/tasks.py).
-    Returns the raw text response.
-    """
-    import google.generativeai as genai
-
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY is not set")
-
-    genai.configure(api_key=api_key)
-    model_name = _get_gemini_model_name()
-    model = genai.GenerativeModel(model_name)
-
-    try:
-        response = model.generate_content(
-            prompt,
-            generation_config={"response_mime_type": "application/json"},
-        )
-    except Exception:
-        # Older SDK versions don't support response_mime_type
-        response = model.generate_content(prompt)
-
-    return response.text.strip() if response and response.text else ""
+    """Call Gemini and return the raw text response."""
+    from agents.gemini_client import generate_text
+    return generate_text(prompt, json_mode=True)
 
 
 def _safe_json_extract(text: str) -> dict:

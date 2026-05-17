@@ -647,42 +647,28 @@ def _get_fallback_trends():
 
 
 def _classify_sports_trends_with_ai(trends_list):
-    """
-    Use Gemini AI to filter a list of trends and return only the sports-related ones.
-    This effectively mimics the X 'Sports' tab classification.
-    """
-    if not settings.GEMINI_API_KEY:
-        logger.warning("Gemini API key missing, skipping AI classification")
-        return []
-        
+    """Use Gemini to filter a list of trends and return only the sports-related ones."""
     try:
-        import google.generativeai as genai
-        
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        
-        prompt = f"""
-        Analyze this list of trending topics from India:
-        {json.dumps(trends_list)}
-        
-        Return a JSON array containing ONLY the topics that are related to Sports (Cricket, Football, WWE, Tennis, Basketball, F1, Olympics, individual athletes, sports venues/stadiums, sports hashtags).
-        Include topics like 'Gunther' (WWE), 'Christchurch' (Cricket Venue), 'Ravindra Jadeja' (Cricketer), etc.
-        Do not include political, entertainment, or general news topics unless they are directly sports-related.
-        
-        Return ONLY valid JSON array of strings. Example: ["Kohli", "Manchester United", "#IPL2024"]
-        """
-        
-        response = model.generate_content(prompt)
-        text = response.text.replace('```json', '').replace('```', '').strip()
-        
+        from agents.gemini_client import generate_text as _gemini_text
+
+        prompt = (
+            f"Analyze this list of trending topics from India:\n{json.dumps(trends_list)}\n\n"
+            "Return a JSON array containing ONLY the topics related to Sports (Cricket, Football, "
+            "WWE, Tennis, Basketball, F1, Olympics, individual athletes, sports venues/stadiums, "
+            "sports hashtags). Do not include political or entertainment topics unless directly "
+            "sports-related.\nReturn ONLY valid JSON array of strings. "
+            'Example: ["Kohli", "Manchester United", "#IPL2024"]'
+        )
+
+        text = _gemini_text(prompt, json_mode=True)
+        text = text.replace('```json', '').replace('```', '').strip()
         sports_trends = json.loads(text)
         if isinstance(sports_trends, list):
             logger.info(f"AI classified {len(sports_trends)} sports trends from {len(trends_list)} candidates")
             return sports_trends
-            
     except Exception as e:
         logger.error(f"AI classification failed: {str(e)}")
-        
+
     return []
 
 

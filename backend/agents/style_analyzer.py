@@ -315,81 +315,64 @@ class StyleAnalyzerAgent:
     def _analyze_keyframes(
         self, video_url: str, video_path: str, tmp_dir: str, max_keyframes: int
     ) -> dict:
-        """Analyze using extracted keyframe images."""
-        import google.generativeai as genai
+        """Analyze using extracted keyframe images (inline bytes — works on Vertex AI)."""
+        from agents.gemini_client import generate_with_parts
+        from google.genai import types as gtypes
 
         frames = extract_keyframes(video_path, tmp_dir, max_keyframes)
         if not frames:
             return self._empty_dna(video_url, error="No keyframes extracted")
 
-        # Configure Gemini
-        api_key = os.environ.get("GEMINI_API_KEY", "")
-        genai.configure(api_key=api_key)
-
-        # Upload frames
-        uploaded_files = []
+        parts: list = []
         for frame_path in frames:
             try:
-                uploaded = genai.upload_file(frame_path, mime_type="image/jpeg")
-                uploaded_files.append(uploaded)
+                with open(frame_path, "rb") as fh:
+                    parts.append(gtypes.Part.from_bytes(data=fh.read(), mime_type="image/jpeg"))
             except Exception as e:
-                logger.warning(f"[StyleAnalyzer] Failed to upload frame {frame_path}: {e}")
+                logger.warning(f"[StyleAnalyzer] Failed to read frame {frame_path}: {e}")
 
-        if not uploaded_files:
-            return self._empty_dna(video_url, error="No frames uploaded to Gemini")
+        if not parts:
+            return self._empty_dna(video_url, error="No frames loaded")
 
-        # Build the prompt
-        prompt = self._build_analysis_prompt(video_url, len(frames))
+        parts.append(self._build_analysis_prompt(video_url, len(frames)))
 
-        # Call Gemini
-        model = genai.GenerativeModel(self.model.replace("gemini/", "").replace("vertex_ai/", ""))
         try:
-            response = model.generate_content(
-                [prompt] + uploaded_files,
-                generation_config=genai.GenerationConfig(
-                    temperature=0.2,
-                    response_mime_type="application/json",
-                ),
-            )
-            return self._parse_response(response.text, video_url)
+            text = generate_with_parts(parts, json_mode=True, temperature=0.2)
+            return self._parse_response(text, video_url)
         except Exception as e:
             logger.error(f"[StyleAnalyzer] Gemini analysis failed: {e}")
             return self._empty_dna(video_url, error=str(e))
-        finally:
-            # Clean up uploaded files
-            for f in uploaded_files:
-                try:
-                    genai.delete_file(f.name)
-                except Exception:
-                    pass
 
     # ── Full video analysis (richer but more expensive) ───────────────────────
 
     def _analyze_video(self, video_url: str, video_path: str) -> dict:
-        """Analyze using full video upload to Gemini."""
-        import google.generativeai as genai
+        """Analyze using full video upload via Files API (Vertex AI compatible)."""
+        from agents.gemini_client import get_client, get_model_name
+        from google.genai import types as gtypes
+        import time as t
 
-        api_key = os.environ.get("GEMINI_API_KEY", "")
-        genai.configure(api_key=api_key)
-
+        client = get_client()
+        model = get_model_name()
+        uploaded_video = None
         try:
-            uploaded_video = genai.upload_file(video_path, mime_type="video/mp4")
+            uploaded_video = client.files.upload(
+                file=video_path,
+                config=gtypes.UploadFileConfig(mime_type="video/mp4"),
+            )
 
             # Wait for processing
-            import time as t
             while uploaded_video.state.name == "PROCESSING":
                 t.sleep(2)
-                uploaded_video = genai.get_file(uploaded_video.name)
+                uploaded_video = client.files.get(name=uploaded_video.name)
 
             if uploaded_video.state.name == "FAILED":
-                return self._empty_dna(video_url, error="Video processing failed on Gemini")
+                return self._empty_dna(video_url, error="Video processing failed")
 
             prompt = self._build_analysis_prompt(video_url, mode="video")
-
-            model = genai.GenerativeModel(self.model.replace("gemini/", "").replace("vertex_ai/", ""))
-            response = model.generate_content(
-                [prompt, uploaded_video],
-                generation_config=genai.GenerationConfig(
+            response = client.models.generate_content(
+                model=model,
+                contents=[prompt, uploaded_video],
+                config=gtypes.GenerateContentConfig(
                     temperature=0.2,
                     response_mime_type="application/json",
                 ),
@@ -399,10 +382,11 @@ class StyleAnalyzerAgent:
             logger.error(f"[StyleAnalyzer] Video analysis failed: {e}")
             return self._empty_dna(video_url, error=str(e))
         finally:
-            try:
-                genai.delete_file(uploaded_video.name)
-            except Exception:
-                pass
+            if uploaded_video:
+                try:
+                    client.files.delete(name=uploaded_video.name)
+                except Exception:
+                    pass
 
     # ── Prompt Construction ───────────────────────────────────────────────────
 

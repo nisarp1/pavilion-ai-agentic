@@ -53,27 +53,17 @@ _SPORT_PATTERNS = {
 
 
 def get_model_priority_list():
-    """
-    Returns [(model_name, tool_spec), ...] in priority order for Gemini Search Grounding.
-
-    google-generativeai 0.8.x requires Tool.GoogleSearch() — not an empty dict {}.
-    Falls back gracefully to no-tool models if the proto import fails.
-    """
-    try:
-        from google.generativeai import protos
-        # Correct API for google-generativeai >= 0.8: use the GoogleSearch proto, not {}
-        tool_spec = [protos.Tool(google_search=protos.Tool.GoogleSearch())]
-    except Exception:
-        tool_spec = []
-
-    configured = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')
-    models = [
-        (configured, tool_spec),
-        ('gemini-2.5-flash', tool_spec),
-        ('gemini-2.0-flash', tool_spec),
-    ]
+    """Returns model names in priority order (for backward compat — tools arg ignored)."""
+    from agents.gemini_client import get_model_name
+    configured = get_model_name()
+    fallbacks = ['gemini-2.5-flash', 'gemini-2.0-flash']
     seen: set[str] = set()
-    return [(m, t) for m, t in models if not (m in seen or seen.add(m))]
+    result = []
+    for m in [configured] + fallbacks:
+        if m not in seen:
+            seen.add(m)
+            result.append((m, []))  # tool_spec is empty; callers use call_gemini_grounded()
+    return result
 
 
 _vertex_creds_cache = {'creds': None, 'project': None, 'expires_at': 0}
@@ -135,17 +125,38 @@ def call_vertex_ai(prompt: str, model: str = 'gemini-2.5-flash', location: str =
 
 
 def configure_gemini():
-    """Configure and return a google.generativeai module, or None if unavailable."""
-    api_key = getattr(settings, 'GEMINI_API_KEY', '')
-    if not api_key:
-        logger.warning('GEMINI_API_KEY not set — agentic trends will use RSS fallback only')
-        return None
+    """Return a sentinel truthy value so callers can fall back to RSS when Gemini is unavailable."""
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        return genai
-    except ImportError:
-        logger.warning('google-generativeai not installed')
+        from agents.gemini_client import get_client
+        get_client()   # raises if neither Vertex AI nor API key is configured
+        return True    # callers only test truthiness
+    except Exception as exc:
+        logger.warning('Gemini not available — agentic trends will use RSS fallback only: %s', exc)
+        return None
+
+
+def call_gemini_grounded(prompt: str, *, model: str | None = None) -> str | None:
+    """
+    Call Gemini with Google Search Grounding enabled.
+    Uses Vertex AI when VERTEX_PROJECT is set, otherwise AI Studio.
+    Returns response text, or None on failure.
+    """
+    from agents.gemini_client import get_client, get_model_name
+    from google.genai import types as gtypes
+
+    try:
+        client = get_client()
+        model_name = model or get_model_name()
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=gtypes.GenerateContentConfig(
+                tools=[gtypes.Tool(google_search=gtypes.GoogleSearch())],
+            ),
+        )
+        return response.text
+    except Exception as exc:
+        logger.warning('call_gemini_grounded failed (%s): %s', model, exc)
         return None
 
 

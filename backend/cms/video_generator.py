@@ -3,7 +3,6 @@ import requests
 import time
 import logging
 from django.conf import settings
-import google.generativeai as gemini
 from google.cloud import texttospeech
 from vercel_blob import put
 
@@ -14,20 +13,9 @@ DEFAULT_ANCHOR_LANDSCAPE = os.getenv("ANCHOR_IMAGE_LANDSCAPE_URL", "https://pavi
 DEFAULT_ANCHOR_PORTRAIT = os.getenv("ANCHOR_IMAGE_PORTRAIT_URL", "https://pavilionend.com/wp-content/uploads/2026/03/anchor_portrait.jpg")
 
 def generate_script(article_text, format="portrait"):
-    """
-    Generate a high-energy Malayalam sports news script using Gemini.
-    Uses the same API key and model as the rest of the codebase (settings.GEMINI_API_KEY).
-    """
+    """Generate a high-energy Malayalam sports news script using Gemini (Vertex AI)."""
     try:
-        api_key = getattr(settings, 'GEMINI_API_KEY', '') or os.getenv("GEMINI_API_KEY", "")
-        if not api_key:
-            logger.error("GEMINI_API_KEY is not configured. Cannot generate video script.")
-            return None
-
-        gemini.configure(api_key=api_key)
-
-        # Use the same model setting as the rest of the codebase
-        model_name = getattr(settings, 'GEMINI_MODEL', 'gemini-2.0-flash')
+        from agents.gemini_client import generate_text as _gemini_text
 
         if format == "portrait":
             prompt = (
@@ -42,19 +30,11 @@ def generate_script(article_text, format="portrait"):
                 f"The script should sound like a professional sports anchor. Use Malayalam script only."
             )
 
-        try:
-            model = gemini.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-        except Exception as model_err:
-            logger.warning(f"Model {model_name} failed: {model_err}. Retrying with gemini-1.5-flash.")
-            model = gemini.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(prompt)
-
-        if response and response.text:
-            return response.text.strip()
-        else:
-            logger.error("Gemini returned an empty response for video script.")
-            return None
+        result = _gemini_text(prompt)
+        if result:
+            return result
+        logger.error("Gemini returned an empty response for video script.")
+        return None
     except Exception as e:
         logger.error(f"Error generating script via Gemini: {e}", exc_info=True)
         return None

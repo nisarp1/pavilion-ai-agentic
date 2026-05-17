@@ -9,7 +9,7 @@ import logging
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from .tools import configure_gemini, fetch_google_news_rss, get_model_priority_list
+from .tools import configure_gemini, fetch_google_news_rss, get_model_priority_list, call_gemini_grounded
 
 logger = logging.getLogger(__name__)
 
@@ -59,30 +59,12 @@ class ContextEnricherAgent:
         return enriched
 
     def _enrich_gemini(self, genai, topic: dict) -> dict:
-        for model_name, tool_spec in get_model_priority_list():
-            for attempt in range(2):  # 2 attempts per model (1 retry on 429)
-                try:
-                    model = genai.GenerativeModel(model_name=model_name, tools=tool_spec)
-                    prompt = _ENRICH_PROMPT.format(topic=topic['topic'])
-                    response = model.generate_content(prompt)
-                    result = self._parse_enrich_response(response.text, topic)
-                    if result.get('ai_confidence', 0) > 0.3:
-                        return result
-                    break  # Low confidence but no error — try next model
-                except Exception as exc:
-                    err_str = str(exc)
-                    if '429' in err_str and attempt == 0:
-                        # Rate-limited — only retry if the suggested wait is short (<= 10s)
-                        delay_match = re.search(r'retry in (\d+\.?\d*)', err_str)
-                        delay = float(delay_match.group(1)) + 1.0 if delay_match else 999.0
-                        if delay <= 10.0:
-                            logger.info('ContextEnricherAgent 429 for "%s" — waiting %.1fs', topic['topic'][:30], delay)
-                            time.sleep(delay)
-                            continue  # retry same model
-                        # Long delay (quota exhausted) — skip Gemini for this topic
-                        logger.info('ContextEnricherAgent quota exhausted for "%s" — falling to RSS', topic['topic'][:30])
-                    logger.warning('ContextEnricherAgent %s failed for "%s": %s', model_name, topic['topic'][:40], exc)
-                    break  # Non-429 or second failure — try next model
+        prompt = _ENRICH_PROMPT.format(topic=topic['topic'])
+        text = call_gemini_grounded(prompt)
+        if text:
+            result = self._parse_enrich_response(text, topic)
+            if result.get('ai_confidence', 0) > 0.3:
+                return result
         return self._enrich_rss_fallback(topic)
 
     def _parse_enrich_response(self, text: str, topic: dict) -> dict:

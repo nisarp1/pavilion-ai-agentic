@@ -210,35 +210,19 @@ class NewsWriterAgent:
         return None
 
     def _write_with_context(self, genai, topic: str, context: dict):
-        """
-        Plain Gemini call — NO grounding tools.
-
-        Grounding tools (protos.Tool(google_search={})) interfere with strict JSON
-        output and were the primary cause of the old pipeline falling to static HTML.
-        We get live facts from the research step (RSS) instead.
-        """
-        configured_model = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')
-        # Strip litellm provider prefix (e.g. "vertex_ai/gemini-2.5-flash" → "gemini-2.5-flash")
-        if '/' in configured_model:
-            configured_model = configured_model.split('/', 1)[1]
-        # Build deduplicated model list: configured model first, then fallbacks
-        models_to_try = list(dict.fromkeys([configured_model] + _WRITER_MODELS))
+        """Plain Gemini call via new SDK (Vertex AI or AI Studio, no grounding tools)."""
+        from agents.gemini_client import generate_text as _gemini_text
         prompt = self._build_prompt(topic, context)
-
-        for model_name in models_to_try:
-            try:
-                model = genai.GenerativeModel(model_name=model_name)
-                response = model.generate_content(prompt)
-                result = self._parse_response(response.text, topic, context)
+        try:
+            text = _gemini_text(prompt)
+            if text:
+                result = self._parse_response(text, topic, context)
                 if result:
-                    logger.info('NewsWriterAgent: Malayalam article written via %s', model_name)
+                    logger.info('NewsWriterAgent: Malayalam article written via Gemini SDK')
                     return result
-                logger.warning(
-                    'NewsWriterAgent: %s returned unparseable or too-short response', model_name
-                )
-            except Exception as exc:
-                logger.warning('NewsWriterAgent %s failed: %s', model_name, exc)
-
+                logger.warning('NewsWriterAgent: Gemini SDK returned unparseable/short response')
+        except Exception as exc:
+            logger.warning('NewsWriterAgent Gemini SDK failed: %s', exc)
         return None
 
     def _build_prompt(self, topic: str, context: dict) -> str:

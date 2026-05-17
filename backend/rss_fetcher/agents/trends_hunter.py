@@ -15,7 +15,7 @@ import requests
 from datetime import datetime, timezone as dt_tz
 from django.conf import settings
 import urllib.request
-from .tools import configure_gemini, fetch_google_news_rss, classify_sport, get_model_priority_list
+from .tools import configure_gemini, fetch_google_news_rss, classify_sport, get_model_priority_list, call_gemini_grounded
 from ..visual_trends import run_visual_fetch
 
 logger = logging.getLogger(__name__)
@@ -447,18 +447,13 @@ class TrendsHunterAgent:
     # -------------------------------------------------------------------------
 
     def _run_gemini(self, genai) -> list[dict]:
-        for model_name, tool_spec in get_model_priority_list():
-            try:
-                model = genai.GenerativeModel(model_name=model_name, tools=tool_spec)
-                prompt = _HUNTER_PROMPT.format(max_topics=self.max_topics)
-                response = model.generate_content(prompt)
-                result = self._parse_gemini_response(response.text)
-                if result:
-                    logger.info('TrendsHunterAgent: Gemini (%s) returned %d topics', model_name, len(result))
-                    return result
-            except Exception as exc:
-                logger.warning('TrendsHunterAgent Gemini %s failed: %s', model_name, exc)
-
+        prompt = _HUNTER_PROMPT.format(max_topics=self.max_topics)
+        text = call_gemini_grounded(prompt)
+        if text:
+            result = self._parse_gemini_response(text)
+            if result:
+                logger.info('TrendsHunterAgent: Gemini returned %d topics', len(result))
+                return result
         return []
 
     def _parse_gemini_response(self, text: str) -> list[dict]:

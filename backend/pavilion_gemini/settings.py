@@ -324,9 +324,11 @@ if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
 # RSS Feeds
 RSS_FEEDS = env.list('RSS_FEEDS', default=[])
 
-# Google Gemini AI
+# Google Gemini AI (Vertex AI preferred; falls back to AI Studio API key)
 GEMINI_API_KEY = env('GEMINI_API_KEY', default='')
 GEMINI_MODEL = env('GEMINI_MODEL', default='gemini-2.5-flash-lite')
+VERTEX_PROJECT = env('VERTEX_PROJECT', default='') or env('VERTEXAI_PROJECT', default='')
+VERTEX_LOCATION = env('VERTEX_LOCATION', default='') or env('VERTEXAI_LOCATION', default='us-central1')
 
 # Google Cloud Text-to-Speech
 # Set this to the full path of your service account JSON key file

@@ -17,7 +17,6 @@ from django.conf import settings
 from cms.models import Article, Category
 from slugify import slugify
 import logging
-import google.generativeai as genai
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
@@ -41,17 +40,7 @@ except ImportError:
     TTS_AVAILABLE = False
     logger.warning("google-cloud-texttospeech not available. Audio generation will be disabled.")
 
-# Configure Gemini AI
-GEMINI_API_KEY = getattr(settings, 'GEMINI_API_KEY', '')
 GEMINI_MODEL = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')
-if GEMINI_API_KEY:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        logger.info(f"Gemini AI configured with model: {GEMINI_MODEL}")
-    except Exception as e:
-        logger.error(f"Failed to configure Gemini AI: {str(e)}")
-else:
-    logger.warning("GEMINI_API_KEY not configured")
 
 
 def fetch_featured_image_from_url(article_url):
@@ -364,11 +353,8 @@ def generate_article_with_gemini(article, mode='core'):
     Returns:
         dict: A dictionary with generated content fields
     """
-    if not GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY not configured")
-        return None
-    
     try:
+        from agents.gemini_client import get_client as _gc, get_model_name as _gm
         # Get original English content for context
         original_title = article.title  # Keep original for slug generation
         original_summary = article.summary if article.summary and article.summary.strip() else "No summary provided"
@@ -544,58 +530,18 @@ def generate_article_with_gemini(article, mode='core'):
 
         prompt += "\nReturn the JSON response with all fields filled."
 
-        # Initialize the model
-        try:
-            model = genai.GenerativeModel(GEMINI_MODEL)
-            logger.info(f"Initialized Gemini model: {GEMINI_MODEL}")
-        except Exception as model_error:
-            error_msg = str(model_error)
-            logger.error(f"Failed to initialize model {GEMINI_MODEL}: {error_msg}")
-            
-            # Check if it's a model name issue or API key issue
-            if '403' in error_msg or 'leaked' in error_msg.lower() or 'PermissionDenied' in error_msg:
-                logger.error("API KEY ERROR: Your Gemini API key is invalid or has been revoked.")
-                return None
-            
-            # Try fallback model
-            try:
-                logger.info("Trying fallback model: gemini-flash-latest")
-                model = genai.GenerativeModel('gemini-flash-latest')
-                logger.info("Successfully initialized fallback model")
-            except Exception as fallback_error:
-                logger.error(f"Failed to initialize fallback model: {str(fallback_error)}")
-                return None
-        
-        # Generate content
+        # Generate content via Vertex AI / AI Studio
         try:
             logger.info(f"Calling Gemini API with model: {GEMINI_MODEL}")
-            # Force JSON response type for structural stability
-            config = {"response_mime_type": "application/json"}
-            response = model.generate_content(prompt, generation_config=config)
+            from agents.gemini_client import generate_text as _gemini_text
+            generated_text = _gemini_text(prompt, json_mode=True)
             logger.info("Gemini API call successful")
         except Exception as api_error:
-            # Fallback if generation_config is not supported by older SDKs
-            logger.warning(f"Gemini API call with JSON config failed: {api_error}. Retrying without config.")
-            try:
-                response = model.generate_content(prompt)
-            except Exception as e2:
-                error_msg = str(e2)
-                logger.error(f"Gemini API call failed: {error_msg}")
-                import traceback
-            logger.error(traceback.format_exc())
-            
-            # Check for specific error types
-            if '403' in error_msg or 'leaked' in error_msg.lower() or 'PermissionDenied' in error_msg:
-                logger.error("API KEY ERROR: Your Gemini API key is invalid or has been revoked. Please generate a new API key from Google AI Studio.")
-            elif '404' in error_msg or 'NotFound' in error_msg:
-                logger.error("MODEL ERROR: The specified Gemini model is not found. Please check the model name.")
-            elif '429' in error_msg or 'quota' in error_msg.lower():
-                logger.error("QUOTA ERROR: API quota exceeded. Please check your usage limits.")
-            
+            error_msg = str(api_error)
+            logger.error(f"Gemini API call failed: {error_msg}")
             return None
-        
-        if response and response.text:
-            generated_text = response.text.strip()
+
+        if generated_text:
             logger.info(f"Gemini response received (length: {len(generated_text)})")
             
             # Try to parse JSON response
@@ -1190,12 +1136,8 @@ def translate_to_english_captions(ml_word_timings: list, ml_script: str) -> list
     if not ml_word_timings:
         return []
     try:
-        import google.generativeai as genai
         import re
-        model_name = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')
-        # Use plain model name for the generativeai client
-        plain_model = model_name.replace('gemini/', '').replace('vertex_ai/', '')
-        client = genai.GenerativeModel(plain_model)
+        from agents.gemini_client import generate_text as _gemini_text
 
         prompt = (
             "Translate the following Malayalam sports commentary script into natural English. "
@@ -1203,8 +1145,7 @@ def translate_to_english_captions(ml_word_timings: list, ml_script: str) -> list
             "Do NOT add explanations. Output ONLY the English sentences separated by newlines.\n\n"
             f"Malayalam script:\n{ml_script}"
         )
-        response = client.generate_content(prompt)
-        en_text = response.text.strip()
+        en_text = _gemini_text(prompt)
         # Split on sentence boundaries
         en_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', en_text) if s.strip()]
 

@@ -5,7 +5,6 @@ try:
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
 
-import google.generativeai as genai
 import os
 import json
 import logging

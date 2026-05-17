@@ -35,15 +35,17 @@ if [ "$MODE" = "web" ]; then
         pavilion_gemini.wsgi:application
 
 elif [ "$MODE" = "worker" ]; then
-    echo "Starting Celery worker..."
-    exec celery -A pavilion_gemini worker \
+    echo "Starting Celery worker (via celery_runner)..."
+    exec python3 /app/docker/celery_runner.py \
+        celery -A pavilion_gemini worker \
         --loglevel=info \
         --concurrency=4 \
         -Q default,social,celery
 
 elif [ "$MODE" = "beat" ]; then
-    echo "Starting Celery beat scheduler..."
-    exec celery -A pavilion_gemini beat \
+    echo "Starting Celery beat (via celery_runner)..."
+    exec python3 /app/docker/celery_runner.py \
+        celery -A pavilion_gemini beat \
         --loglevel=info \
         --scheduler django_celery_beat.schedulers:DatabaseScheduler
 

@@ -4,26 +4,24 @@
 # Required substitutions (set in Cloud Build trigger UI):
 #   _PROJECT_ID        : pavilion-ai-agentic-v2
 #   _REGION            : asia-south1
-#   _REPO              : asia-south1-docker.pkg.dev/$_PROJECT_ID/pavilion-images
-#   _VPC_CONNECTOR     : pavilion-vpc-connector
-#   _CLOUD_SQL_INSTANCE: $_PROJECT_ID:asia-south1:pavilion-newsai-db
+#   _CLOUD_SQL_INSTANCE: pavilion-ai-agentic-v2:asia-south1:pavilion-newsai-db
 #   _GCS_BUCKET        : pavilion-newsai-media
-#   _REDIS_URL         : redis://<memorystore-private-ip>:6379/0
-#   _REDIS_CACHE_URL   : redis://<memorystore-private-ip>:6379/1
 #   _VITE_GOOGLE_CLIENT_ID: (your Google OAuth client ID)
+#
+# Redis URL and all secrets are stored in Secret Manager — no substitutions needed.
 
 substitutions:
   _PROJECT_ID: 'pavilion-ai-agentic-v2'
   _REGION: 'asia-south1'
   _REPO: 'asia-south1-docker.pkg.dev/pavilion-ai-agentic-v2/pavilion-images'
-  _VPC_CONNECTOR: 'pavilion-vpc-connector'
   _CLOUD_SQL_INSTANCE: 'pavilion-ai-agentic-v2:asia-south1:pavilion-newsai-db'
-  _DB_HOST: '10.0.0.2'         # Cloud SQL private IP — update after setup_infra.sh
   _GCS_BUCKET: 'pavilion-newsai-media'
-  _REDIS_URL: 'redis://10.0.0.3:6379/0'
-  _REDIS_CACHE_URL: 'redis://10.0.0.3:6379/1'
   _VITE_GOOGLE_CLIENT_ID: 'placeholder'
   _IMAGE: '$_REPO/pavilion-app'
+  # Renderer URL — update after first renderer deploy
+  _RENDERER_URL: 'https://pavilion-renderer-replace-me.a.run.app'
+  # Allowed hosts — add your Cloud Run URL after first deploy
+  _ALLOWED_HOSTS: 'newsai.pavilionend.in'
 
 steps:
   # ── 1. Build the unified app image ───────────────────────────────────────────
@@ -71,21 +69,20 @@ steps:
       - '--concurrency=80'
       - '--timeout=300s'
       - '--port=8080'
-      - '--vpc-connector=$_VPC_CONNECTOR'
-      - '--vpc-egress=private-ranges-only'
       - '--add-cloudsql-instances=$_CLOUD_SQL_INSTANCE'
       - '--set-env-vars=ENVIRONMENT=production,DEBUG=False,PAVILION_MODE=web,PORT=8080'
       - '--set-env-vars=GCS_BUCKET_NAME=$_GCS_BUCKET'
-      - '--set-env-vars=CLOUD_RUN_RENDERER_URL=https://pavilion-renderer-HASH-el.a.run.app'
-      - '--set-env-vars=REDIS_URL=$_REDIS_URL,REDIS_CACHE_URL=$_REDIS_CACHE_URL'
-      - '--set-env-vars=DB_HOST=$_DB_HOST'
-      - '--set-env-vars=ALLOWED_HOSTS=newsai.pavilionend.in,pavilion-web-HASH-el.a.run.app'
+      - '--set-env-vars=CLOUD_RUN_RENDERER_URL=$_RENDERER_URL'
+      - '--set-env-vars=CLOUD_SQL_INSTANCE=$_CLOUD_SQL_INSTANCE'
+      - '--set-env-vars=ALLOWED_HOSTS=$_ALLOWED_HOSTS'
       - '--set-env-vars=FRONTEND_URL=https://newsai.pavilionend.in'
       - '--set-env-vars=CORS_ALLOWED_ORIGINS=https://newsai.pavilionend.in'
       - '--set-secrets=SECRET_KEY=pavilion-secret-key:latest'
       - '--set-secrets=DB_USER=pavilion-db-user:latest'
       - '--set-secrets=DB_PASSWORD=pavilion-db-password:latest'
       - '--set-secrets=DB_NAME=pavilion-db-name:latest'
+      - '--set-secrets=REDIS_URL=pavilion-redis-url:latest'
+      - '--set-secrets=REDIS_CACHE_URL=pavilion-redis-cache-url:latest'
       - '--set-secrets=GEMINI_API_KEY=pavilion-gemini-api-key:latest'
       - '--set-secrets=GOOGLE_CREDENTIALS_JSON=pavilion-google-credentials-json:latest'
       - '--set-secrets=ELEVENLABS_API_KEY=pavilion-elevenlabs-api-key:latest'
@@ -108,24 +105,22 @@ steps:
       - '--no-allow-unauthenticated'
       - '--service-account=pavilion-cloudrun@$_PROJECT_ID.iam.gserviceaccount.com'
       - '--memory=2Gi'
-      - '--cpu=2'
+      - '--cpu=1'
       - '--min-instances=1'
       - '--max-instances=3'
       - '--concurrency=1'
       - '--timeout=3600s'
-      - '--no-cpu-throttling'
-      - '--vpc-connector=$_VPC_CONNECTOR'
-      - '--vpc-egress=private-ranges-only'
       - '--add-cloudsql-instances=$_CLOUD_SQL_INSTANCE'
       - '--set-env-vars=ENVIRONMENT=production,DEBUG=False,PAVILION_MODE=worker'
       - '--set-env-vars=GCS_BUCKET_NAME=$_GCS_BUCKET'
-      - '--set-env-vars=CLOUD_RUN_RENDERER_URL=https://pavilion-renderer-HASH-el.a.run.app'
-      - '--set-env-vars=REDIS_URL=$_REDIS_URL,REDIS_CACHE_URL=$_REDIS_CACHE_URL'
-      - '--set-env-vars=DB_HOST=$_DB_HOST'
+      - '--set-env-vars=CLOUD_RUN_RENDERER_URL=$_RENDERER_URL'
+      - '--set-env-vars=CLOUD_SQL_INSTANCE=$_CLOUD_SQL_INSTANCE'
       - '--set-secrets=SECRET_KEY=pavilion-secret-key:latest'
       - '--set-secrets=DB_USER=pavilion-db-user:latest'
       - '--set-secrets=DB_PASSWORD=pavilion-db-password:latest'
       - '--set-secrets=DB_NAME=pavilion-db-name:latest'
+      - '--set-secrets=REDIS_URL=pavilion-redis-url:latest'
+      - '--set-secrets=REDIS_CACHE_URL=pavilion-redis-cache-url:latest'
       - '--set-secrets=GEMINI_API_KEY=pavilion-gemini-api-key:latest'
       - '--set-secrets=GOOGLE_CREDENTIALS_JSON=pavilion-google-credentials-json:latest'
       - '--set-secrets=ELEVENLABS_API_KEY=pavilion-elevenlabs-api-key:latest'
@@ -152,17 +147,15 @@ steps:
       - '--max-instances=1'
       - '--concurrency=1'
       - '--timeout=3600s'
-      - '--no-cpu-throttling'
-      - '--vpc-connector=$_VPC_CONNECTOR'
-      - '--vpc-egress=private-ranges-only'
       - '--add-cloudsql-instances=$_CLOUD_SQL_INSTANCE'
       - '--set-env-vars=ENVIRONMENT=production,DEBUG=False,PAVILION_MODE=beat'
-      - '--set-env-vars=REDIS_URL=$_REDIS_URL,REDIS_CACHE_URL=$_REDIS_CACHE_URL'
-      - '--set-env-vars=DB_HOST=$_DB_HOST'
+      - '--set-env-vars=CLOUD_SQL_INSTANCE=$_CLOUD_SQL_INSTANCE'
       - '--set-secrets=SECRET_KEY=pavilion-secret-key:latest'
       - '--set-secrets=DB_USER=pavilion-db-user:latest'
       - '--set-secrets=DB_PASSWORD=pavilion-db-password:latest'
       - '--set-secrets=DB_NAME=pavilion-db-name:latest'
+      - '--set-secrets=REDIS_URL=pavilion-redis-url:latest'
+      - '--set-secrets=REDIS_CACHE_URL=pavilion-redis-cache-url:latest'
     waitFor: ['push-sha']
 
 images:

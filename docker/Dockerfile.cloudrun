@@ -66,6 +66,7 @@ COPY --from=frontend-builder /frontend/dist ./frontend/dist
 # Copy application code
 COPY backend ./backend/
 COPY docker/entrypoint.sh ./docker/entrypoint.sh
+COPY docker/celery_runner.py ./docker/celery_runner.py
 
 # Create necessary directories
 RUN mkdir -p /app/media /app/static /app/logs

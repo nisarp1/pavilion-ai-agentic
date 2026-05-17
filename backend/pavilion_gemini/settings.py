@@ -98,30 +98,28 @@ WSGI_APPLICATION = 'pavilion_gemini.wsgi.application'
 import dj_database_url
 
 # Database
-# Production: Cloud SQL via private IP (Cloud Run VPC connector)
+# Production: Cloud SQL via Unix socket (Cloud Run --add-cloudsql-instances, no VPC needed)
 # Development: DATABASE_URL env var or SQLite fallback
 if ENVIRONMENT == 'production':
-    db_host = env('DB_HOST', default='')       # Cloud SQL private IP
-    db_user = env('DB_USER', default='pavilion_app')
+    db_instance = env('CLOUD_SQL_INSTANCE', default='')   # project:region:instance
+    db_user     = env('DB_USER',     default='pavilion_app')
     db_password = env('DB_PASSWORD', default='')
-    db_name = env('DB_NAME', default='pavilion_newsai')
-    db_port = env('DB_PORT', default='5432')
+    db_name     = env('DB_NAME',     default='pavilion_newsai')
 
-    if db_host:
+    if db_instance:
+        # Cloud Run injects a Unix socket at /cloudsql/<instance> automatically
         DATABASES = {
             'default': {
-                'ENGINE': 'django.db.backends.postgresql',
-                'HOST': db_host,
-                'PORT': db_port,
-                'NAME': db_name,
-                'USER': db_user,
+                'ENGINE':   'django.db.backends.postgresql',
+                'HOST':     f'/cloudsql/{db_instance}',
+                'NAME':     db_name,
+                'USER':     db_user,
                 'PASSWORD': db_password,
                 'CONN_MAX_AGE': 600,
-                'OPTIONS': {'sslmode': 'disable'},  # private VPC — no TLS needed
             }
         }
     else:
-        # Fallback: DATABASE_URL (e.g. Cloud SQL Proxy or other)
+        # Fallback for manual DATABASE_URL (local testing against prod DB)
         DATABASES = {
             'default': dj_database_url.config(
                 default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
@@ -273,12 +271,17 @@ if not CORS_ALLOWED_ORIGINS and DEBUG:
 CORS_ALLOW_CREDENTIALS = True
 
 # Celery Configuration
-CELERY_BROKER_URL = env('REDIS_URL', default='redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = env('REDIS_URL', default='redis://localhost:6379/0')
+# Supports both redis:// (local/Memorystore) and rediss:// (Upstash TLS)
+_redis_url = env('REDIS_URL', default='redis://localhost:6379/0')
+CELERY_BROKER_URL = _redis_url
+CELERY_RESULT_BACKEND = _redis_url
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
+# Required for Upstash TLS (rediss://) — ignored for plain redis://
+CELERY_BROKER_USE_SSL = {'ssl_cert_reqs': 'none'} if _redis_url.startswith('rediss://') else None
+CELERY_REDIS_BACKEND_USE_SSL = {'ssl_cert_reqs': 'none'} if _redis_url.startswith('rediss://') else None
 
 # Celery Beat Schedule
 # Fetch interval in minutes (default: 5 minutes for more frequent updates)
@@ -307,11 +310,19 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
-# Django cache backend (Redis DB 1 — separate from Celery broker DB 0)
+# Django cache backend
+# Upstash free tier is single-DB, so broker and cache share the same URL —
+# key prefixes prevent collisions. On Memorystore, REDIS_CACHE_URL uses DB 1.
+_redis_cache_url = env('REDIS_CACHE_URL', default='redis://localhost:6379/1')
+_cache_options = {}
+if _redis_cache_url.startswith('rediss://'):
+    _cache_options = {'ssl_cert_reqs': None}   # Upstash self-signed cert
+
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': env('REDIS_CACHE_URL', default='redis://localhost:6379/1'),
+        'LOCATION': _redis_cache_url,
+        'OPTIONS': _cache_options,
     }
 }
 

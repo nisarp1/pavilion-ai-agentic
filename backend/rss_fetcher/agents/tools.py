@@ -1,5 +1,7 @@
 """Shared utilities for the agentic trends pipeline."""
+import json
 import logging
+import time
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -51,9 +53,19 @@ _SPORT_PATTERNS = {
 
 
 def get_model_priority_list():
-    """Returns [(model_name, tool_spec), ...] in priority order for Gemini Search Grounding."""
-    from google.generativeai import protos
-    tool_spec = [protos.Tool(google_search={})]
+    """
+    Returns [(model_name, tool_spec), ...] in priority order for Gemini Search Grounding.
+
+    google-generativeai 0.8.x requires Tool.GoogleSearch() — not an empty dict {}.
+    Falls back gracefully to no-tool models if the proto import fails.
+    """
+    try:
+        from google.generativeai import protos
+        # Correct API for google-generativeai >= 0.8: use the GoogleSearch proto, not {}
+        tool_spec = [protos.Tool(google_search=protos.Tool.GoogleSearch())]
+    except Exception:
+        tool_spec = []
+
     configured = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')
     models = [
         (configured, tool_spec),
@@ -62,6 +74,64 @@ def get_model_priority_list():
     ]
     seen: set[str] = set()
     return [(m, t) for m, t in models if not (m in seen or seen.add(m))]
+
+
+_vertex_creds_cache = {'creds': None, 'project': None, 'expires_at': 0}
+
+
+def call_vertex_ai(prompt: str, model: str = 'gemini-2.5-flash', location: str = 'us-central1') -> str | None:
+    """
+    Call Vertex AI Gemini via the REST API using the GCP service account.
+    Bypasses the AI Studio free-tier quota entirely — uses cloud-platform scope.
+    Returns the response text, or None on failure.
+    """
+    import requests as http_requests
+    try:
+        import google.auth
+        import google.auth.transport.requests
+
+        cache = _vertex_creds_cache
+        now = time.time()
+
+        # Refresh credentials if missing or expiring within 60 s
+        if cache['creds'] is None or now >= cache['expires_at'] - 60:
+            creds, detected_project = google.auth.default(
+                scopes=['https://www.googleapis.com/auth/cloud-platform']
+            )
+            auth_req = google.auth.transport.requests.Request()
+            creds.refresh(auth_req)
+            cache['creds'] = creds
+            cache['project'] = detected_project
+            # google.auth expiry is a datetime; convert to epoch
+            expiry = getattr(creds, 'expiry', None)
+            cache['expires_at'] = expiry.timestamp() if expiry else (now + 3600)
+
+        creds = cache['creds']
+        project = cache['project']
+
+        # Strip litellm prefixes from model name (e.g. "vertex_ai/gemini-2.5-flash")
+        if '/' in model:
+            model = model.split('/', 1)[1]
+
+        endpoint = (
+            f'https://{location}-aiplatform.googleapis.com/v1'
+            f'/projects/{project}/locations/{location}'
+            f'/publishers/google/models/{model}:generateContent'
+        )
+        headers = {
+            'Authorization': f'Bearer {creds.token}',
+            'Content-Type': 'application/json',
+        }
+        body = {'contents': [{'role': 'user', 'parts': [{'text': prompt}]}]}
+
+        resp = http_requests.post(endpoint, headers=headers, json=body, timeout=120)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data['candidates'][0]['content']['parts'][0]['text']
+        logger.warning('Vertex AI %s returned %d: %s', model, resp.status_code, resp.text[:200])
+    except Exception as exc:
+        logger.warning('call_vertex_ai failed (%s): %s', model, exc)
+    return None
 
 
 def configure_gemini():

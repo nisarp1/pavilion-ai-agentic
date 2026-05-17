@@ -36,6 +36,18 @@ export const trackTrendClick = createAsyncThunk(
   }
 )
 
+export const fetchGoogleTrendingNow = createAsyncThunk(
+  'trends/fetchGoogleTrendingNow',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await api.get('/rss/feeds/google-trending-now/')
+      return response.data
+    } catch (error) {
+      return rejectWithValue(error.response?.data || error.message)
+    }
+  }
+)
+
 export const fetchAgenticTrends = createAsyncThunk(
   'trends/fetchAgenticTrends',
   async ({ forceRefresh = false } = {}, { rejectWithValue }) => {
@@ -59,12 +71,16 @@ const trendsSlice = createSlice({
     loading: false,
     twitterLoading: false,
     agenticLoading: false,
+    googleTrendingLoading: false,
     error: null,
     twitterError: null,
     agenticError: null,
+    googleTrendingError: null,
     lastUpdated: null,
     twitterLastUpdated: null,
     agenticLastUpdated: null,
+    googleTrendingLastUpdated: null,
+    googleTrendingItems: [],
     cached: false,
     rssOnly: false,
   },
@@ -105,6 +121,7 @@ const trendsSlice = createSlice({
       })
       .addCase(fetchTwitterTrends.fulfilled, (state, action) => {
         state.twitterLoading = false
+        state.twitterError = null
         state.twitterTrendingTopics = action.payload.trending_topics || []
         state.twitterEnrichedTrends = action.payload.enriched_trends || []
         state.twitterLastUpdated = action.payload.timestamp || new Date().toISOString()
@@ -121,6 +138,7 @@ const trendsSlice = createSlice({
       })
       .addCase(fetchAgenticTrends.fulfilled, (state, action) => {
         state.agenticLoading = false
+        state.agenticError = null
         state.trendingTopics = action.payload.trending_topics || []
         state.enrichedTrends = action.payload.enriched_trends || []
         state.agenticLastUpdated = action.payload.timestamp || new Date().toISOString()
@@ -130,6 +148,20 @@ const trendsSlice = createSlice({
       .addCase(fetchAgenticTrends.rejected, (state, action) => {
         state.agenticLoading = false
         state.agenticError = action.payload || action.error.message
+      })
+      .addCase(fetchGoogleTrendingNow.pending, (state) => {
+        state.googleTrendingLoading = true
+        state.googleTrendingError = null
+      })
+      .addCase(fetchGoogleTrendingNow.fulfilled, (state, action) => {
+        state.googleTrendingLoading = false
+        state.googleTrendingError = null
+        state.googleTrendingItems = action.payload.items || []
+        state.googleTrendingLastUpdated = action.payload.timestamp || new Date().toISOString()
+      })
+      .addCase(fetchGoogleTrendingNow.rejected, (state, action) => {
+        state.googleTrendingLoading = false
+        state.googleTrendingError = action.payload || action.error.message
       })
   },
 })

@@ -34,6 +34,8 @@ _GNEWS_SPORTS_URLS = [
 ]
 
 # Topics that are too generic to be useful as trend cards (exact-match on lowercased topic)
+_MIN_TOPICS = 5  # Minimum topics run() must return before resorting to fast-lane supplement
+
 _GENERIC_TOPICS = frozenset([
     'highlights', 'would', 'could', 'should', 'google', 'apple', 'inside',
     'american', 'americans', 'billion', 'million', 'cricket', 'football',
@@ -124,7 +126,9 @@ class TrendsHunterAgent:
     def run(self) -> list[dict]:
         """
         Run Agent 1: returns a list of raw trend dicts.
-        STRICT: Only returns topics found on official Google Trends sources.
+        Falls through each strategy and supplements with the sports news fast lane
+        if any strategy returns fewer than _MIN_TOPICS, so the full pipeline never
+        returns fewer topics than the RSS-only cold-cache path.
         """
         # 1. Gemini Search Grounding (Strategy 1 — Most Accurate for Realtime Trends)
         genai = configure_gemini()
@@ -134,7 +138,10 @@ class TrendsHunterAgent:
                 result = self._run_gemini(genai)
                 if result:
                     logger.info(f"Gemini found {len(result)} high-accuracy topics.")
-                    return result
+                    if len(result) >= _MIN_TOPICS:
+                        return result
+                    logger.info(f"Only {len(result)} Gemini topics — supplementing with sports fast lane.")
+                    return self._supplement(result)
             except Exception as exc:
                 logger.warning(f"Gemini search grounding failed: {exc}")
 
@@ -158,16 +165,41 @@ class TrendsHunterAgent:
                         '_articles': [], '_entities': [], '_pub_date': '', '_picture': '',
                     })
                 logger.info(f"Visual strategy found {len(results)} exact topics.")
-                return results
+                if len(results) >= _MIN_TOPICS:
+                    return results
+                logger.info(f"Only {len(results)} visual topics — supplementing with sports fast lane.")
+                return self._supplement(results)
         except Exception as exc:
             logger.warning(f"Visual strategy failed: {exc}")
 
         # 3. Google Trends RSS — Reliable, concise topics (Strategy 3)
         result = self._fetch_trends_rss()
         if result:
-            return result
+            if len(result) >= _MIN_TOPICS:
+                return result
+            logger.info(f"Only {len(result)} RSS topics — supplementing with sports fast lane.")
+            return self._supplement(result)
 
-        return []
+        # All official sources returned nothing — fall back to sports news fast lane entirely
+        logger.info("All official sources failed — using sports news fast lane as sole source.")
+        return self.fetch_sports_news_fast()
+
+    def _supplement(self, base: list[dict]) -> list[dict]:
+        """
+        Top up `base` with topics from the sports news fast lane until we reach
+        max_topics. Deduplicates by normalised topic key so Gemini/RSS topics
+        always take priority over the supplemental ones.
+        """
+        seen = {t['topic'][:40].lower() for t in base}
+        for t in self.fetch_sports_news_fast():
+            key = t['topic'][:40].lower()
+            if key not in seen:
+                base.append(t)
+                seen.add(key)
+            if len(base) >= self.max_topics:
+                break
+        logger.info(f"After supplement: {len(base)} total topics.")
+        return base[:self.max_topics]
 
     # -------------------------------------------------------------------------
     # 0. Google News Sports fast-lane (RSS, no Gemini, sports-specific)
@@ -249,6 +281,49 @@ class TrendsHunterAgent:
     # -------------------------------------------------------------------------
     # 1. Google Trends RSS
     # -------------------------------------------------------------------------
+
+    def fetch_google_trending_now(self, category: str = '17') -> list[dict]:
+        """
+        Fetch the actual Google Trends 'Trending Now' feed for India (category=17 = Sports).
+        Filters to genuine sports items only using keyword + sports-domain checks.
+        """
+        _, all_results = self._parse_trends_rss_url(
+            _TRENDS_RSS_URL,
+            params={'geo': 'IN', 'category': category},
+        )
+        return [item for item in all_results if self._is_sports_item(item)]
+
+    _SPORTS_DOMAINS = {
+        'cricbuzz', 'espncricinfo', 'ipl.bcci', 'bcci.tv', 'wisden',
+        'sportskeeda', 'sportstar', 'cricket', 'icc-cricket',
+        'sports.ndtv', 'ndtv.com/cricket', 'ndtv.com/sports',
+        'indiatoday.in/sports', 'thehindu.com/sport',
+        'hindustantimes.com/cricket', 'hindustantimes.com/sports',
+        'timesofindia.com/sports', 'zeenews.india.com/sports',
+        'insidesport', 'kabaddi', 'sportsstar', 'goal.com',
+        'transfermarkt', 'skysports', 'espn.com', 'isl', 'pbl-badminton',
+    }
+
+    def _is_sports_item(self, item: dict) -> bool:
+        """Return True if the item is genuinely sports-related."""
+        if item.get('sport') and item['sport'] != 'general':
+            return True
+        # Check if any linked article URL belongs to a sports domain
+        for art in item.get('_articles', []):
+            url = (art.get('url') or '').lower()
+            if any(domain in url for domain in self._SPORTS_DOMAINS):
+                return True
+        # Check article titles for sports keywords
+        combined = ' '.join(
+            (art.get('title') or '') for art in item.get('_articles', [])
+        ).lower()
+        sports_terms = [
+            'cricket', 'ipl', 'match', 'wicket', 'runs', 'innings', 'squad',
+            'football', 'goal', 'league', 'kabaddi', 'tennis', 'badminton',
+            'hockey', 'player', 'team', 'tournament', 'sport', 'score',
+            'bowler', 'batsman', 'fielder', 'odi', 't20', 'test match',
+        ]
+        return any(term in combined for term in sports_terms)
 
     def _fetch_trends_rss(self) -> list[dict]:
         """
@@ -347,8 +422,9 @@ class TrendsHunterAgent:
                 except Exception:
                     pass
 
+            cleaned = _clean_title(title)
             entry = {
-                'topic': _clean_title(title),
+                'topic': cleaned if cleaned else title,  # keep original if cleaner strips it
                 'sport': sport,
                 'search_volume': traffic,
                 'heat_score': heat_score,

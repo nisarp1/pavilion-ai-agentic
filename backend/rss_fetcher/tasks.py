@@ -1443,9 +1443,10 @@ def enhance_articles_with_google_trends():
         }
 
 
-def _fetch_articles_for_topic_task(topic, tenant=None):
+def _fetch_articles_for_topic_task(topic, tenant=None, enriched_data=None):
     """
-    Uses NewsWriterAgent to autonomously write a detailed, publication-ready article on a selected topic.
+    Uses NewsWriterAgent to write a detailed Malayalam article on a selected trending topic.
+    enriched_data: dict from the trend card (articles, reason, entities, editorial_angle, sport)
     """
     import logging
     from django.utils import timezone
@@ -1458,15 +1459,17 @@ def _fetch_articles_for_topic_task(topic, tenant=None):
 
     try:
         agent = NewsWriterAgent()
-        result = agent.write_article(topic)
+        result = agent.write_article(topic, enriched_data=enriched_data or {}, tenant=tenant)
 
         title = result.get("title", topic)
+        meta_title = result.get("meta_title", "") or ""
         summary = result.get("summary", "")
         body = result.get("body", "")
         sport = result.get("sport", "general")
-        
-        # Ensure unique slug
-        base_slug = slugify(title)
+
+        # Ensure unique slug — use meta_title (English) for a clean ASCII slug
+        slug_source = meta_title or title or topic
+        base_slug = slugify(slug_source)
         slug = base_slug
         counter = 1
         while Article.objects.filter(slug=slug).exists():
@@ -1484,9 +1487,22 @@ def _fetch_articles_for_topic_task(topic, tenant=None):
             trend_data={"trending_topic": topic, "sport": sport, "tags": result.get("tags", [])},
             tenant=tenant,
             generation_completed_at=timezone.now(),
+            # SEO / OG fields
+            meta_title=meta_title[:255],
+            meta_description=summary[:500],
+            og_title=meta_title[:255],
+            og_description=summary[:500],
         )
-        
+
         logger.info(f"Successfully generated agentic article: {article.title}")
+
+        # Auto-generate Chirp3 HD Malayalam voice
+        try:
+            from workers.tasks import generate_audio_for_article
+            generate_audio_for_article(article, voice_name='chirp')
+            logger.info(f"Chirp3 HD audio generated for article {article.id}")
+        except Exception as audio_exc:
+            logger.warning(f"Audio generation failed for article {article.id}: {audio_exc}")
 
         return {
             "success": True,

@@ -135,11 +135,11 @@ class RSSFeedViewSet(viewsets.ModelViewSet):
         topic = request.data.get('topic')
         if not topic:
              return Response({'error': 'topic parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
-             
+
         try:
-            # Pass tenant so articles are associated with the right tenant
             tenant = getattr(request, 'tenant', None)
-            result = _fetch_articles_for_topic_task(topic, tenant=tenant)
+            enriched_data = request.data.get('enriched_data') or {}
+            result = _fetch_articles_for_topic_task(topic, tenant=tenant, enriched_data=enriched_data)
             return Response(result, status=status.HTTP_200_OK)
             
         except Exception as e:
@@ -156,17 +156,110 @@ class RSSFeedViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='twitter-trends')
     def twitter_trends(self, request):
         """Sports trends (replaces broken Twitter/pytrends with agentic pipeline)."""
-        from .agents.coordinator import run_trends_pipeline
-        payload = run_trends_pipeline()
-        return Response(payload, status=status.HTTP_200_OK)
+        try:
+            from .agents.coordinator import run_trends_pipeline
+            payload = run_trends_pipeline()
+            return Response(payload, status=status.HTTP_200_OK)
+        except Exception as exc:
+            logging.getLogger(__name__).error('twitter_trends view error: %s', exc, exc_info=True)
+            return Response({
+                'trending_topics': [], 'enriched_trends': [],
+                'count': 0, 'cached': False, 'error': str(exc),
+            }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], url_path='google-trending-now')
+    def google_trending_now(self, request):
+        """Real Google Trends 'Trending Now' for India — matches trends.google.com/trending?geo=IN&category=17"""
+        from django.core.cache import cache
+        from datetime import datetime, timezone as tz
+        CACHE_KEY = 'google_trending_now_v1'
+        CACHE_TTL = 300  # 5 min
+
+        try:
+            cached = cache.get(CACHE_KEY)
+            if cached:
+                return Response(cached, status=status.HTTP_200_OK)
+
+            from .agents.trends_hunter import TrendsHunterAgent
+            items = TrendsHunterAgent().fetch_google_trending_now(category='17')
+            payload = {
+                'items': items,
+                'count': len(items),
+                'timestamp': datetime.now(tz.utc).isoformat(),
+                'source': 'google_trends_rss',
+            }
+            if items:
+                cache.set(CACHE_KEY, payload, CACHE_TTL)
+            return Response(payload, status=status.HTTP_200_OK)
+        except Exception as exc:
+            logging.getLogger(__name__).error('google_trending_now error: %s', exc, exc_info=True)
+            return Response({'items': [], 'count': 0, 'error': str(exc)}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='agentic-trends')
     def agentic_trends(self, request):
         """Full enriched agentic trends — always returns enriched_trends array."""
-        force = request.query_params.get('refresh', '').lower() == 'true'
-        from .agents.coordinator import run_trends_pipeline
-        payload = run_trends_pipeline(force_refresh=force)
-        return Response(payload, status=status.HTTP_200_OK)
+        try:
+            from .agents.coordinator import run_trends_pipeline, _trigger_background_refresh
+            force = request.query_params.get('refresh', '').lower() == 'true'
+            if force:
+                # Kick off a background enrichment rebuild, then return normal live payload
+                _trigger_background_refresh()
+            payload = run_trends_pipeline(force_refresh=False)
+            return Response(payload, status=status.HTTP_200_OK)
+        except Exception as exc:
+            logging.getLogger(__name__).error('agentic_trends view error: %s', exc, exc_info=True)
+            return Response({
+                'trending_topics': [], 'enriched_trends': [],
+                'count': 0, 'cached': False, 'error': str(exc),
+            }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get', 'put'], url_path='style-guide')
+    def style_guide(self, request):
+        """
+        GET  — return the active style guide for this tenant (falls back to global).
+        PUT  — update or create the tenant-specific style guide.
+             Body: { "content": "..." }
+        """
+        from .models import StyleGuide
+        tenant = getattr(request, 'tenant', None)
+
+        if request.method == 'GET':
+            # Prefer tenant-specific, fall back to global
+            guide = (
+                StyleGuide.objects.filter(tenant=tenant).first()
+                or StyleGuide.objects.filter(tenant__isnull=True).first()
+            )
+            return Response({
+                'content': guide.content if guide else '',
+                'is_tenant_specific': bool(guide and guide.tenant_id),
+                'updated_at': guide.updated_at.isoformat() if guide else None,
+            })
+
+        # PUT
+        content = request.data.get('content', '')
+        if not isinstance(content, str):
+            return Response({'error': 'content must be a string'}, status=status.HTTP_400_BAD_REQUEST)
+
+        guide, created = StyleGuide.objects.get_or_create(
+            tenant=tenant,
+            defaults={'content': content},
+        )
+        if not created:
+            guide.content = content
+            guide.save()
+
+        # Bust the in-process cache so the next article picks up the new rules
+        try:
+            from .agents.news_writer import invalidate_style_guide_cache
+            invalidate_style_guide_cache()
+        except Exception:
+            pass
+
+        return Response({
+            'success': True,
+            'created': created,
+            'updated_at': guide.updated_at.isoformat(),
+        })
 
     @action(detail=False, methods=['post'], url_path='trend-click',
             permission_classes=[permissions.IsAuthenticated])

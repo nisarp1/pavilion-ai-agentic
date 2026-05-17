@@ -1,12 +1,11 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
-import PosterEditor from './PosterEditor'
 import ArticlePreview from './ArticlePreview'
 import { useDispatch, useSelector } from 'react-redux'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { fetchArticle, updateArticle, publishArticle } from '../../store/slices/articleSlice'
+import { fetchArticle, updateArticle } from '../../store/slices/articleSlice'
 import api from '../../services/api'
 import { fetchCategoryTree } from '../../store/slices/categorySlice'
-import { showSuccess, showError, showInfo } from '../../utils/toast'
+import { showSuccess, showError } from '../../utils/toast'
 
 import MediaLibrary from '../MediaLibrary/MediaLibrary'
 import ReactQuill from 'react-quill'
@@ -21,7 +20,7 @@ import { convertUrlToEmbed } from '../../utils/embedUtils'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { FiImage, FiUser, FiLink, FiTag, FiExternalLink, FiVolume2, FiDownload, FiMove, FiVideo, FiFilm } from 'react-icons/fi'
+import { FiImage, FiUser, FiLink, FiTag, FiExternalLink, FiVolume2, FiMove, FiVideo } from 'react-icons/fi'
 
 function SortableSidebarItem(props) {
   const {
@@ -68,21 +67,13 @@ function ArticleEdit() {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [showMediaLibrary, setShowMediaLibrary] = useState(false)
   const [generatingAudio, setGeneratingAudio] = useState({})
-  const [showPosterEditor, setShowPosterEditor] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [voiceAudioUrls, setVoiceAudioUrls] = useState({})
-  // ── Phase 0: Reel pipeline state ──────────────────────────────────────────
-  const [reelPipelineStatus, setReelPipelineStatus] = useState(null)  // server-polled status
-  const [reelPipelineLoading, setReelPipelineLoading] = useState(false)
-  const reelPollRef = useRef(null)
   const [formData, setFormData] = useState({
     title: '',
     slug: '',
     summary: '',
     body: '',
-    instagram_reel_script: '',
-    social_media_poster_text: '',
-    social_media_caption: '',
     status: 'draft',
     category: 'reliable_sources',
     category_ids: [],
@@ -92,36 +83,22 @@ function ArticleEdit() {
     og_title: '',
     og_description: '',
     published_at: '',
-    video_script: '',
-    video_url: '',
-    video_audio_url: '',
-    video_status: 'idle',
-    video_error: '',
-    video_format: 'portrait',
-    newsroomx_dna: {},
-    newsroomx_status: 'idle',
-    newsroomx_video_url: '',
-    newsroomx_error: '',
   })
 
   const [sidebarOrder, setSidebarOrder] = useState([
     'status',
-    'reel_pipeline',
-    'newsroomx',
     'audio',
-    'video_generation',
-    'social_poster',
+    'studio_links',
     'featured_image',
     'author',
     'slug',
     'reference_link',
     'source',
-    'categories'
+    'categories',
   ])
 
-  const [dnaText, setDnaText] = useState('') // New state for raw JSON text
-
   const isInitialLoad = useRef(true)
+  const autoAudioTriggered = useRef(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -139,8 +116,10 @@ function ArticleEdit() {
     if (savedOrder) {
       try {
         const parsed = JSON.parse(savedOrder)
-        const defaultKeys = ['status', 'reel_pipeline', 'audio', 'video_generation', 'social_poster', 'featured_image', 'author', 'slug', 'reference_link', 'source', 'categories']
-        const merged = [...new Set([...parsed, ...defaultKeys])]
+        const validKeys = new Set(['status', 'audio', 'studio_links', 'featured_image', 'author', 'slug', 'reference_link', 'source', 'categories'])
+        const filtered = parsed.filter(k => validKeys.has(k))
+        const defaultKeys = ['status', 'audio', 'studio_links', 'featured_image', 'author', 'slug', 'reference_link', 'source', 'categories']
+        const merged = [...new Set([...filtered, ...defaultKeys])]
         setSidebarOrder(merged)
       } catch (e) { }
     }
@@ -185,9 +164,6 @@ function ArticleEdit() {
         slug: currentArticle.slug || '',
         summary: currentArticle.summary || '',
         body: currentArticle.body || '',
-        instagram_reel_script: currentArticle.instagram_reel_script || '',
-        social_media_poster_text: currentArticle.social_media_poster_text || '',
-        social_media_caption: currentArticle.social_media_caption || '',
         status: currentArticle.status || 'draft',
         category: currentArticle.category || 'reliable_sources',
         category_ids: currentArticle.categories?.map(cat => cat.id) || [],
@@ -196,36 +172,8 @@ function ArticleEdit() {
         meta_description: currentArticle.meta_description || '',
         og_title: currentArticle.og_title || '',
         og_description: currentArticle.og_description || '',
-        video_script: currentArticle.video_script || '',
-        video_url: currentArticle.video_url || '',
-        video_audio_url: currentArticle.video_audio_url || '',
-        video_status: currentArticle.video_status || 'idle',
-        video_error: currentArticle.video_error || '',
-        video_format: currentArticle.video_format || 'portrait',
         published_at: publishedAt,
-        newsroomx_dna: currentArticle.newsroomx_dna || {},
-        newsroomx_status: currentArticle.newsroomx_status || 'idle',
-        newsroomx_video_url: currentArticle.newsroomx_video_url || '',
-        newsroomx_error: currentArticle.newsroomx_error || '',
       })
-      
-      // Initialize DNA text
-      if (currentArticle.newsroomx_dna) {
-        setDnaText(JSON.stringify(currentArticle.newsroomx_dna, null, 2));
-      } else {
-        setDnaText('{}');
-      }
-
-      // Update video_status in formData even if not initial load to keep UI status updated
-      if (!isInitialLoad.current) {
-        setFormData(prev => ({
-          ...prev,
-          video_status: currentArticle.video_status,
-          video_url: currentArticle.video_url,
-          video_audio_url: currentArticle.video_audio_url,
-          video_error: currentArticle.video_error
-        }))
-      }
 
       isInitialLoad.current = false
     }
@@ -235,14 +183,8 @@ function ArticleEdit() {
   useEffect(() => {
     let intervalId = null;
 
-    // Only poll if we have an article and it's in a state that implies generation might be happening
-    if (currentArticle && (
-      currentArticle.status === 'fetched' || 
-      currentArticle.video_status === 'generating_video' ||
-      ['step_a_audio', 'step_b_avatar', 'step_c_composition'].includes(currentArticle.newsroomx_status)
-    )) {
-      console.log("Polling for updates (Article Status: " + currentArticle.status + ", Video Status: " + currentArticle.video_status + ")...");
-      // Poll every 3 seconds
+    // Poll while article is being generated
+    if (currentArticle && currentArticle.status === 'fetched') {
       intervalId = setInterval(() => {
         dispatch(fetchArticle(id));
       }, 3000);
@@ -251,7 +193,7 @@ function ArticleEdit() {
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [dispatch, id, currentArticle?.status, currentArticle?.video_status]);
+  }, [dispatch, id, currentArticle?.status]);
 
 
   // Load social media scripts
@@ -573,62 +515,6 @@ function ArticleEdit() {
     }
   }
 
-  const handleGenerateReelAudio = async (voiceName) => {
-    if (!formData.instagram_reel_script || !formData.instagram_reel_script.trim()) {
-      showError('Reel script cannot be empty.')
-      return
-    }
-
-    setGeneratingAudio(prev => ({ ...prev, [`reel_${voiceName}`]: true }))
-    try {
-      // Save changes first to ensure script is saved
-      await api.patch(`/articles/${id}/`, { instagram_reel_script: formData.instagram_reel_script })
-
-      const response = await api.post(`/articles/${id}/generate_reel_audio/`, {
-        voice_name: voiceName
-      })
-
-      if (response.data.reel_audio_url) {
-        dispatch(fetchArticle(id))
-        showSuccess('Reel audio generated successfully!')
-      }
-    } catch (error) {
-      console.error(`Error generating reel audio:`, error)
-      const errorMsg = error.response?.data?.error || error.message
-      showError(`Failed to generate reel audio: ${errorMsg}`)
-    } finally {
-      setGeneratingAudio(prev => ({ ...prev, [`reel_${voiceName}`]: false }))
-    }
-  }
-
-  const handleGeneratePoster = async () => {
-    // Save changes first
-    try {
-      if (formData.social_media_poster_text !== currentArticle.social_media_poster_text ||
-        formData.social_media_caption !== currentArticle.social_media_caption) {
-        await api.patch(`/articles/${id}/`, {
-          social_media_poster_text: formData.social_media_poster_text,
-          social_media_caption: formData.social_media_caption
-        })
-      }
-
-      setGeneratingAudio(prev => ({ ...prev, poster: true })) // Reuse generating state object
-
-      const response = await api.post(`/articles/${id}/generate_poster/`)
-
-      if (response.data.poster_url) {
-        dispatch(fetchArticle(id))
-        showSuccess('Poster generated successfully!')
-      }
-    } catch (error) {
-      console.error('Error generating poster:', error)
-      const errorMsg = error.response?.data?.error || error.message
-      showError(`Failed to generate poster: ${errorMsg}`)
-    } finally {
-      setGeneratingAudio(prev => ({ ...prev, poster: false }))
-    }
-  }
-
   // Helper function to get full audio URL
   const getFullAudioUrl = (audioUrl) => {
     if (!audioUrl) return null
@@ -637,153 +523,28 @@ function ArticleEdit() {
       : `http://localhost:8000${audioUrl?.startsWith('/') ? '' : '/'}${audioUrl}`
   }
 
-  const handleGenerateVideoScript = async () => {
-    setGeneratingAudio(prev => ({ ...prev, video_script: true }))
-    try {
-      const response = await api.post(`/articles/${id}/generate_video_script/`, {
-        format: formData.video_format
-      })
-      if (response.data.script) {
-        setFormData(prev => ({ ...prev, video_script: response.data.script }))
-        showSuccess('Script generated successfully!')
-      }
-    } catch (error) {
-      console.error('Error generating video script:', error)
-      showError('Failed to generate script: ' + (error.response?.data?.error || error.message))
-    } finally {
-      setGeneratingAudio(prev => ({ ...prev, video_script: false }))
-    }
-  }
-
-  const handleGenerateVideoContent = async () => {
-    if (!formData.video_script) {
-      showError('Please generate or write a video script first.')
-      return
-    }
-
-    setGeneratingAudio(prev => ({ ...prev, video_content: true }))
-    try {
-      const response = await api.post(`/articles/${id}/generate_video_content/`, {
-        video_script: formData.video_script,
-        format: formData.video_format
-      })
-      
-      if (response.data.status === 'generating_video') {
-        dispatch(fetchArticle(id))
-        showInfo('Video generation started — this takes 1–2 minutes.')
-      }
-    } catch (error) {
-      console.error('Error generating video:', error)
-      showError('Failed to start video generation: ' + (error.response?.data?.error || error.message))
-    } finally {
-      setGeneratingAudio(prev => ({ ...prev, video_content: false }))
-    }
-  }
-
-  // ── Phase 0: Reel Pipeline handlers ─────────────────────────────────
-  const handleGenerateReel = async (videoFormat = 'reel') => {
-    setReelPipelineLoading(true)
-    try {
-      const res = await api.post('/api/pipeline/generate/', {
-        article_id: id,
-        video_format: videoFormat,
-        reference_url: currentArticle.source_url || '',
-      })
-      if (res.data.status === 'queued') {
-        showInfo('Reel pipeline started — generating script, audio & scenes...')
-        startReelPolling()
-      }
-    } catch (err) {
-      showError('Failed to start reel pipeline: ' + (err.response?.data?.error || err.message))
-    } finally {
-      setReelPipelineLoading(false)
-    }
-  }
-
-  const startReelPolling = () => {
-    if (reelPollRef.current) clearInterval(reelPollRef.current)
-    reelPollRef.current = setInterval(async () => {
-      try {
-        const res = await api.get(`/api/pipeline/status/${id}/`)
-        setReelPipelineStatus(res.data)
-        // Also refresh article to pick up field changes
-        const terminalStates = ['approved', 'failed', 'review']
-        if (terminalStates.includes(res.data.reel_generation_status)) {
-          clearInterval(reelPollRef.current)
-          dispatch(fetchArticle(id))
-        }
-      } catch (e) {
-        // non-fatal, keep polling
-      }
-    }, 3000)
-  }
-
-  // Start polling on mount if already running/queued
+  // Auto-generate Chirp3 HD audio when a freshly generated article has no audio yet
   useEffect(() => {
-    if (currentArticle && ['queued', 'running'].includes(currentArticle.reel_generation_status)) {
-      startReelPolling()
+    if (
+      !autoAudioTriggered.current &&
+      currentArticle &&
+      currentArticle.status === 'generated' &&
+      !currentArticle.audio &&
+      !currentArticle.audio_url &&
+      currentArticle.body?.trim()
+    ) {
+      autoAudioTriggered.current = true
+      api.post(`/articles/${id}/generate_audio/`, { voice_name: 'chirp' })
+        .then(res => {
+          const audioUrl = res.data.audio_url || res.data.article?.audio_url
+          if (audioUrl) {
+            setVoiceAudioUrls(prev => ({ ...prev, chirp: audioUrl }))
+            dispatch(fetchArticle(id))
+          }
+        })
+        .catch(err => console.warn('Auto audio generation failed:', err))
     }
-    return () => { if (reelPollRef.current) clearInterval(reelPollRef.current) }
-  }, [currentArticle?.id])
-
-  const handleTriggerNewsroomX = async () => {
-    let parsedDna;
-    try {
-      parsedDna = JSON.parse(dnaText);
-    } catch (err) {
-      showError("Invalid JSON in DNA field. Please fix before running.");
-      return;
-    }
-
-    setGeneratingAudio(prev => ({ ...prev, newsroomx: true }))
-    try {
-      // First save the DNA if it was edited
-      await api.patch(`/articles/${id}/`, {
-        newsroomx_dna: parsedDna
-      })
-
-      const response = await api.post(`/articles/${id}/trigger_newsroomx_pipeline/`, {
-        newsroomx_dna: parsedDna
-      })
-
-      if (response.data.status) {
-        dispatch(fetchArticle(id))
-        showInfo('NewsroomX Programmatic Pipeline started!')
-      }
-    } catch (error) {
-      console.error('Error triggering NewsroomX:', error)
-      showError('Failed to start NewsroomX pipeline: ' + (error.response?.data?.error || error.message))
-    } finally {
-      setGeneratingAudio(prev => ({ ...prev, newsroomx: false }))
-    }
-  }
-
-  const handleFillDefaultDNA = () => {
-    const defaultDNA = {
-      "pipeline_step": "A_B_C_Sequence",
-      "step_A_audio": {
-        "engine": "google_chirp_3",
-        "ssml": "<speak>ഹലോ, സ്പോർട്സ് വാർത്തകളിലേക്ക് സ്വാഗതം. <break time='500ms'/> ഇന്നത്തെ പ്രധാന വാർത്തകൾ നോക്കാം.</speak>",
-        "voice": "ml-IN-Chirp3-HD-Zephyr"
-      },
-      "step_B_avatar": {
-        "service": "DID_API",
-        "avatar_url": "https://owyljrj2ayc5s6c1.public.blob.vercel-storage.com/sports_anchor_portrait.png",
-        "input": "Use_Audio_From_Step_A"
-      },
-      "step_C_composition": {
-        "service": "Creatomate",
-        "template": "newsroom_x_reels_v3",
-        "layers": {
-          "headline": "ബ്രേക്കിംഗ് ന്യൂസ്",
-          "ticker": "കൂടുതൽ വിവരങ്ങൾ ഉടൻ ലഭ്യമാകും • ഫോളോ ചെയ്യൂ",
-          "main_media": ""
-        }
-      }
-    };
-    setFormData(prev => ({ ...prev, newsroomx_dna: defaultDNA }));
-    setDnaText(JSON.stringify(defaultDNA, null, 2));
-  };
+  }, [currentArticle?.id, currentArticle?.status])
 
   if (loading || !currentArticle) {
     return (
@@ -853,408 +614,68 @@ function ArticleEdit() {
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-sm font-semibold text-gray-700 mb-4 uppercase tracking-wide flex items-center gap-2">
             <FiVolume2 size={16} />
-            Audio Comparison (Malayalam Voices)
+            Voice Audio (Chirp3 HD)
           </h3>
-          <p className="text-xs text-gray-500 mb-4">
-            Compare all three premium voices for news reading. Generate and play each voice to find the best one.
-          </p>
 
-          <div className="space-y-4">
-            {/* Chirp Voice */}
-            <div className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-800">🥇 Chirp Voice</h4>
-                  <p className="text-xs text-gray-500">Best Quality - Most Natural</p>
-                </div>
-                <button
-                  onClick={() => handleGenerateAudio('chirp')}
-                  disabled={generatingAudio.chirp}
-                  className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {generatingAudio.chirp ? 'Generating...' : 'Generate'}
-                </button>
-              </div>
-              {voiceAudioUrls.chirp && (
-                <audio
-                  controls
-                  src={getFullAudioUrl(voiceAudioUrls.chirp)}
-                  className="w-full"
-                  style={{ height: '40px' }}
-                >
-                  Your browser does not support the audio element.
-                </audio>
-              )}
-              {!voiceAudioUrls.chirp && generatingAudio.chirp === false && (
-                <p className="text-xs text-gray-400 italic">Click Generate to create audio with this voice</p>
-              )}
+          {/* Existing audio from article */}
+          {(voiceAudioUrls.chirp || currentArticle.audio_url || currentArticle.audio) ? (
+            <div className="space-y-3">
+              <audio
+                controls
+                src={getFullAudioUrl(voiceAudioUrls.chirp || currentArticle.audio_url || currentArticle.audio)}
+                className="w-full"
+                style={{ height: '40px' }}
+              >
+                Your browser does not support the audio element.
+              </audio>
+              <button
+                onClick={() => handleGenerateAudio('chirp')}
+                disabled={generatingAudio.chirp}
+                className="w-full px-3 py-1.5 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50 disabled:opacity-50"
+              >
+                {generatingAudio.chirp ? 'Regenerating...' : 'Regenerate'}
+              </button>
             </div>
-
-            {/* Neural2 Voice */}
-            <div className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-800">🥈 Neural2 Voice</h4>
-                  <p className="text-xs text-gray-500">High Quality - Excellent Prosody</p>
+          ) : (
+            <div className="space-y-3">
+              {generatingAudio.chirp ? (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+                  Generating Malayalam voice...
                 </div>
-                <button
-                  onClick={() => handleGenerateAudio('neural2')}
-                  disabled={generatingAudio.neural2}
-                  className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {generatingAudio.neural2 ? 'Generating...' : 'Generate'}
-                </button>
-              </div>
-              {voiceAudioUrls.neural2 && (
-                <audio
-                  controls
-                  src={getFullAudioUrl(voiceAudioUrls.neural2)}
-                  className="w-full"
-                  style={{ height: '40px' }}
-                >
-                  Your browser does not support the audio element.
-                </audio>
+              ) : (
+                <p className="text-xs text-gray-400 italic">No audio yet</p>
               )}
-              {!voiceAudioUrls.neural2 && generatingAudio.neural2 === false && (
-                <p className="text-xs text-gray-400 italic">Click Generate to create audio with this voice</p>
-              )}
+              <button
+                onClick={() => handleGenerateAudio('chirp')}
+                disabled={generatingAudio.chirp}
+                className="w-full px-3 py-2 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {generatingAudio.chirp ? 'Generating...' : 'Generate Voice'}
+              </button>
             </div>
-
-            {/* WaveNet Voice */}
-            <div className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-800">🥉 WaveNet Voice</h4>
-                  <p className="text-xs text-gray-500">Premium Quality - Widely Available (Current Default)</p>
-                </div>
-                <button
-                  onClick={() => handleGenerateAudio('wavenet')}
-                  disabled={generatingAudio.wavenet}
-                  className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {generatingAudio.wavenet ? 'Generating...' : 'Generate'}
-                </button>
-              </div>
-              {(voiceAudioUrls.wavenet || currentArticle.audio_url) && (
-                <audio
-                  controls
-                  src={getFullAudioUrl(voiceAudioUrls.wavenet || currentArticle.audio_url || currentArticle.audio)}
-                  className="w-full"
-                  style={{ height: '40px' }}
-                >
-                  Your browser does not support the audio element.
-                </audio>
-              )}
-              {!voiceAudioUrls.wavenet && !currentArticle.audio_url && generatingAudio.wavenet === false && (
-                <p className="text-xs text-gray-400 italic">Click Generate to create audio with this voice</p>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <p className="text-xs text-gray-500">
-              💡 <strong>Tip:</strong> Generate all three voices and compare them side by side. The current default audio uses WaveNet voice.
-            </p>
-          </div>
+          )}
         </div>
       ) : null
     ),
-    social_poster: (
+    studio_links: (
       <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-sm font-semibold text-gray-700 mb-4 uppercase tracking-wide flex items-center gap-2">
-          <FiImage size={16} />
-          Social Media Poster
-        </h3>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Headline Text</label>
-            <textarea
-              name="social_media_poster_text"
-              value={formData.social_media_poster_text}
-              onChange={handleChange}
-              rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
-              placeholder="Short headline for the poster..."
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Caption / Summary</label>
-            <textarea
-              name="social_media_caption"
-              value={formData.social_media_caption}
-              onChange={handleChange}
-              rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
-              placeholder="Short summary for the poster..."
-            />
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={handleGeneratePoster}
-              disabled={generatingAudio.poster}
-              className="flex-1 flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-            >
-              {generatingAudio.poster ? 'Processing...' : 'Auto Generate'}
-            </button>
-
-            <button
-              onClick={() => setShowPosterEditor(true)}
-              className="flex-1 flex items-center justify-center px-4 py-2 border border-indigo-600 rounded-md shadow-sm text-sm font-medium text-indigo-600 bg-white hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              Manual Edit
-            </button>
-          </div>
-
-          {(currentArticle.poster_url || currentArticle.generated_poster) && (
-            <div className="mt-4">
-              <p className="text-xs font-medium text-gray-700 mb-2">Generated Poster:</p>
-              <a
-                href={currentArticle.poster_url || currentArticle.generated_poster}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <img
-                  src={currentArticle.poster_url || currentArticle.generated_poster}
-                  alt="Generated Poster"
-                  className="w-full rounded-lg border border-gray-200 hover:opacity-90 transition-opacity"
-                />
-              </a>
-            </div>
-          )}
-        </div>
-      </div>
-    ),
-    reel_pipeline: (
-      <div className="bg-white rounded-lg shadow p-6 border-l-4 border-violet-600">
-        <h3 className="text-sm font-semibold text-gray-700 mb-1 uppercase tracking-wide flex items-center gap-2">
-          <FiVideo size={16} className="text-violet-600" />
-          Generate Reel
-          <span className="ml-auto text-[10px] font-normal text-gray-400">AI Pipeline</span>
-        </h3>
-
-        {/* Status badge */}
-        {(() => {
-          const st = reelPipelineStatus?.reel_generation_status || currentArticle?.reel_generation_status || 'idle'
-          const map = {
-            idle:     null,
-            queued:   <span className="inline-flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">⏳ Queued in pipeline</span>,
-            running:  <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded animate-pulse">⚡ Generating…</span>,
-            review:   <span className="inline-flex items-center gap-1 text-xs text-purple-700 bg-purple-50 px-2 py-1 rounded">🎬 Plan ready — open Studio to review</span>,
-            approved: <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-1 rounded">✅ Rendered</span>,
-            failed:   <span className="inline-flex items-center gap-1 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">❌ Failed</span>,
-          }
-          return map[st] ? <div className="mb-3">{map[st]}</div> : null
-        })()}
-
-        {/* Plan summary */}
-        {reelPipelineStatus?.plan_summary && reelPipelineStatus.plan_summary.scene_count > 0 && (
-          <div className="mb-3 p-2 bg-gray-50 rounded text-xs text-gray-600 space-y-1">
-            <div className="flex justify-between">
-              <span>Scenes</span>
-              <strong>{reelPipelineStatus.plan_summary.scene_count}</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Duration</span>
-              <strong>{reelPipelineStatus.plan_summary.duration_s}s</strong>
-            </div>
-            <div className="flex justify-between">
-              <span>Assets</span>
-              <strong>{reelPipelineStatus.plan_summary.assets_filled}/{reelPipelineStatus.plan_summary.assets_needed} filled</strong>
-            </div>
-            {reelPipelineStatus.plan_summary.quality_score != null && (
-              <div className="flex justify-between">
-                <span>Quality Score</span>
-                <strong className={reelPipelineStatus.plan_summary.quality_score >= 70 ? 'text-green-600' : 'text-amber-600'}>
-                  {reelPipelineStatus.plan_summary.quality_score}/100
-                </strong>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Agent log */}
-        {reelPipelineStatus?.pipeline_log?.length > 0 && (
-          <details className="mb-3">
-            <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Agent log ({reelPipelineStatus.pipeline_log.length} entries)</summary>
-            <div className="mt-1 max-h-32 overflow-y-auto space-y-0.5">
-              {reelPipelineStatus.pipeline_log.map((entry, i) => (
-                <div key={i} className="text-[10px] text-gray-500 font-mono leading-relaxed">
-                  <span className="text-violet-500">[{entry.stage}]</span> {entry.message}
-                </div>
-              ))}
-            </div>
-          </details>
-        )}
-
-        {/* Audio preview */}
-        {(reelPipelineStatus?.reel_audio_url || currentArticle?.reel_audio_url || currentArticle?.video_audio_url) && (
-          <div className="mb-3 bg-violet-50 p-2 rounded">
-            <p className="text-[10px] text-violet-600 font-bold mb-1 uppercase">Voiceover (Chirp3 HD)</p>
-            <audio
-              controls
-              src={reelPipelineStatus?.reel_audio_url || currentArticle?.reel_audio_url || currentArticle?.video_audio_url}
-              className="w-full h-8"
-            />
-          </div>
-        )}
-
-        {/* Video preview */}
-        {(reelPipelineStatus?.reel_video_url || currentArticle?.reel_video_url || currentArticle?.video_url) && (
-          <div className="mb-3 bg-gray-50 p-2 rounded">
-            <p className="text-[10px] text-gray-500 font-bold mb-1 uppercase">Rendered Reel</p>
-            <video
-              controls
-              src={reelPipelineStatus?.reel_video_url || currentArticle?.reel_video_url || currentArticle?.video_url}
-              className="w-full rounded shadow-sm bg-black"
-            />
-            <a
-              href={reelPipelineStatus?.reel_video_url || currentArticle?.reel_video_url || currentArticle?.video_url}
-              target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1 mt-1 text-xs text-primary-600 hover:underline"
-            >
-              <FiDownload size={11} /> Download MP4
-            </a>
-          </div>
-        )}
-
-        {/* Format selector + action buttons */}
-        <div className="space-y-2">
-          <div className="flex gap-2">
-            <button
-              id="btn-generate-reel"
-              onClick={() => handleGenerateReel('reel')}
-              disabled={reelPipelineLoading || ['queued','running'].includes(reelPipelineStatus?.reel_generation_status || currentArticle?.reel_generation_status)}
-              className="flex-1 flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
-            >
-              <FiVideo size={13} />
-              {reelPipelineLoading ? 'Starting…' : 'Generate Reel'}
-            </button>
-            <Link
-              to={`/video-studio?article=${id}`}
-              className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-bold text-violet-700 border border-violet-300 bg-violet-50 hover:bg-violet-100 transition-all"
-              title="Open in Video Studio"
-            >
-              <FiFilm size={13} /> Studio
-            </Link>
-          </div>
-          <button
-            onClick={() => handleGenerateReel('short')}
-            disabled={reelPipelineLoading || ['queued','running'].includes(reelPipelineStatus?.reel_generation_status || currentArticle?.reel_generation_status)}
-            className="w-full px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 border border-gray-200 bg-gray-50 hover:bg-gray-100 disabled:opacity-50"
+        <h3 className="text-sm font-semibold text-gray-700 mb-4 uppercase tracking-wide">Open In</h3>
+        <div className="space-y-3">
+          <Link
+            to="/social-studio"
+            className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
           >
-            Generate Short (3 min)
-          </button>
-        </div>
-      </div>
-    ),
-    video_generation: (
-      <div className="bg-white rounded-lg shadow p-6 border-l-4 border-primary-600">
-        <h3 className="text-sm font-semibold text-gray-700 mb-4 uppercase tracking-wide flex items-center gap-2">
-          <FiVideo size={16} className="text-primary-600" />
-          Auto-Video Generation
-        </h3>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Format</label>
-            <select
-              name="video_format"
-              value={formData.video_format}
-              onChange={handleChange}
-              className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
-            >
-              <option value="portrait">Portrait (9:16) - Reel/Short</option>
-              <option value="landscape">Landscape (16:9) - YouTube</option>
-            </select>
-          </div>
-
-          <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="block text-xs font-medium text-gray-700">Video Script (Malayalam)</label>
-              <button
-                onClick={handleGenerateVideoScript}
-                disabled={generatingAudio.video_script}
-                className="text-[10px] text-primary-600 hover:text-primary-800 font-bold uppercase tracking-tighter"
-              >
-                {generatingAudio.video_script ? 'Generating...' : '✨ Regenerate AI Script'}
-              </button>
-            </div>
-            <textarea
-              name="video_script"
-              value={formData.video_script}
-              onChange={handleChange}
-              rows={5}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono focus:ring-primary-500 focus:border-primary-500"
-              placeholder="Generate script first or write your own..."
-            />
-          </div>
-
-          <button
-            onClick={handleGenerateVideoContent}
-            disabled={generatingAudio.video_content || formData.video_status === 'generating_video' || !formData.video_script}
-            className={`w-full flex items-center justify-center px-4 py-3 rounded-lg shadow-sm text-sm font-bold text-white transition-all ${
-              formData.video_status === 'generating_video'
-                ? 'bg-amber-500 animate-pulse'
-                : 'bg-primary-600 hover:bg-primary-700 active:scale-95'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            <FiExternalLink size={15} />
+            Open in Social Studio
+          </Link>
+          <Link
+            to={`/video-studio?article=${id}`}
+            className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors text-sm font-medium"
           >
-            {formData.video_status === 'generating_video' 
-              ? 'Generating Video (D-ID)...' 
-              : generatingAudio.video_content ? 'Starting...' : '🎬 Generate Final Video'}
-          </button>
-
-          {/* Result Section */}
-          {(formData.video_url || formData.video_audio_url) && (
-            <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
-              {formData.video_audio_url && (
-                <div className="bg-gray-50 p-2 rounded-lg">
-                  <p className="text-[10px] text-gray-500 font-bold mb-1 uppercase">Narration Audio</p>
-                  <audio
-                    controls
-                    src={formData.video_audio_url}
-                    className="w-full h-8"
-                  />
-                </div>
-              )}
-              
-              {formData.video_url && (
-                <div className="bg-gray-50 p-2 rounded-lg">
-                  <p className="text-[10px] text-gray-500 font-bold mb-1 uppercase">Final Video</p>
-                  <video
-                    controls
-                    src={formData.video_url}
-                    className="w-full rounded-md shadow-inner bg-black"
-                  />
-                  <a 
-                    href={formData.video_url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-1 mt-2 text-xs text-primary-600 hover:underline"
-                  >
-                    <FiDownload size={12} /> Download Video
-                  </a>
-                </div>
-              )}
-            </div>
-          )}
-
-          {formData.video_status === 'failed' && (
-            <div className="p-2 bg-red-50 text-red-600 text-xs rounded border border-red-100 italic flex flex-col gap-1">
-              <p className="font-bold text-[10px] uppercase tracking-wider">Generation failed</p>
-              <p>{formData.video_error || "Check logs or try again with a different script."}</p>
-              {formData.video_error && (
-                <button
-                  onClick={() => showError(formData.video_error)}
-                  className="text-left underline mt-1 opacity-70 hover:opacity-100"
-                >
-                  View full error detail
-                </button>
-              )}
-            </div>
-          )}
+            <FiVideo size={15} />
+            Open in Video Studio
+          </Link>
         </div>
       </div>
     ),
@@ -1455,84 +876,6 @@ function ArticleEdit() {
         </p>
       </div>
     ),
-    newsroomx: (
-      <div className="bg-white rounded-lg shadow p-6 border-2 border-primary-100">
-        <h3 className="text-sm font-semibold text-primary-700 mb-4 uppercase tracking-wide flex items-center gap-2">
-          <FiVideo size={16} />
-          NewsroomX Orchestrator
-        </h3>
-        <p className="text-xs text-gray-500 mb-4 italic">
-          Programmatic API Pipeline: Audio (Chirp 3) → Avatar (D-ID) → Composition (Creatomate)
-        </p>
-
-        <div className="space-y-4">
-          <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-gray-400">STATUS</span>
-              <span className={`text-xs font-bold uppercase ${
-                formData.newsroomx_status === 'completed' ? 'text-green-600' : 
-                formData.newsroomx_status === 'failed' ? 'text-red-600' : 'text-blue-600'
-              }`}>
-                {(formData.newsroomx_status || 'idle').replace(/_/g, ' ')}
-              </span>
-            </div>
-            {formData.newsroomx_error && (
-              <p className="text-[10px] text-red-500 mt-1 bg-red-50 p-1 rounded border border-red-100 leading-tight">
-                {formData.newsroomx_error}
-              </p>
-            )}
-          </div>
-
-          <button
-            onClick={handleTriggerNewsroomX}
-            disabled={generatingAudio.newsroomx || !dnaText}
-            className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 text-xs font-bold shadow-sm flex items-center justify-center gap-2"
-          >
-            {generatingAudio.newsroomx ? 'Starting...' : '🚀 Run Programmatic Pipeline'}
-          </button>
-
-          {(!dnaText || dnaText === '{}') && (
-            <button
-              onClick={handleFillDefaultDNA}
-              className="w-full py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-[10px] font-bold border border-gray-300"
-            >
-              🪄 Use Default DNA Template
-            </button>
-          )}
-
-          {formData.newsroomx_video_url && (
-            <div className="mt-4">
-              <p className="text-xs font-bold text-gray-500 mb-2">FINAL COMPOSITION</p>
-              <video 
-                src={formData.newsroomx_video_url} 
-                controls 
-                className="w-full rounded-lg shadow-inner bg-black"
-                style={{ maxHeight: '300px' }}
-              />
-              <a 
-                href={formData.newsroomx_video_url} 
-                target="_blank" 
-                rel="noreferrer"
-                className="mt-2 text-[10px] text-blue-600 hover:underline flex items-center gap-1"
-              >
-                <FiDownload size={10} /> Download Final Video
-              </a>
-            </div>
-          )}
-          
-          <div className="mt-4">
-             <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Orchestration DNA (JSON)</label>
-             <textarea
-                value={dnaText}
-                onChange={(e) => setDnaText(e.target.value)}
-                rows={10}
-                className="w-full text-[10px] font-mono p-2 bg-gray-900 text-green-400 rounded border border-gray-700 focus:ring-0 whitespace-pre"
-                style={{ tabSize: 2 }}
-             />
-          </div>
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -1644,85 +987,6 @@ function ArticleEdit() {
             />
           </div>
 
-          {/* Instagram Reel Script */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex justify-between items-center mb-4">
-              <label htmlFor="instagram_reel_script" className="block text-sm font-medium text-gray-700">
-                Instagram Reel Script
-              </label>
-              <button
-                type="button"
-                onClick={() => handleGenerateReelAudio('elevenlabs')}
-                disabled={generatingAudio.reel_elevenlabs || !formData.instagram_reel_script}
-                className="px-3 py-1.5 text-xs bg-black text-white rounded hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shadow-sm font-medium"
-              >
-                <FiVolume2 />
-                {generatingAudio.reel_elevenlabs ? 'Generating (ElevenLabs)...' : '🎙️ Generate Voice (ElevenLabs)'}
-              </button>
-            </div>
-
-            <textarea
-              id="instagram_reel_script"
-              name="instagram_reel_script"
-              value={formData.instagram_reel_script || ''}
-              onChange={handleChange}
-              rows={6}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent mb-4 font-mono text-sm"
-              placeholder="Script for Instagram Reel (auto-generated by AI during article generation)..."
-            />
-
-            {/* Reel Audio Player */}
-            {currentArticle?.reel_audio_url && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                <p className="text-xs text-purple-800 font-medium mb-2">Generated Reel Audio:</p>
-                <audio
-                  controls
-                  src={getFullAudioUrl(currentArticle.reel_audio_url)}
-                  className="w-full h-8"
-                >
-                  Your browser does not support the audio element.
-                </audio>
-              </div>
-            )}
-          </div>
-
-          {/* Social Media Content */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Social Media Content</h3>
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="social_media_poster_text" className="block text-sm font-medium text-gray-700 mb-2">
-                  Poster Text (Short & Punchy)
-                </label>
-                <input
-                  type="text"
-                  id="social_media_poster_text"
-                  name="social_media_poster_text"
-                  value={formData.social_media_poster_text || ''}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-medium"
-                  placeholder="Short text for poster image..."
-                />
-                <p className="mt-1 text-xs text-gray-500">2-5 words max. Use this for the text overlay on the social media image.</p>
-              </div>
-
-              <div>
-                <label htmlFor="social_media_caption" className="block text-sm font-medium text-gray-700 mb-2">
-                  Social Media Caption
-                </label>
-                <textarea
-                  id="social_media_caption"
-                  name="social_media_caption"
-                  value={formData.social_media_caption || ''}
-                  onChange={handleChange}
-                  rows={4}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="Engaging caption with hashtags..."
-                />
-              </div>
-            </div>
-          </div>
-
           {/* SEO Section */}
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">SEO Metadata</h3>
@@ -1816,18 +1080,6 @@ function ArticleEdit() {
         initialMediaId={mediaLibraryMode === 'featured' ? (currentArticle?.featured_media_id || currentArticle?.featured_image_id) : null}
         initialUrl={mediaLibraryMode === 'featured' ? currentArticle?.featured_image_url : null}
       />
-
-      {showPosterEditor && (
-        <PosterEditor
-          articleId={id}
-          onClose={() => setShowPosterEditor(false)}
-          onSaveSuccess={(newUrl) => {
-            dispatch(fetchArticle(id));
-            showSuccess("Poster updated successfully!");
-            setShowPosterEditor(false);
-          }}
-        />
-      )}
 
       {showPreview && (
         <ArticlePreview

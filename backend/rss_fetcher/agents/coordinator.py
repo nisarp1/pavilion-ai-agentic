@@ -1,6 +1,20 @@
 """
-Coordinator — runs the 3-agent Trends pipeline and manages Redis caching.
-Entry point: run_trends_pipeline()
+Coordinator — runs the agentic Trends pipeline.
+
+Architecture (always-fresh design):
+  Every request:
+    1. Fetch LIVE sports headlines from Google News RSS (~1s, never stale)
+    2. If Gemini enrichment is cached and fresh → merge context into live topics
+    3. If enrichment is missing/stale → trigger background Celery task to rebuild it
+
+  Background (Celery):
+    run_trends_pipeline(force_refresh=True) → _run_enrichment_only()
+    Runs Hunter → Enricher → Ranker with Gemini, stores per-topic enrichment map.
+
+This guarantees:
+  - Topics shown are ALWAYS real-time (never cached topic list)
+  - Gemini context (reason, entities, editorial_angle) is best-effort from background
+  - No scenario where stale or fallback topics replace live ones
 """
 import dataclasses
 import logging
@@ -12,11 +26,11 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-CACHE_KEY = 'agentic_trends_v1'
-CACHE_TS_KEY = 'agentic_trends_v1_ts'
-CACHE_PREV_KEY = 'agentic_trends_v1_prev'
-LOCK_KEY = 'agentic_trends_pipeline_lock'
-SOFT_TTL_RATIO = 0.8
+# Enrichment cache: stores {topic_key → enriched_dict} (NOT the full payload)
+ENRICHMENT_CACHE_KEY = 'agentic_enrichment_v2'
+ENRICHMENT_TS_KEY    = 'agentic_enrichment_v2_ts'
+LOCK_KEY             = 'agentic_trends_pipeline_lock'
+SOFT_TTL_RATIO       = 0.8
 
 
 @dataclasses.dataclass
@@ -75,76 +89,108 @@ def _deduplicate_topics(raw: list[dict]) -> list[dict]:
     return list(seen.values())
 
 
+def _topic_key(topic: str) -> str:
+    """Normalised key for topic matching between RSS and enrichment."""
+    k = re.sub(r'\b20\d{2}\b', '', topic.lower()).strip()
+    return re.sub(r'\s+', ' ', k)
+
+
 def _trigger_background_refresh():
-    """Fire-and-forget Celery task to refresh the trends cache in the background."""
+    """Fire-and-forget: ask Celery to rebuild the Gemini enrichment cache."""
     try:
         from workers.tasks import run_agentic_trends_celery
         run_agentic_trends_celery.delay()
-        logger.info('Agentic trends: soft-TTL triggered background refresh')
+        logger.info('Agentic trends: background enrichment refresh triggered')
     except Exception as exc:
         logger.warning('Agentic trends: background refresh trigger failed: %s', exc)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Public entry point
+# ─────────────────────────────────────────────────────────────────────────────
+
 def run_trends_pipeline(force_refresh: bool = False) -> dict:
     """
-    Run the full 3-agent pipeline.
-    Returns a dict compatible with both old and new frontend:
-      {
-        'trending_topics': [str, ...],          # backward-compat flat list
-        'enriched_trends': [{...}, ...],        # new enriched list
-        'count': int,
-        'timestamp': str,
-        'cached': bool,
-      }
-    """
-    cache_ttl = getattr(settings, 'TRENDS_CACHE_TTL', 300)
-    soft_ttl = int(cache_ttl * SOFT_TTL_RATIO)
+    Public entry point called by all trend views and the Celery beat task.
 
-    if not force_refresh:
-        cached = cache.get(CACHE_KEY)
-        if cached:
-            cached_at = cache.get(CACHE_TS_KEY)
-            if cached_at:
-                age = (datetime.now(dt_timezone.utc) - cached_at).total_seconds()
+    Always returns LIVE data from sports RSS, augmented with cached Gemini enrichment.
+    force_refresh is only used by the Celery beat task to rebuild enrichment.
+    """
+    try:
+        if force_refresh:
+            return _run_enrichment_only()
+
+        cache_ttl = getattr(settings, 'TRENDS_CACHE_TTL', 300)
+        soft_ttl  = int(cache_ttl * SOFT_TTL_RATIO)
+
+        # ── Step 1: Always fetch live sports headlines ────────────────────────────
+        fresh = _run_rss_only_pipeline()
+        if fresh.get('fallback'):
+            logger.warning('Agentic trends: both RSS and fallback failed, returning static fallback')
+            return fresh
+
+        # ── Step 2: Augment with Gemini enrichment if available and fresh ─────────
+        enrichment_map = cache.get(ENRICHMENT_CACHE_KEY)
+        enrichment_ts  = cache.get(ENRICHMENT_TS_KEY)
+
+        if enrichment_map and enrichment_ts:
+            try:
+                # Guard against timezone-naive timestamps from an old cache entry
+                ts = enrichment_ts
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=dt_timezone.utc)
+                age = (datetime.now(dt_timezone.utc) - ts).total_seconds()
+            except Exception:
+                age = cache_ttl + 1  # treat as expired
+
+            if age <= cache_ttl:
+                fresh = _apply_enrichment(fresh, enrichment_map)
+                fresh.pop('rss_only', None)
+                fresh['cached'] = False
                 if age > soft_ttl:
                     _trigger_background_refresh()
-            cached['cached'] = True
-            logger.info('Agentic trends: cache HIT')
-            return cached
+                logger.info('Agentic trends: live RSS + Gemini enrichment (age=%.0fs)', age)
+            else:
+                _trigger_background_refresh()
+                logger.info('Agentic trends: live RSS only (enrichment expired at %.0fs)', age)
+        else:
+            _trigger_background_refresh()
+            logger.info('Agentic trends: live RSS only (no enrichment cached)')
 
-        # Cold start: return sports news immediately, trigger Celery to warm cache.
-        # If another request already holds the lock (Gemini pipeline running), just
-        # serve sports RSS immediately without waiting — Celery will warm the cache.
-        logger.info('Agentic trends: cache MISS — returning sports RSS immediately, triggering Celery refresh')
-        _trigger_background_refresh()
-        return _run_rss_only_pipeline()
+        return fresh
 
-    else:
-        # Force refresh: acquire lock to prevent duplicate forced-refresh runs
-        if not cache.add(LOCK_KEY, 1, 120):
-            logger.info('Agentic trends: forced refresh lock held — waiting for existing run')
-            for _ in range(34):
-                time.sleep(3)
-                result = cache.get(CACHE_KEY)
-                if result:
-                    result['cached'] = True
-                    return result
-            return _run_rss_only_pipeline()
+    except Exception as exc:
+        logger.error('run_trends_pipeline unexpected error: %s', exc, exc_info=True)
+        return _fallback_payload()
 
-    logger.info('Agentic trends: running pipeline (Hunter → Enricher → Ranker)')
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Background enrichment (Celery)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_enrichment_only() -> dict:
+    """
+    Called by Celery: runs Gemini enrichment pipeline and caches the result.
+    Stores a {topic_key → enriched_dict} map — NOT a full user-facing payload.
+    Returns a status dict for the Celery task log.
+    """
+    cache_ttl = getattr(settings, 'TRENDS_CACHE_TTL', 300)
+
+    if not cache.add(LOCK_KEY, 1, 120):
+        logger.info('Agentic trends enrichment: lock held — skipping duplicate run')
+        return {'status': 'locked'}
+
     try:
         from .trends_hunter import TrendsHunterAgent
         from .context_enricher import ContextEnricherAgent
         from .trend_ranker import TrendRankerAgent
 
-        # Capture previous payload for velocity calculation
-        old_payload = cache.get(CACHE_KEY)
-        if old_payload:
-            cache.set(CACHE_PREV_KEY, old_payload, cache_ttl * 4)
+        # Carry over previous ranks for velocity calculation
+        prev_map = cache.get(ENRICHMENT_CACHE_KEY) or {}
         prev_ranks = {
-            t['topic']: t['rank']
-            for t in (old_payload or {}).get('enriched_trends', [])
-            if isinstance(t, dict)
+            k: v.get('rank', 0)
+            for k, v in prev_map.items()
+            if isinstance(v, dict)
         }
 
         raw_topics = TrendsHunterAgent().run()
@@ -152,34 +198,73 @@ def run_trends_pipeline(force_refresh: bool = False) -> dict:
             raise ValueError('TrendsHunterAgent returned no topics')
 
         raw_topics = _deduplicate_topics(raw_topics)
-        enriched = ContextEnricherAgent().enrich(raw_topics)
-        ranked = TrendRankerAgent().rank(enriched, prev_ranks=prev_ranks)
+        enriched   = ContextEnricherAgent().enrich(raw_topics)
+        ranked     = TrendRankerAgent().rank(enriched, prev_ranks=prev_ranks)
 
-        results = [_dict_to_result(d) for d in ranked]
-        payload = _build_payload(results, cached=False)
+        enrichment_map = {_topic_key(t.get('topic', '')): t for t in ranked}
 
-        cache.set(CACHE_KEY, payload, cache_ttl)
-        cache.set(CACHE_TS_KEY, datetime.now(dt_timezone.utc), cache_ttl)
-        return payload
+        cache.set(ENRICHMENT_CACHE_KEY, enrichment_map, cache_ttl)
+        cache.set(ENRICHMENT_TS_KEY, datetime.now(dt_timezone.utc), cache_ttl)
+        logger.info('Agentic trends: enrichment cached (%d topics)', len(enrichment_map))
+        return {'status': 'ok', 'count': len(enrichment_map)}
 
     except Exception as exc:
-        logger.error(f'Agentic trends pipeline failed: {exc}', exc_info=True)
-        rss_payload = _run_rss_only_pipeline()
-        # Cache the sports RSS result with a short TTL so we don't serve stale non-sports data
-        if rss_payload.get('count', 0) > 0 and not rss_payload.get('fallback'):
-            cache.set(CACHE_KEY, rss_payload, min(cache_ttl, 120))
-            cache.set(CACHE_TS_KEY, datetime.now(dt_timezone.utc), min(cache_ttl, 120))
-        return rss_payload
+        logger.error('Agentic trends enrichment failed: %s', exc, exc_info=True)
+        return {'status': 'error', 'error': str(exc)}
 
     finally:
         cache.delete(LOCK_KEY)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _apply_enrichment(payload: dict, enrichment_map: dict) -> dict:
+    """
+    Merge cached Gemini enrichment into fresh RSS topics.
+    The fresh topic's identity (topic name, heat_score, rank from ranker) is preserved;
+    Gemini provides reason/summary/entities/editorial_angle/articles.
+    """
+    enriched_topics = []
+    for trend in payload.get('enriched_trends', []):
+        if not isinstance(trend, dict):
+            enriched_topics.append(trend)
+            continue
+
+        key = _topic_key(trend.get('topic', ''))
+        ev  = enrichment_map.get(key)
+
+        # Fuzzy match: find the enrichment whose key is a substring of this topic (or vice-versa)
+        if ev is None:
+            for ek, ev_candidate in enrichment_map.items():
+                if ek and key and (ek in key or key in ek):
+                    ev = ev_candidate
+                    break
+
+        if ev:
+            # Start with enrichment data, then overlay the fresh RSS fields so
+            # topic name / heat_score / sport / is_breaking stay current.
+            merged = {**ev, **trend}
+            # Restore enrichment context fields that fresh RSS doesn't have
+            for field in ('reason', 'summary', 'entities', 'editorial_angle',
+                          'ai_confidence', 'articles', 'recency_trigger',
+                          'is_live_match', 'velocity'):
+                val = ev.get(field)
+                if val is not None and val != '' and val != [] and val != {}:
+                    merged[field] = val
+            enriched_topics.append(merged)
+        else:
+            enriched_topics.append(trend)
+
+    return {**payload, 'enriched_trends': enriched_topics, 'cached': False}
+
+
 def _run_rss_only_pipeline() -> dict:
     """
-    Fast sports news fallback: Google News Sports RSS + RSS enrichment.
-    Takes ~1 second. Returns current sports headlines as interim data
-    while the full Gemini pipeline runs in the background.
+    Fast live-data path: Google News Sports RSS + basic RSS enrichment.
+    Always returns current sports headlines. No Gemini, ~1 second.
+    Sets rss_only=True to signal the frontend that Gemini context is pending.
     """
     try:
         from .trends_hunter import TrendsHunterAgent
@@ -187,22 +272,22 @@ def _run_rss_only_pipeline() -> dict:
         from .trend_ranker import TrendRankerAgent
 
         hunter = TrendsHunterAgent()
-        # Try sports-specific Google News RSS first (best sports coverage)
         raw = hunter.fetch_sports_news_fast()
-        # Fall back to Google Trends RSS if Google News fails
         if not raw:
             raw = hunter._fetch_trends_rss()
         if not raw:
             return _fallback_payload()
-        raw = _deduplicate_topics(raw)
+
+        raw     = _deduplicate_topics(raw)
         enriched = ContextEnricherAgent().enrich(raw, gemini_enabled=False)
-        ranked = TrendRankerAgent().rank(enriched)
-        results = [_dict_to_result(d) for d in ranked]
-        payload = _build_payload(results, cached=False)
-        payload['rss_only'] = True  # signal to frontend that Gemini data is pending
+        ranked   = TrendRankerAgent().rank(enriched)
+        results  = [_dict_to_result(d) for d in ranked]
+        payload  = _build_payload(results, cached=False)
+        payload['rss_only'] = True  # signal: Gemini enrichment is pending
         return payload
+
     except Exception as exc:
-        logger.error('Agentic trends RSS-only pipeline failed: %s', exc)
+        logger.error('RSS-only pipeline failed: %s', exc)
         return _fallback_payload()
 
 

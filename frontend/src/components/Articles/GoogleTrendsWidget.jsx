@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import { fetchAgenticTrends, fetchTwitterTrends, trackTrendClick } from '../../store/slices/trendsSlice'
+import { fetchAgenticTrends, fetchTwitterTrends, fetchGoogleTrendingNow, trackTrendClick } from '../../store/slices/trendsSlice'
 import { FiTrendingUp, FiRefreshCw, FiExternalLink, FiPlusCircle, FiCheckCircle, FiChevronDown, FiChevronUp } from 'react-icons/fi'
 import api from '../../services/api'
 import { showSuccess, showError } from '../../utils/toast'
@@ -55,7 +55,7 @@ function EnrichedTrendCard({ trend, index, onTopicClick, fetchingTopic, fetchSuc
       }`}
     >
       {/* Main card body */}
-      <div className="p-4" onClick={() => onTopicClick(topic)}>
+      <div className="p-4" onClick={() => onTopicClick(trend)}>
         {/* Top row: rank + badges */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2 flex-wrap">
@@ -180,7 +180,100 @@ function EnrichedTrendCard({ trend, index, onTopicClick, fetchingTopic, fetchSuc
       <button
         className="absolute top-3 right-3 text-gray-300 hover:text-green-600 p-1 hover:bg-green-50 rounded transition-colors"
         title="Fetch articles for this topic"
-        onClick={(e) => { e.stopPropagation(); onTopicClick(topic) }}
+        onClick={(e) => { e.stopPropagation(); onTopicClick(trend) }}
+      >
+        <FiPlusCircle size={15} />
+      </button>
+    </div>
+  )
+}
+
+function GoogleTrendCard({ item, onTopicClick, fetchingTopic, fetchSuccess }) {
+  const [expanded, setExpanded] = useState(false)
+  const topic = item.topic || item._original_title || ''
+  const articles = item._articles || []
+  const traffic = item.search_volume || ''
+  const isBreaking = item.is_breaking || false
+  const picture = item._picture || ''
+  const sport = item.sport || 'general'
+
+  const trafficColor =
+    traffic.startsWith('100000') ? 'bg-red-100 text-red-700' :
+    traffic.startsWith('50000')  ? 'bg-orange-100 text-orange-700' :
+    traffic.startsWith('10000')  ? 'bg-yellow-100 text-yellow-700' :
+    'bg-gray-100 text-gray-600'
+
+  return (
+    <div className={`bg-white rounded-xl border transition-all relative ${
+      fetchingTopic === topic ? 'opacity-70 cursor-wait border-blue-200' : 'hover:shadow-md cursor-pointer hover:border-blue-300 border-gray-200'
+    }`}>
+      <div className="p-4" onClick={() => onTopicClick(item)}>
+        <div className="flex gap-3">
+          {picture && (
+            <img src={picture} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0 bg-gray-100" onError={e => e.target.style.display='none'} />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+              {isBreaking && (
+                <span className="flex items-center gap-1 text-xs text-red-600 font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse inline-block" />
+                  BREAKING
+                </span>
+              )}
+              {sport !== 'general' && (
+                <span className="text-xs px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  {SPORT_EMOJI[sport] || '📰'} {sport}
+                </span>
+              )}
+              {traffic && (
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${trafficColor}`}>
+                  🔍 {traffic}
+                </span>
+              )}
+            </div>
+            <h3 className="font-semibold text-gray-900 text-sm leading-snug">{topic}</h3>
+          </div>
+        </div>
+
+        {fetchSuccess === topic && (
+          <div className="mt-2 flex items-center gap-1 text-green-700 text-xs font-medium">
+            <FiCheckCircle size={13} /> Articles added!
+          </div>
+        )}
+        {fetchingTopic === topic && (
+          <div className="mt-2 flex items-center gap-1 text-blue-700 text-xs font-medium">
+            <FiRefreshCw className="animate-spin" size={13} /> Fetching…
+          </div>
+        )}
+      </div>
+
+      {articles.length > 0 && (
+        <>
+          <div
+            className="px-4 pb-2 flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 cursor-pointer border-t border-gray-50"
+            onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}
+          >
+            {expanded ? <FiChevronUp size={13} /> : <FiChevronDown size={13} />}
+            {expanded ? 'Hide news' : `${articles.length} news item${articles.length > 1 ? 's' : ''}`}
+          </div>
+          {expanded && (
+            <div className="px-4 pb-4 space-y-1.5" onClick={e => e.stopPropagation()}>
+              {articles.map((art, i) => (
+                <a key={i} href={art.url} target="_blank" rel="noopener noreferrer"
+                  className="flex items-start gap-1 text-xs text-blue-600 hover:underline leading-snug">
+                  <FiExternalLink size={11} className="mt-0.5 flex-shrink-0" />
+                  <span className="line-clamp-2">{art.title}</span>
+                </a>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      <button
+        className="absolute top-3 right-3 text-gray-300 hover:text-green-600 p-1 hover:bg-green-50 rounded transition-colors"
+        title="Fetch articles for this topic"
+        onClick={e => { e.stopPropagation(); onTopicClick(item) }}
       >
         <FiPlusCircle size={15} />
       </button>
@@ -195,12 +288,16 @@ function GoogleTrendsWidget({ onArticleCreated }) {
     enrichedTrends,
     twitterTrendingTopics,
     twitterEnrichedTrends,
+    googleTrendingItems,
     agenticLoading,
     twitterLoading,
+    googleTrendingLoading,
     agenticError,
     twitterError,
+    googleTrendingError,
     agenticLastUpdated,
     twitterLastUpdated,
+    googleTrendingLastUpdated,
     cached,
     rssOnly,
   } = useSelector((state) => state.trends)
@@ -212,34 +309,51 @@ function GoogleTrendsWidget({ onArticleCreated }) {
   useEffect(() => {
     dispatch(fetchAgenticTrends())
     dispatch(fetchTwitterTrends())
+    dispatch(fetchGoogleTrendingNow())
     const interval = setInterval(() => {
       dispatch(fetchAgenticTrends())
       dispatch(fetchTwitterTrends())
-    }, 5 * 60 * 1000)
+      dispatch(fetchGoogleTrendingNow())
+    }, 3 * 60 * 1000)
     return () => clearInterval(interval)
   }, [dispatch])
 
-  // When serving interim RSS-only data, poll every 20s until Gemini cache is ready
+  // When enrichment is pending, poll every 15s until Gemini enrichment is ready
   useEffect(() => {
     if (!rssOnly) return
     const pollTimer = setTimeout(() => {
       dispatch(fetchAgenticTrends())
-    }, 20000)
+    }, 15000)
     return () => clearTimeout(pollTimer)
-  }, [rssOnly, dispatch])
+  }, [rssOnly, agenticLastUpdated, dispatch])
 
   const handleRefresh = () => {
     if (activeTab === 'google') dispatch(fetchAgenticTrends({ forceRefresh: true }))
-    else dispatch(fetchTwitterTrends())
+    else if (activeTab === 'twitter') dispatch(fetchTwitterTrends())
+    else dispatch(fetchGoogleTrendingNow())
   }
 
-  const handleTopicClick = async (topic) => {
+  const handleTopicClick = async (trendItem) => {
+    const topic = typeof trendItem === 'string' ? trendItem : (trendItem?.topic || trendItem)
     if (fetchingTopic) return
     dispatch(trackTrendClick(topic))
     setFetchingTopic(topic)
     setFetchSuccess(null)
+
+    const enrichedData = trendItem && typeof trendItem === 'object' ? {
+      articles: trendItem.articles || trendItem._articles || [],
+      reason: trendItem.reason || '',
+      summary: trendItem.summary || '',
+      entities: trendItem.entities || trendItem._entities || [],
+      editorial_angle: trendItem.editorial_angle || '',
+      sport: trendItem.sport || 'general',
+    } : null
+
     try {
-      const response = await api.post('/rss/feeds/fetch-topic-articles/', { topic })
+      const response = await api.post('/rss/feeds/fetch-topic-articles/', {
+        topic,
+        enriched_data: enrichedData,
+      })
       if (response.data.success) {
         setFetchSuccess(topic)
         if (onArticleCreated) onArticleCreated()
@@ -264,14 +378,14 @@ function GoogleTrendsWidget({ onArticleCreated }) {
     return new Date(timestamp).toLocaleString()
   }
 
-  // Prefer enriched data; fall back to plain string topics
+  const isGoogleTab = activeTab === 'google_trends'
   const enriched = activeTab === 'google' ? enrichedTrends : twitterEnrichedTrends
   const flatTopics = activeTab === 'google' ? trendingTopics : twitterTrendingTopics
-  const displayItems = enriched.length > 0 ? enriched : flatTopics
-  const currentLoading = activeTab === 'google' ? agenticLoading : twitterLoading
-  const currentError = activeTab === 'google' ? agenticError : twitterError
-  const currentLastUpdated = activeTab === 'google' ? agenticLastUpdated : twitterLastUpdated
-  const isEnriched = enriched.length > 0
+  const displayItems = isGoogleTab ? googleTrendingItems : (enriched.length > 0 ? enriched : flatTopics)
+  const currentLoading = isGoogleTab ? googleTrendingLoading : (activeTab === 'google' ? agenticLoading : twitterLoading)
+  const currentError = isGoogleTab ? googleTrendingError : (activeTab === 'google' ? agenticError : twitterError)
+  const currentLastUpdated = isGoogleTab ? googleTrendingLastUpdated : (activeTab === 'google' ? agenticLastUpdated : twitterLastUpdated)
+  const isEnriched = !isGoogleTab && enriched.length > 0
 
   return (
     <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-md border border-blue-200 mb-6">
@@ -285,23 +399,19 @@ function GoogleTrendsWidget({ onArticleCreated }) {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-gray-800">Live Trends</h2>
-                {isEnriched && !rssOnly && (
+                {isEnriched && !rssOnly ? (
                   <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200 font-medium">
                     ✦ AI Powered
                   </span>
-                )}
-                {rssOnly && (
+                ) : rssOnly ? (
                   <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 font-medium flex items-center gap-1">
                     <FiRefreshCw size={10} className="animate-spin" />
-                    AI Refreshing…
+                    AI Enriching…
                   </span>
-                )}
-                {cached && !rssOnly && (
-                  <span className="text-xs text-gray-400">(cached)</span>
-                )}
+                ) : null}
               </div>
               <p className="text-xs text-gray-500">
-                {currentLastUpdated && `Updated ${formatTime(currentLastUpdated)}`}
+                Live · {currentLastUpdated ? `enriched ${formatTime(currentLastUpdated)}` : 'loading…'}
               </p>
             </div>
           </div>
@@ -321,6 +431,7 @@ function GoogleTrendsWidget({ onArticleCreated }) {
             {[
               { key: 'google', label: 'Agentic Trends' },
               { key: 'twitter', label: 'Sports India' },
+              { key: 'google_trends', label: '🔥 Google Trending' },
             ].map(tab => (
               <button
                 key={tab.key}
@@ -358,15 +469,25 @@ function GoogleTrendsWidget({ onArticleCreated }) {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {displayItems.map((item, i) => (
-              <EnrichedTrendCard
-                key={i}
-                trend={item}
-                index={i}
-                onTopicClick={handleTopicClick}
-                fetchingTopic={fetchingTopic}
-                fetchSuccess={fetchSuccess}
-                dispatch={dispatch}
-              />
+              isGoogleTab ? (
+                <GoogleTrendCard
+                  key={i}
+                  item={item}
+                  onTopicClick={handleTopicClick}
+                  fetchingTopic={fetchingTopic}
+                  fetchSuccess={fetchSuccess}
+                />
+              ) : (
+                <EnrichedTrendCard
+                  key={i}
+                  trend={item}
+                  index={i}
+                  onTopicClick={handleTopicClick}
+                  fetchingTopic={fetchingTopic}
+                  fetchSuccess={fetchSuccess}
+                  dispatch={dispatch}
+                />
+              )
             ))}
           </div>
         )}
@@ -374,12 +495,14 @@ function GoogleTrendsWidget({ onArticleCreated }) {
         {displayItems.length > 0 && (
           <div className="mt-4 pt-4 border-t border-blue-100 text-center">
             <a
-              href="https://trends.google.com/trends/trendingsearches/daily?geo=IN"
+              href={isGoogleTab
+                ? 'https://trends.google.com/trending?geo=IN&category=17&hours=24&status=active&sort=recency'
+                : 'https://trends.google.com/trends/trendingsearches/daily?geo=IN'}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-blue-500 hover:text-blue-700 inline-flex items-center gap-1"
             >
-              View all on Google Trends
+              {isGoogleTab ? 'View on Google Trends India Sports' : 'View all on Google Trends'}
               <FiExternalLink size={12} />
             </a>
           </div>

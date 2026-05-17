@@ -7,6 +7,7 @@ import {
   FiFilm, FiCheck, FiClock,
 } from 'react-icons/fi'
 import { fetchVideoJobs } from '../../store/slices/videoStudioSlice'
+import api from '../../services/api'
 
 const STATUS_TABS = [
   { id: 'all',       label: 'All' },
@@ -52,12 +53,9 @@ export default function VideoList({ onNew, onEdit }) {
   const fetchAll = useCallback(() => {
     dispatch(fetchVideoJobs())
     setLoadingArticles(true)
-    // Fetch draft video projects
-    import('../../services/api').then(({ default: api }) => {
-      api.get('/articles/?category=video_project').then(res => {
-        setArticles(Array.isArray(res.data) ? res.data : (res.data.results || []))
-      }).finally(() => setLoadingArticles(false))
-    })
+    api.get('/articles/?category=video_project').then(res => {
+      setArticles(Array.isArray(res.data) ? res.data : (res.data.results || []))
+    }).finally(() => setLoadingArticles(false))
   }, [dispatch])
 
   // Fetch jobs and projects on mount

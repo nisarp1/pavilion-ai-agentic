@@ -27,8 +27,9 @@ import {
   FiFileText,
   FiPlus,
   FiCheck,
+  FiChevronDown,
 } from 'react-icons/fi'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import TenantSwitcher from '../Auth/TenantSwitcher'
 
 const navSections = [
@@ -52,6 +53,7 @@ const navSections = [
   },
   {
     label: 'VIDEO STUDIO',
+    newAction: { path: '/video-studio?new=1', label: 'New Reel', icon: FiFilm },
     items: [
       { path: '/video-studio', label: 'Video Studio', icon: FiVideo, matchStart: true, excludeStart: '/articles' },
       { path: '/articles?view=video&tab=draft', label: 'Draft Reels', icon: FiFilm, matchPath: '/articles', matchView: 'video', matchTab: 'draft' },
@@ -89,6 +91,14 @@ const navSections = [
   },
 ]
 
+// Global + New dropdown options
+const CREATE_OPTIONS = [
+  { label: 'Article', icon: FiFileText, path: '/articles/create' },
+  { label: 'Video Reel', icon: FiFilm, path: '/video-studio?new=1' },
+  { label: 'Social Post', icon: FiZap, path: '/social-studio' },
+  { label: 'Web Story', icon: FiBookOpen, path: '/webstories/create' },
+]
+
 function Dashboard() {
   const { currentRole, generatingIds = [] } = useSelector((state) => ({
     currentRole: state.auth.currentRole,
@@ -98,6 +108,18 @@ function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const createRef = useRef(null)
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!createOpen) return
+    const handler = (e) => {
+      if (createRef.current && !createRef.current.contains(e.target)) setCreateOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [createOpen])
 
   const handleLogout = () => {
     dispatch(logout())
@@ -113,7 +135,6 @@ function Dashboard() {
       const currentView = sp.get('view')
       const currentTab = sp.get('tab')
       if (item.matchView && currentView !== item.matchView) return false
-      // matchTab === null means "default tab" (no tab param)
       if (item.matchTab === null) return !currentTab
       if (item.matchTab) return currentTab === item.matchTab
       return true
@@ -181,21 +202,62 @@ function Dashboard() {
           } lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transition-transform duration-300 ease-in-out`}
         >
           <div className="h-full flex flex-col">
-            <div className="p-6 border-b border-gray-200 hidden lg:block">
+            <div className="p-5 border-b border-gray-200 hidden lg:block">
               <h1 className="text-2xl font-bold text-gray-800">PavilionEnd</h1>
               <p className="text-sm text-gray-600">CMS Platform</p>
             </div>
 
             <TenantSwitcher />
 
+            {/* Global + New Button */}
+            <div className="px-3 pt-3 pb-1" ref={createRef}>
+              <button
+                onClick={() => setCreateOpen(v => !v)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-semibold shadow-sm"
+              >
+                <FiPlus size={16} />
+                New
+                <FiChevronDown size={13} className={`transition-transform ${createOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {createOpen && (
+                <div className="mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-30 relative">
+                  {CREATE_OPTIONS.map(opt => {
+                    const Icon = opt.icon
+                    return (
+                      <Link
+                        key={opt.path}
+                        to={opt.path}
+                        onClick={() => { setCreateOpen(false); setSidebarOpen(false) }}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-primary-50 hover:text-primary-700 transition-colors"
+                      >
+                        <Icon size={15} />
+                        {opt.label}
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
             <nav className="flex-1 p-3 overflow-y-auto">
               {navSections.map((section, sIdx) => (
                 <div key={sIdx} className={sIdx > 0 ? 'mt-4' : ''}>
                   {section.label && (
-                    <div className="px-3 py-1 mb-1">
+                    <div className="px-3 py-1 mb-1 flex items-center justify-between">
                       <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
                         {section.label}
                       </span>
+                      {section.newAction && (
+                        <Link
+                          to={section.newAction.path}
+                          onClick={() => setSidebarOpen(false)}
+                          title={section.newAction.label}
+                          className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold text-primary-600 hover:bg-primary-50 rounded transition-colors"
+                        >
+                          <FiPlus size={11} />
+                          {section.newAction.label}
+                        </Link>
+                      )}
                     </div>
                   )}
                   <div className="space-y-0.5">

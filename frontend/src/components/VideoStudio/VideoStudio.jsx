@@ -15,14 +15,15 @@ import {
   duplicateClip,
   selectClip,
 } from '../../store/slices/videoStudioSlice'
-import JobStatusPanel from './JobStatusPanel'
-import TimelineEditor from './TimelineEditor'
-import PropertiesPanel from './PropertiesPanel'
-import ProductionPlanPanel from './ProductionPlanPanel'
 import VideoList from './VideoList'
 import api from '../../services/api'
 
-const RemotionPreview = lazy(() => import('./RemotionPreview'))
+// Lazy-load editor-only panels — not needed on the list view, keeping the initial chunk small
+const RemotionPreview    = lazy(() => import('./RemotionPreview'))
+const TimelineEditor     = lazy(() => import('./TimelineEditor'))
+const PropertiesPanel    = lazy(() => import('./PropertiesPanel'))
+const ProductionPlanPanel = lazy(() => import('./ProductionPlanPanel'))
+const JobStatusPanel     = lazy(() => import('./JobStatusPanel'))
 
 // ── VIEW MODES ────────────────────────────────────────────────────────────────
 // URL drives the mode:
@@ -334,6 +335,11 @@ export default function VideoStudio() {
     : (editingJob?.title || editingJob?.props?.scene1Headline || (isNewBlank ? 'New Video' : `Video #${editingJob?.id ?? ''}`))
 
   return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-64">
+        <FiRefreshCw className="animate-spin text-purple-500" size={28} />
+      </div>
+    }>
     <div className="flex flex-col gap-0" style={{ height: 'calc(100vh - 88px)', minHeight: 600 }}>
 
       {/* ── Row 1: Nav + Title + Actions ── */}
@@ -485,5 +491,6 @@ export default function VideoStudio() {
       </div>
 
     </div>
+    </Suspense>
   )
 }

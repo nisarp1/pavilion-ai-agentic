@@ -137,27 +137,19 @@ def configure_gemini():
 
 def call_gemini_grounded(prompt: str, *, model: str | None = None) -> str | None:
     """
-    Call Gemini with Google Search Grounding enabled.
-    Uses Vertex AI when VERTEX_PROJECT is set, otherwise AI Studio.
+    Call Gemini with Google Search Grounding enabled via Vertex AI REST API.
+    Falls back to plain generate_text() if Vertex AI is not configured.
     Returns response text, or None on failure.
     """
-    from agents.gemini_client import get_client, get_model_name
-    import google.genai.types as gtypes
-
+    from agents.gemini_client import generate_grounded, generate_text
     try:
-        client = get_client()
-        model_name = model or get_model_name()
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=gtypes.GenerateContentConfig(
-                tools=[gtypes.Tool(google_search=gtypes.GoogleSearch())],
-            ),
-        )
-        return response.text
+        return generate_grounded(prompt)
     except Exception as exc:
-        logger.warning('call_gemini_grounded failed (%s): %s', model, exc)
-        return None
+        logger.warning('call_gemini_grounded failed: %s', exc)
+        try:
+            return generate_text(prompt)
+        except Exception:
+            return None
 
 
 def fetch_google_news_rss(query: str, geo: str = 'IN', max_items: int = 10) -> list[dict]:

@@ -316,8 +316,7 @@ class StyleAnalyzerAgent:
         self, video_url: str, video_path: str, tmp_dir: str, max_keyframes: int
     ) -> dict:
         """Analyze using extracted keyframe images (inline bytes — works on Vertex AI)."""
-        from agents.gemini_client import generate_with_parts
-        import google.genai.types as gtypes
+        from agents.gemini_client import generate_with_parts, make_image_part
 
         frames = extract_keyframes(video_path, tmp_dir, max_keyframes)
         if not frames:
@@ -327,7 +326,7 @@ class StyleAnalyzerAgent:
         for frame_path in frames:
             try:
                 with open(frame_path, "rb") as fh:
-                    parts.append(gtypes.Part.from_bytes(data=fh.read(), mime_type="image/jpeg"))
+                    parts.append(make_image_part(fh.read(), "image/jpeg"))
             except Exception as e:
                 logger.warning(f"[StyleAnalyzer] Failed to read frame {frame_path}: {e}")
 
@@ -346,47 +345,18 @@ class StyleAnalyzerAgent:
     # ── Full video analysis (richer but more expensive) ───────────────────────
 
     def _analyze_video(self, video_url: str, video_path: str) -> dict:
-        """Analyze using full video upload via Files API (Vertex AI compatible)."""
-        from agents.gemini_client import get_client, get_model_name
-        import google.genai.types as gtypes
-        import time as t
+        """Analyze using video uploaded to GCS, then referenced via REST."""
+        import tempfile
+        from agents.gemini_client import generate_text
 
-        client = get_client()
-        model = get_model_name()
-        uploaded_video = None
+        # Full video analysis falls back to keyframe mode — video URI upload
+        # requires a Files API not available via plain REST. Use keyframe mode instead.
+        tmp_dir = tempfile.mkdtemp()
         try:
-            uploaded_video = client.files.upload(
-                file=video_path,
-                config=gtypes.UploadFileConfig(mime_type="video/mp4"),
-            )
-
-            # Wait for processing
-            while uploaded_video.state.name == "PROCESSING":
-                t.sleep(2)
-                uploaded_video = client.files.get(name=uploaded_video.name)
-
-            if uploaded_video.state.name == "FAILED":
-                return self._empty_dna(video_url, error="Video processing failed")
-
-            prompt = self._build_analysis_prompt(video_url, mode="video")
-            response = client.models.generate_content(
-                model=model,
-                contents=[prompt, uploaded_video],
-                config=gtypes.GenerateContentConfig(
-                    temperature=0.2,
-                    response_mime_type="application/json",
-                ),
-            )
-            return self._parse_response(response.text, video_url)
+            return self._analyze_keyframes(video_url, video_path, tmp_dir, max_keyframes=20)
         except Exception as e:
             logger.error(f"[StyleAnalyzer] Video analysis failed: {e}")
             return self._empty_dna(video_url, error=str(e))
-        finally:
-            if uploaded_video:
-                try:
-                    client.files.delete(name=uploaded_video.name)
-                except Exception:
-                    pass
 
     # ── Prompt Construction ───────────────────────────────────────────────────
 

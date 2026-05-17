@@ -55,17 +55,42 @@ code {
 
 /* Quill Editor Styles - Match font size with other text fields */
 .ql-editor {
-  font-size: 0.875rem !important; /* text-sm equivalent */
-  line-height: 1.5rem !important;
+  font-size: 0.9375rem !important; /* 15px — comfortable for Malayalam */
+  line-height: 1.75 !important;
   font-family: inherit !important;
 }
 
+/* Paragraph spacing — each <p> gets a clear visual break */
 .ql-editor p {
-  padding: 10px 0;
+  margin-bottom: 14px !important;
+  margin-top: 0 !important;
+  padding: 0 !important; /* use margin, not padding, so spacing is consistent */
+}
+
+/* Last paragraph in editor shouldn't have extra trailing space */
+.ql-editor p:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* h2 subheadings from Gemini articles */
+.ql-editor h2 {
+  margin-top: 20px !important;
+  margin-bottom: 10px !important;
+  font-size: 1.1rem !important;
+  font-weight: 700 !important;
+}
+
+/* Blockquotes (quotes from articles) */
+.ql-editor blockquote {
+  border-left: 3px solid #6366f1;
+  padding-left: 12px;
+  margin: 12px 0 !important;
+  color: #4b5563;
+  font-style: italic;
 }
 
 .ql-container {
-  font-size: 0.875rem !important;
+  font-size: 0.9375rem !important;
 }
 
 /* Ensure IME support in Quill */

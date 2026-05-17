@@ -234,7 +234,9 @@ class Article(models.Model):
     
     STATUS_CHOICES = [
         ('fetched', 'Fetched'),      # Article fetched from RSS
-        ('draft', 'Draft'),          # Article generated and ready for editing
+        ('generated', 'Generated'),  # AI article written, awaiting review
+        ('review', 'Review'),        # Flagged for editorial review
+        ('draft', 'Draft'),          # Ready for editing
         ('published', 'Published'),  # Article published
         ('archived', 'Archived'),    # Article archived
     ]

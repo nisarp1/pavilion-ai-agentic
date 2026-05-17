@@ -6,6 +6,7 @@ import { fetchArticle, updateArticle } from '../../store/slices/articleSlice'
 import api from '../../services/api'
 import { fetchCategoryTree } from '../../store/slices/categorySlice'
 import { showSuccess, showError } from '../../utils/toast'
+import { normalizeMediaUrl } from '../../utils/mediaUrl'
 
 import MediaLibrary from '../MediaLibrary/MediaLibrary'
 import ReactQuill from 'react-quill'
@@ -431,8 +432,8 @@ function ArticleEdit() {
         [{ 'list': 'ordered' }, { 'list': 'bullet' }],
         [{ 'align': [] }],
         ['link', 'image'],
-        ['clean'],
-        ['code-block']
+        ['blockquote', 'code-block'],
+        ['clean']
       ],
       handlers: {
         image: handleQuillImageClick
@@ -702,7 +703,7 @@ function ArticleEdit() {
         {currentArticle.featured_image_url ? (
           <div className="space-y-3">
             <img
-              src={currentArticle.featured_image_url}
+              src={normalizeMediaUrl(currentArticle.featured_image_url)}
               alt="Featured"
               onClick={handleFeaturedImageClick}
               className="w-full h-48 object-cover rounded-lg border border-gray-300 cursor-pointer hover:opacity-90 transition-opacity"
@@ -957,6 +958,7 @@ function ArticleEdit() {
                   'list', 'bullet',
                   'align',
                   'link', 'image',
+                  'blockquote',
                   'code-block',
                   'videoEmbed', 'socialEmbed'
                 ]}

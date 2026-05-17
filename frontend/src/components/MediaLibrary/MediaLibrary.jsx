@@ -3,6 +3,7 @@ import { FiSearch, FiUpload, FiX, FiImage, FiCheck, FiGlobe, FiDownload, FiCrop,
 import Cropper from 'react-easy-crop'
 import api from '../../services/api'
 import { showSuccess, showError } from '../../utils/toast'
+import { normalizeMediaUrl } from '../../utils/mediaUrl'
 
 function MediaLibrary({ isOpen, onClose, onSelect, initialMediaId, initialUrl }) {
   const [activeTab, setActiveTab] = useState('library') // 'library' or 'search'
@@ -405,7 +406,7 @@ function MediaLibrary({ isOpen, onClose, onSelect, initialMediaId, initialUrl })
                         >
                           <div className="aspect-square bg-gray-100">
                             <img
-                              src={item.url}
+                              src={normalizeMediaUrl(item.url)}
                               alt={item.alt_text || item.title}
                               className="w-full h-full object-cover"
                               loading="lazy"
@@ -443,7 +444,7 @@ function MediaLibrary({ isOpen, onClose, onSelect, initialMediaId, initialUrl })
                         >
                           <div className="aspect-square bg-gray-100 relative">
                             <img
-                              src={item.thumbnail || item.url}
+                              src={normalizeMediaUrl(item.thumbnail || item.url)}
                               alt={item.title}
                               className="w-full h-full object-cover"
                               loading="lazy"

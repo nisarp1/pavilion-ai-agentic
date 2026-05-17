@@ -18,6 +18,11 @@ export const aiVideoSchema = z.object({
   accent:    z.string().optional(),
 });
 
+// Minimum word count before attempting word-level TikTok captions.
+// If STT or ElevenLabs returned very few words (garbage result), fall back
+// to timeline.text phrase subtitles which always have full coverage.
+const CAPTION_MIN_WORDS = 5;
+
 // Split pages that have more than maxTokens words into smaller sub-pages.
 // Each sub-page's durationMs extends to the next sub-page's start so there are no gaps.
 function limitTokensPerPage(pages: ReturnType<typeof createTikTokStyleCaptions>['pages'], maxTokens: number) {
@@ -32,13 +37,14 @@ function limitTokensPerPage(pages: ReturnType<typeof createTikTokStyleCaptions>[
       expanded.push({
         text: tokens.map(t => t.text).join('').trim(),
         startMs: tokens[0].fromMs,
-        durationMs: tokens[tokens.length - 1].toMs - tokens[0].fromMs,
+        durationMs: Math.max(100, tokens[tokens.length - 1].toMs - tokens[0].fromMs),
         tokens,
       });
     }
   }
   for (let i = 0; i < expanded.length - 1; i++) {
-    expanded[i].durationMs = expanded[i + 1].startMs - expanded[i].startMs;
+    const gap = expanded[i + 1].startMs - expanded[i].startMs;
+    if (gap > 0) expanded[i].durationMs = gap;
   }
   return expanded;
 }
@@ -47,12 +53,17 @@ export const AIVideo: React.FC<z.infer<typeof aiVideoSchema>> = ({ timeline, log
   const wordCaptions = (timeline?.wordCaptions ?? []) as Caption[];
 
   const pages = useMemo(() => {
-    if (wordCaptions.length === 0) return [];
-    const { pages: raw } = createTikTokStyleCaptions({
-      captions: wordCaptions,
-      combineTokensWithinMilliseconds: 400,
-    });
-    return limitTokensPerPage(raw, 6);
+    if (wordCaptions.length < CAPTION_MIN_WORDS) return [];
+    try {
+      const { pages: raw } = createTikTokStyleCaptions({
+        captions: wordCaptions,
+        combineTokensWithinMilliseconds: 400,
+      });
+      const limited = limitTokensPerPage(raw, 6);
+      return limited.length > 0 ? limited : [];
+    } catch {
+      return [];
+    }
   }, [wordCaptions]);
 
   // True end time = max of all tracks so the last background image

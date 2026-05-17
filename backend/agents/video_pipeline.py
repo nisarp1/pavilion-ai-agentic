@@ -61,7 +61,9 @@ def _word_timings_to_captions(word_timings: list) -> list:
         {
             "text":        wt["word"] if i == 0 else f" {wt['word']}",
             "startMs":     wt["start_ms"],
-            "endMs":       wt["end_ms"],
+            # Guarantee at least 50ms duration so no token collapses to 0ms width,
+            # which would prevent word-highlight activation in MalayalamCaptionPage.
+            "endMs":       max(wt["start_ms"] + 50, wt["end_ms"]),
             "timestampMs": wt["start_ms"],
             "confidence":  None,
         }

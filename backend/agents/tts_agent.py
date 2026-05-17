@@ -194,11 +194,18 @@ class TTSAgent:
                 sample_rate=SAMPLE_RATE,
                 gcs_uri=gcs_uri,
             )
-            if stt_timings:
+            _expected = len(all_word_timings)
+            _min_words = max(5, _expected // 4)
+            if stt_timings and len(stt_timings) >= _min_words:
                 all_word_timings = stt_timings
                 logger.info(
                     f"[TTSAgent] STT succeeded: {len(stt_timings)} real word timings "
                     f"(replaced proportional estimates)"
+                )
+            elif stt_timings:
+                logger.warning(
+                    f"[TTSAgent] STT quality too low ({len(stt_timings)}/{_expected} words) "
+                    f"— keeping proportional estimates for full caption coverage"
                 )
             else:
                 logger.warning(

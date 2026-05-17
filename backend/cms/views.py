@@ -1029,12 +1029,22 @@ class ArticleViewSet(viewsets.ModelViewSet):
                             _el = _ELAgent()
                             el_bytes, el_timings = _el.synthesize_with_timings_chunked(script=el_script)
 
-                            # STT validation — replace approximate ElevenLabs timestamps
+                            # STT validation — replace approximate ElevenLabs timestamps only
+                            # when STT returns enough words (≥25% of script words).
+                            # ElevenLabs character-level timings are already good; a low
+                            # STT yield means the model struggled with this voice/audio.
                             try:
                                 stt_t = _stt(audio_bytes=el_bytes, language_code="ml-IN", encoding="MP3")
-                                if stt_t:
+                                _script_words = len(el_script.split())
+                                _min_words = max(5, _script_words // 4)
+                                if stt_t and len(stt_t) >= _min_words:
                                     el_timings = stt_t
-                                    _logger_pipe.info(f"[Pipeline] STT replaced timings: {len(stt_t)} words")
+                                    _logger_pipe.info(f"[Pipeline] STT replaced EL timings: {len(stt_t)}/{_script_words} words")
+                                elif stt_t:
+                                    _logger_pipe.warning(
+                                        f"[Pipeline] STT quality too low ({len(stt_t)}/{_script_words} words) "
+                                        f"— keeping ElevenLabs approximate timings"
+                                    )
                             except Exception as _stt_e:
                                 _logger_pipe.warning(f"[Pipeline] STT skipped: {_stt_e}")
 

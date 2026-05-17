@@ -157,6 +157,11 @@ function MalayalamWordCaption({ page, highlightColor = '#FFE600' }) {
   )
 }
 
+// Minimum word count before attempting word-level TikTok captions.
+// If STT or ElevenLabs returned very few words (garbage result), fall back
+// to timeline.text phrase subtitles which always have full coverage.
+const CAPTION_MIN_WORDS = 5
+
 // Split pages that have more than maxTokens words into smaller sub-pages.
 // This prevents long bursts of speech (many words within 400ms) from stacking visually.
 // Each sub-page's durationMs extends to the next sub-page's start so there are no gaps.
@@ -172,14 +177,15 @@ function limitTokensPerPage(pages, maxTokens) {
       expanded.push({
         text: tokens.map(t => t.text).join('').trim(),
         startMs: tokens[0].fromMs,
-        durationMs: tokens[tokens.length - 1].toMs - tokens[0].fromMs,
+        durationMs: Math.max(100, tokens[tokens.length - 1].toMs - tokens[0].fromMs),
         tokens,
       })
     }
   }
   // Each page's durationMs extends to when the next one starts (no gaps or overlaps)
   for (let i = 0; i < expanded.length - 1; i++) {
-    expanded[i].durationMs = expanded[i + 1].startMs - expanded[i].startMs
+    const gap = expanded[i + 1].startMs - expanded[i].startMs
+    if (gap > 0) expanded[i].durationMs = gap
   }
   return expanded
 }
@@ -190,12 +196,17 @@ export function AIVideoComposition({ timeline, logoSrc, brandName, accent }) {
   const wordCaptions = timeline?.wordCaptions ?? []
 
   const pages = useMemo(() => {
-    if (!wordCaptions.length) return []
-    const { pages: raw } = createTikTokStyleCaptions({
-      captions: wordCaptions,
-      combineTokensWithinMilliseconds: 400,
-    })
-    return limitTokensPerPage(raw, 6)
+    if (wordCaptions.length < CAPTION_MIN_WORDS) return []
+    try {
+      const { pages: raw } = createTikTokStyleCaptions({
+        captions: wordCaptions,
+        combineTokensWithinMilliseconds: 400,
+      })
+      const limited = limitTokensPerPage(raw, 6)
+      return limited.length > 0 ? limited : []
+    } catch {
+      return []
+    }
   }, [wordCaptions])
 
   // True end = max of all tracks so last image fills the full audio duration

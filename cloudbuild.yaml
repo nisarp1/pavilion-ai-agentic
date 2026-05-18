@@ -17,7 +17,7 @@ substitutions:
   _CLOUD_SQL_INSTANCE: 'pavilion-ai-agentic-v2:asia-south1:pavilion-newsai-db'
   _GCS_BUCKET: 'pavilion-newsai-media'
   _VITE_GOOGLE_CLIENT_ID: '608132621768-h6d2e93tnh8c03an2shr0nig0go8a5h9.apps.googleusercontent.com'
-  _IMAGE: '$_REPO/pavilion-app'
+  _IMAGE: 'asia-south1-docker.pkg.dev/pavilion-ai-agentic-v2/pavilion-images/pavilion-app'
   # Renderer URL — update after first renderer deploy
   _RENDERER_URL: 'https://pavilion-renderer-replace-me.a.run.app'
   # Allowed hosts — add your Cloud Run URL after first deploy

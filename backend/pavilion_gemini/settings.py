@@ -173,6 +173,10 @@ else:
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
+# Include React build output so collectstatic picks it up even with --clear
+_frontend_dist = os.path.join(BASE_DIR.parent, 'frontend', 'dist')
+STATICFILES_DIRS = [_frontend_dist] if os.path.isdir(_frontend_dist) else []
+
 # Whitenoise storage for serving static files in production
 # Whitenoise storage (Use non-manifest version to avoid 500 errors if files are missing)
 # STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'

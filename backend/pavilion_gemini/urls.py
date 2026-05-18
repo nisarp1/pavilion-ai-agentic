@@ -72,7 +72,6 @@ from tenants.password_reset import PasswordResetRequestView, PasswordResetConfir
 
 urlpatterns = [
     path('health/', health_check, name='health_check'),
-    path('', api_root, name='api_root'),
     path('debug-media/', debug_media_view),
     path('admin/', admin.site.urls),
 

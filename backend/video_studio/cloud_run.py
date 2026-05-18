@@ -36,7 +36,7 @@ def trigger_render(props: dict, job_id: str, output_blob: str, composition_id: s
     can decide what to do (e.g. save the plan as a manifest JSON instead).
     """
     base_url = os.environ.get('CLOUD_RUN_RENDERER_URL', '').rstrip('/')
-    if not base_url:
+    if not base_url or 'replace-me' in base_url:
         raise ValueError("CLOUD_RUN_RENDERER_URL is not configured")
 
     # Resolve which Remotion composition to render

@@ -79,40 +79,45 @@ gcloud builds submit --config remotion-renderer/cloudbuild.yaml . --project=pavi
 
 ---
 
-## Before Going Live — Two Blockers
+## Renderer Status (as of 2026-05-18)
+
+The Remotion renderer (`pavilion-renderer`) has **not yet been deployed** to Cloud Run.
+
+**This is safe** — the backend has a graceful fallback: if `CLOUD_RUN_RENDERER_URL` is not a real URL, video jobs upload a manifest JSON to GCS instead of crashing. Everything else (articles, RSS, web stories, social, captions) works normally.
+
+**To deploy the renderer when ready** (run from the project root, requires `gcloud auth login`):
+```bash
+gcloud builds submit --config remotion-renderer/cloudbuild.yaml . --project=pavilion-ai-agentic-v2
+```
+Then get its URL:
+```bash
+gcloud run services describe pavilion-renderer \
+  --region=asia-south1 \
+  --project=pavilion-ai-agentic-v2 \
+  --format="value(status.url)"
+```
+Update `cloudbuild.yaml` line 22 with the real URL and push `main` → renderer wires up automatically.
+
+**Renderer compositions (what it can render):**
+- `PavilionAIVideo` — primary pipeline (timeline-driven, Malayalam TTS, word captions)
+- `PavilionReel` — legacy modular multi-scene sports reel
+- `CaptionedVideo` — TikTok-style captioned video overlay
+
+---
+
+## Before Going Live — One Remaining Blocker
 
 These must be fixed before the first real push to `main`:
 
-### Blocker 1 — Update the renderer URL
+### Google OAuth Client ID
 
-1. Deploy the renderer (run command above).
-2. Get its URL:
-   ```bash
-   gcloud run services describe pavilion-renderer \
-     --region=asia-south1 \
-     --project=pavilion-ai-agentic-v2 \
-     --format="value(status.url)"
-   ```
-3. Edit `cloudbuild.yaml` line 22 — replace `pavilion-renderer-replace-me` with the real URL:
-   ```yaml
-   _RENDERER_URL: 'https://pavilion-renderer-ACTUAL.a.run.app'
-   ```
-
-### Blocker 2 — Set the Google OAuth client ID
-
-Edit `cloudbuild.yaml` line 19:
+When ready to enable Google login, edit `cloudbuild.yaml` line 19:
 ```yaml
 _VITE_GOOGLE_CLIENT_ID: 'your-real-oauth-client-id.apps.googleusercontent.com'
 ```
-
 (Find it at: GCP Console → APIs & Services → OAuth 2.0 Client IDs)
 
-After both changes:
-```bash
-git add cloudbuild.yaml
-git commit -m "config: set renderer URL and Google OAuth client ID"
-git push origin main    # triggers first real live deploy
-```
+This bakes into the React bundle at build time. After changing it, push `main` → full rebuild + redeploy.
 
 ---
 

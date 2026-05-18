@@ -41,7 +41,7 @@ from django.http import HttpResponse
 
 @csrf_exempt
 def health_check(request):
-    """Comprehensive health check: DB + Redis connectivity."""
+    """Health check: DB + Redis connectivity."""
     checks = {}
     overall = 'healthy'
 
@@ -54,12 +54,10 @@ def health_check(request):
         overall = 'degraded'
 
     try:
-        import subprocess
-        result = subprocess.run(['redis-cli', 'ping'], capture_output=True, text=True, timeout=3)
-        if result.stdout.strip() == 'PONG':
-            checks['redis'] = 'ok'
-        else:
-            checks['redis'] = 'error: no response'
+        from django.core.cache import cache
+        cache.set('_health', '1', timeout=5)
+        checks['redis'] = 'ok' if cache.get('_health') == '1' else 'error: read-back failed'
+        if checks['redis'] != 'ok':
             overall = 'degraded'
     except Exception as e:
         checks['redis'] = f'error: {e}'

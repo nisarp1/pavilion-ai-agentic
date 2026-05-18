@@ -21,7 +21,7 @@ substitutions:
   # Renderer URL — update after first renderer deploy
   _RENDERER_URL: 'https://pavilion-renderer-replace-me.a.run.app'
   # Allowed hosts — add your Cloud Run URL after first deploy
-  _ALLOWED_HOSTS: 'newsai.pavilionend.in'
+  _ALLOWED_HOSTS: 'newsai.pavilionend.in,.run.app'
 
 steps:
   # ── 0. Authenticate Docker to Artifact Registry (required for 2nd-gen triggers) ─

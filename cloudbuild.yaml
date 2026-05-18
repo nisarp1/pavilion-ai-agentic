@@ -24,6 +24,12 @@ substitutions:
   _ALLOWED_HOSTS: 'newsai.pavilionend.in'
 
 steps:
+  # ── 0. Authenticate Docker to Artifact Registry (required for 2nd-gen triggers) ─
+  - id: docker-auth
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args: ['auth', 'configure-docker', 'asia-south1-docker.pkg.dev', '--quiet']
+
   # ── 1. Build the unified app image ───────────────────────────────────────────
   - id: build
     name: 'gcr.io/cloud-builders/docker'
@@ -37,6 +43,7 @@ steps:
       - '--build-arg=VITE_GOOGLE_CLIENT_ID=$_VITE_GOOGLE_CLIENT_ID'
       - '.'
     timeout: '1200s'
+    waitFor: ['docker-auth']
 
   # ── 2. Push image ─────────────────────────────────────────────────────────────
   - id: push-sha

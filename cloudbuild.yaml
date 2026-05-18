@@ -77,7 +77,7 @@ steps:
       - '--timeout=300s'
       - '--port=8080'
       - '--add-cloudsql-instances=$_CLOUD_SQL_INSTANCE'
-      - '--set-env-vars=ENVIRONMENT=production,DEBUG=False,PAVILION_MODE=web,PORT=8080'
+      - '--set-env-vars=ENVIRONMENT=production,DEBUG=False,PAVILION_MODE=web'
       - '--set-env-vars=GCS_BUCKET_NAME=$_GCS_BUCKET'
       - '--set-env-vars=CLOUD_RUN_RENDERER_URL=$_RENDERER_URL'
       - '--set-env-vars=CLOUD_SQL_INSTANCE=$_CLOUD_SQL_INSTANCE'

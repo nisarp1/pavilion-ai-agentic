@@ -30,7 +30,7 @@ class SPAFallbackMiddleware(MiddlewareMixin):
     - /media/* - Media files
     """
 
-    FALLBACK_PATHS = ['/api', '/admin', '/health', '/static', '/media', '/debug-media']
+    FALLBACK_PATHS = ['/api', '/admin', '/health', '/static', '/media', '/debug-media', '/assets', '/vite.svg']
 
     def process_response(self, request, response):
         """

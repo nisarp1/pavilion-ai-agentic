@@ -93,7 +93,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.dev
     container_name: pavilion-celery-beat-dev
-    command: celery -A pavilion_gemini beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    command: celery -A pavilion_gemini beat --loglevel=info --scheduler celery.beat.PersistentScheduler
     environment:
       DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
       DATABASE_URL: postgresql://pavilion_user:dev-password-change-in-production@postgres:5432/pavilion_agentic_local

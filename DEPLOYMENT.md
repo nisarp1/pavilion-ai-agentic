@@ -3,7 +3,7 @@
 **Live site:** https://newsai.pavilionend.in
 **GCP project:** `pavilion-ai-agentic-v2`
 **Region:** `asia-south1` (Mumbai)
-**Last updated:** 2026-05-18
+**Last updated:** 2026-05-19
 
 ---
 
@@ -102,22 +102,6 @@ Update `cloudbuild.yaml` line 22 with the real URL and push `main` → renderer 
 - `PavilionAIVideo` — primary pipeline (timeline-driven, Malayalam TTS, word captions)
 - `PavilionReel` — legacy modular multi-scene sports reel
 - `CaptionedVideo` — TikTok-style captioned video overlay
-
----
-
-## Before Going Live — One Remaining Blocker
-
-These must be fixed before the first real push to `main`:
-
-### Google OAuth Client ID
-
-When ready to enable Google login, edit `cloudbuild.yaml` line 19:
-```yaml
-_VITE_GOOGLE_CLIENT_ID: 'your-real-oauth-client-id.apps.googleusercontent.com'
-```
-(Find it at: GCP Console → APIs & Services → OAuth 2.0 Client IDs)
-
-This bakes into the React bundle at build time. After changing it, push `main` → full rebuild + redeploy.
 
 ---
 

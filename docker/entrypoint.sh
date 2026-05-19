@@ -47,7 +47,7 @@ elif [ "$MODE" = "beat" ]; then
     exec python3 /app/docker/celery_runner.py \
         celery -A pavilion_gemini beat \
         --loglevel=info \
-        --scheduler django_celery_beat.schedulers:DatabaseScheduler
+        --scheduler celery.beat.PersistentScheduler
 
 else
     echo "ERROR: Unknown PAVILION_MODE='${MODE}'. Expected: web | worker | beat"

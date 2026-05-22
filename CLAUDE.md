@@ -28,7 +28,7 @@ python manage.py test cms.tests.test_models         # Single test module
 
 # Celery (separate terminals)
 celery -A pavilion_gemini worker --loglevel=info
-celery -A pavilion_gemini beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+celery -A pavilion_gemini beat --loglevel=info --scheduler celery.beat.PersistentScheduler
 celery -A pavilion_gemini flower --port=5555
 ```
 

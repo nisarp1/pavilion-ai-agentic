@@ -10,6 +10,7 @@ from .views import (
     MediaViewSet,
     WebStoryViewSet,
     SocialStudioGenerateView,
+    SocialStudioExtractImageView,
     resize_media_view,
 )
 
@@ -24,5 +25,6 @@ urlpatterns = [
     path('', include(router.urls)),
     path('resize/', resize_media_view, name='media-resize'),
     path('social-studio/generate/', SocialStudioGenerateView.as_view(), name='social-studio-generate'),
+    path('social-studio/extract-image-context/', SocialStudioExtractImageView.as_view(), name='social-studio-extract-image'),
 ]
 

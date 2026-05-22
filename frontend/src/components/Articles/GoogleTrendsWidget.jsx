@@ -356,6 +356,7 @@ function GoogleTrendsWidget({ onArticleCreated }) {
       })
       if (response.data.success) {
         setFetchSuccess(topic)
+        showSuccess(`Article generated for "${topic}" — check the Generated tab`)
         if (onArticleCreated) onArticleCreated()
         setTimeout(() => setFetchSuccess(null), 3000)
       } else {

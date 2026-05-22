@@ -2133,6 +2133,38 @@ def resize_media_view(request):
         return HttpResponseBadRequest(f"Error resizing image")
 
 
+class SocialStudioExtractImageView(APIView):
+    """
+    POST /api/social-studio/extract-image-context/
+
+    Accepts a single image file and returns the text/data extracted by Gemini Vision.
+    Used by the frontend to show a preview of what the pipeline will use as context.
+    """
+    parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        import logging as _logging
+        logger = _logging.getLogger(__name__)
+        image_file = request.FILES.get('image')
+        if not image_file:
+            return Response({'error': 'No image provided'}, status=400)
+        image_bytes = image_file.read()
+        logger.info('[SocialStudio] Extract-preview: %d bytes mime=%s',
+                    len(image_bytes), getattr(image_file, 'content_type', '?'))
+        from agents.social_tasks import analyze_image_context
+        result = analyze_image_context(image_bytes)
+        logger.info('[SocialStudio] Extract-preview result: text=%d chars type=%r speakers=%r',
+                    len(result.get('text', '')), result.get('content_type_hint'), result.get('speakers'))
+        return Response({
+            'extracted':          result.get('text', ''),
+            'content_type_hint':  result.get('content_type_hint', ''),
+            'speaker_count':      result.get('speaker_count', 0),
+            'speakers':           result.get('speakers', []),
+            'found':              bool(result.get('text')),
+        })
+
+
 class SocialStudioGenerateView(APIView):
     """
     POST /api/social-studio/generate/
@@ -2148,6 +2180,8 @@ class SocialStudioGenerateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
+        import logging as _logging
+        logger = _logging.getLogger(__name__)
         from agents.social_tasks import generate_social_post_task
         from django.utils.text import slugify
 
@@ -2155,12 +2189,56 @@ class SocialStudioGenerateView(APIView):
         video_job_id      = request.data.get('video_job_id') or ''
         webstory_id       = request.data.get('webstory_id') or ''
         source_url        = request.data.get('source_url', '').strip()
-        plain_text        = request.data.get('plain_text', '').strip()
-        vibe_override     = request.data.get('vibe_override', '').strip()
         canva_template_id = request.data.get('canva_template_id') or None
         image_file        = request.FILES.get('image')
 
-        if not any([article_id, video_job_id, webstory_id, source_url, plain_text, image_file]):
+        # ── Prompt field (new) vs legacy plain_text + vibe_override ──────────────
+        user_prompt    = request.data.get('prompt', '').strip()
+        plain_text     = request.data.get('plain_text', '').strip()
+        vibe_override  = request.data.get('vibe_override', '').strip()
+        # post_type_hint: explicit chip selection from the UI — bypasses AI interpretation
+        post_type_hint = request.data.get('post_type_hint', '').strip()
+        # image_content_type_hint: set by Vision analysis on the frontend; used when no chip selected
+        image_content_type_hint = request.data.get('image_content_type_hint', '').strip()
+        content_type_hint = ''
+
+        # If the user pasted a URL into the prompt field (with or without surrounding
+        # instruction text), extract it as source_url so it gets scraped.
+        # e.g. "https://example.com/story\n\nCreate a post" → source_url + plain_text instruction
+        _url_re = re.compile(r'https?://\S+', re.IGNORECASE)
+        if user_prompt and not source_url:
+            _url_match = _url_re.search(user_prompt)
+            if _url_match:
+                source_url  = _url_match.group(0).rstrip('.,)')
+                user_prompt = _url_re.sub('', user_prompt).strip()
+
+        if post_type_hint:
+            # Explicit chip selection → map directly to content_type without AI call
+            from agents.prompt_interpreter import _TYPE_MAP, _VIBE_MAP
+            content_type_hint = _TYPE_MAP.get(post_type_hint, '')
+            if not vibe_override:
+                vibe_override = _VIBE_MAP.get(post_type_hint, 'energetic')
+            plain_text = plain_text or user_prompt
+        elif user_prompt:
+            # Free-text prompt → interpret with Gemini to extract structured parameters
+            try:
+                from agents.prompt_interpreter import interpret_prompt
+                interpreted = interpret_prompt(user_prompt)
+                if not vibe_override:
+                    vibe_override = interpreted.get('vibe_override', '')
+                if not plain_text:
+                    plain_text = interpreted.get('plain_text', user_prompt)
+                content_type_hint = interpreted.get('content_type_hint', '')
+            except Exception as interp_exc:
+                logger.warning('[SocialStudio] Prompt interpretation failed: %s', interp_exc)
+                plain_text = plain_text or user_prompt
+
+        # Vision-derived content type (from frontend extract step) — used when no chip/prompt hint
+        if not content_type_hint and image_content_type_hint:
+            content_type_hint = image_content_type_hint
+            logger.info('[SocialStudio] Using Vision content_type_hint: %r', content_type_hint)
+
+        if not any([article_id, video_job_id, webstory_id, source_url, plain_text, image_file, user_prompt]):
             return Response(
                 {'error': 'Provide at least one input: article, video, web story, URL, text, or image.'},
                 status=400,
@@ -2225,6 +2303,11 @@ class SocialStudioGenerateView(APIView):
 
         # ── Save uploaded / pasted image ───────────────────────────────────────
         if image_file:
+            # Read bytes first so we can extract text context before saving
+            image_file.seek(0)
+            image_bytes = image_file.read()
+            image_file.seek(0)
+
             try:
                 name, content = process_image_to_webp(image_file)
                 if name and content:
@@ -2233,17 +2316,36 @@ class SocialStudioGenerateView(APIView):
                     article.featured_image.save(image_file.name, image_file, save=True)
             except Exception:
                 try:
+                    image_file.seek(0)
                     article.featured_image.save(image_file.name, image_file, save=True)
                 except Exception:
                     pass
 
+            # Extract image context only when the frontend hasn't already provided confirmed text.
+            # If plain_text is set, the user already saw + confirmed the extracted content.
+            if not plain_text:
+                from agents.social_tasks import extract_image_context
+                logger.info('[SocialStudio] Image received: %d bytes — running Vision extraction', len(image_bytes))
+                extracted = extract_image_context(image_bytes)
+                logger.info('[SocialStudio] Vision result: %d chars — %r', len(extracted), extracted[:120] if extracted else '')
+                if extracted:
+                    plain_text = extracted
+            else:
+                logger.info('[SocialStudio] plain_text already set (%d chars) — skipping Vision re-extraction', len(plain_text))
+        else:
+            logger.info('[SocialStudio] No image file in request (FILES keys: %s)', list(request.FILES.keys()))
+
+        logger.info('[SocialStudio] Dispatching task — article=%s source_url=%r plain_text=%d chars',
+                    article.pk, source_url, len(plain_text or ''))
+
         # ── Dispatch Celery task ───────────────────────────────────────────────
         options = {
-            'source_url':        source_url,
-            'plain_text':        plain_text,
-            'vibe_override':     vibe_override,
-            'canva_template_id': canva_template_id,
-            'tenant_id':         getattr(request.tenant, 'pk', None),
+            'source_url':         source_url,
+            'plain_text':         plain_text,
+            'vibe_override':      vibe_override,
+            'canva_template_id':  canva_template_id,
+            'content_type_hint':  content_type_hint,
+            'tenant_id':          getattr(request.tenant, 'pk', None),
         }
 
         task = generate_social_post_task.apply_async(args=[article.pk, options], queue='social')

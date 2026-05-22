@@ -368,17 +368,20 @@ def analyze_context(
 
     # ── 2. Text prompt ────────────────────────────────────────────────────────
     if text_prompt:
+        # Use first 200 chars as the short topic; full text goes into raw_content
+        short_topic = text_prompt[:200].split('\n')[0].strip() or text_prompt[:200]
         context["source_type"] = "text_prompt"
-        context["topic"]       = text_prompt
-        context["facts"]       = [f"Topic: {text_prompt}"]
+        context["topic"]       = short_topic
+        context["raw_content"] = text_prompt   # full text is always the ground-truth source
+        context["facts"]       = [f"Source content:\n{text_prompt}"]
 
-        research = _research_topic(text_prompt)
+        research = _research_topic(short_topic)
         if research:
-            context["facts"].append("--- Web research ---")
+            context["facts"].append("--- Additional web research ---")
             context["facts"].extend(research)
-            context["raw_content"] = "\n".join(research)
+            context["raw_content"] = text_prompt + "\n\n--- Additional context ---\n" + "\n".join(research)
 
-        logger.info(f"[ContextAnalyzer] Text prompt: {text_prompt[:80]!r}")
+        logger.info(f"[ContextAnalyzer] Text prompt: {short_topic[:80]!r} ({len(text_prompt)} chars)")
         return context
 
     # ── 3. CMS article fallback (no URL/prompt given) ─────────────────────────

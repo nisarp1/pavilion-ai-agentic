@@ -9,6 +9,8 @@ CONTENT_TYPE_CHOICES = [
     ('match_result',    'Match Result'),
     ('ticker',          'Ticker / Breaking'),
     ('predicted_xi',    'Predicted XI'),
+    ('fact_check',      'Fact Check'),
+    ('playing_xi',      'Playing XI'),
 ]
 
 

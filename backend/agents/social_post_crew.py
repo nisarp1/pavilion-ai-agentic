@@ -119,6 +119,14 @@ def _build_slot_brief(template) -> str:
 
     lines = [header]
 
+    lines.append(
+        "⚠️  GROUNDING RULE: Generate ALL content EXCLUSIVELY from the topic and facts "
+        "provided in the task description above. The Canva element names shown after → "
+        "are graphic-design identifiers only — they are NOT content examples and must "
+        "NEVER be copied or paraphrased into your output. If the source content is "
+        "insufficient, say so with a placeholder rather than inventing content."
+    )
+
     if is_xi:
         lines.append(_PREDICTED_XI_FORMAT_HINTS)
 
@@ -128,8 +136,9 @@ def _build_slot_brief(template) -> str:
     )
     for s in text_slots:
         limit = f"  (≤{s['max_words']} words)" if s.get('max_words') else ""
+        hint  = f"\n      ↳ {s['hint']}" if s.get('hint') else ""
         lines.append(
-            f'  • {s["key"]:25s}→  Canva element: "{s["canva_name"]}"{limit}'
+            f'  • {s["key"]:25s}→  Canva element: "{s["canva_name"]}"{limit}{hint}'
         )
 
     if image_slots:
@@ -208,16 +217,25 @@ class SocialPostCrew:
         return Agent(
             role='Malayalam Sports Localizer',
             goal=(
-                'Translate every TEXT slot value from English into authentic, punchy '
-                'Malayalam. Numbers and stats remain unchanged. '
+                'Rewrite every TEXT slot value as a native Malayalam sports journalist '
+                'would write it for social media — NOT a word-for-word English translation. '
+                'Numbers and stats remain unchanged. '
                 'Honour the vibe_override tone instruction if one is provided. '
                 'Honour the max_words limit for each slot.'
             ),
             backstory=(
                 "You are the lead Malayalam copy editor at Pavilion, Kerala's premier "
-                "sports news brand. Your Malayalam reads like original editorial — not a "
-                "translation. You use authentic sports slang, avoid Wikipedia tone, and "
-                "hook the reader from the first word."
+                "sports news brand. You write the way Kerala fans actually talk about sports — "
+                "WhatsApp forwards, Instagram reels, passionate cricket arguments. "
+                "You NEVER translate English phrase-by-phrase. "
+                "Bad: 'കോഹ്ലി ടീമിൽ നിന്ന് പുറത്ത്.' "
+                "Good: 'കിംഗ് ഇല്ലാതെ ഇംഗ്ലണ്ട് ടൂർ — BCCI ഞെട്ടിച്ചു!' "
+                "Bad: 'ഇത് ഒരു വലിയ വാർത്ത ആണ്.' "
+                "Good: 'ഗില്ലിന്റെ 120* — MCG-യിൽ ഓസ്ട്രേലിയ ലജ്ജിച്ചു!' "
+                "Rules: short punchy sentences, hook in the first 5 words, "
+                "specific names and stats always included, never generic openers. "
+                "For fact-check verdicts, always start with 'വസ്തുതാ പരിശോധന: '. "
+                "For quotes, keep first-person voice — never paraphrase into third person."
             ),
             verbose=True,
             allow_delegation=False,
@@ -271,7 +289,9 @@ class SocialPostCrew:
         facts_block = '\n'.join(f'- {f}' for f in facts_list[:15]) if facts_list else raw_content[:800]
 
         slot_brief   = _build_slot_brief(template)
-        expected_keys = _all_slot_keys(template)
+        # social_media_caption is always generated — it's the caption for actually posting
+        # this graphic to Instagram/Facebook/Twitter. It is NOT a Canva template slot.
+        expected_keys = _all_slot_keys(template) + ['social_media_caption']
         vibe_block   = f'\n\nVIBE / TONE INSTRUCTION: {vibe_override}' if vibe_override else ''
 
         logger.info(
@@ -300,11 +320,25 @@ class SocialPostCrew:
                 "2. For every IMAGE slot, write a 3-5 word English search query that will "
                 "return a great photo for that slot.\n"
                 "3. For every COLOR slot, leave the value as an empty string — the Art "
-                "Director will handle colours.\n\n"
+                "Director will handle colours.\n"
+                "4. Generate 'social_media_caption_EN' — a READY-TO-POST English caption for "
+                "Instagram/Facebook/X. This is the MOST IMPORTANT output; readers will see it "
+                "before the graphic. Rules:\n"
+                "   • MUST reference at least one specific name, score, or stat from the article.\n"
+                "   • Sentence 1: the hook — the single most surprising/exciting fact.\n"
+                "   • Sentence 2-3: brief context that makes the hook land.\n"
+                "   • End with ONE fan engagement question + 3-5 tight hashtags.\n"
+                "   • Tone: how a passionate Kerala cricket fan would post, NOT a press release.\n"
+                "   • DO NOT start with generic phrases like 'Big news!' or 'Check this out!'.\n\n"
                 "Output a JSON object whose keys are EXACTLY the slot keys listed above "
-                "(text slots suffixed with _EN, image and color slots as-is).\n"
+                "(text slots suffixed with _EN, image and color slots as-is) PLUS "
+                "'social_media_caption_EN'.\n"
                 "Example text slot: \"Headline_EN\": \"Kohli smashes century\"\n"
                 "Example image slot: \"Background_Image\": \"cricket stadium crowd night\"\n"
+                "Example caption: \"social_media_caption_EN\": \"Kohli OUT of the England T20 squad "
+                "— BCCI rests him ahead of the World Cup campaign. With Bumrah also rested, "
+                "this is a full-scale rebuild. Who leads the attack now? "
+                "#ViratKohli #TeamIndia #T20WorldCup\"\n"
                 "No markdown fences. Output only the JSON object."
             ),
             expected_output=(
@@ -318,14 +352,21 @@ class SocialPostCrew:
         localizer_task = Task(
             description=(
                 "The journalist has produced English copy for each slot. "
-                "Your job is to translate every TEXT slot value into authentic Malayalam.\n\n"
+                "Your job is to rewrite every TEXT slot into authentic, punchy Malayalam.\n\n"
                 f"{slot_brief}\n\n"
                 "Rules:\n"
-                "- TEXT slots: translate from _EN value to Malayalam. Use the slot key WITHOUT _EN suffix.\n"
+                "- TEXT slots: rewrite (NOT word-for-word translate) from _EN value into Malayalam. "
+                "Use the slot key WITHOUT _EN suffix.\n"
                 "- Stat values (numbers, scores) stay unchanged inside the Malayalam string.\n"
                 "- Respect the max_words limit for each slot; truncate if needed.\n"
                 f"- Apply tone: {vibe_override or 'default energetic sports tone'}.\n"
                 "- IMAGE and COLOR slot values: copy them unchanged from the journalist output.\n\n"
+                "For 'social_media_caption' specifically:\n"
+                "- Rewrite it as a NATIVE Malayalam sports page post — the kind Kerala fans "
+                "share on WhatsApp and Instagram. Read the English, throw it away, then write "
+                "the Malayalam from scratch using the same facts.\n"
+                "- Keep all player names, team names, and numbers from the English version.\n"
+                "- End with the same engagement question and hashtags (mix Malayalam + English tags).\n\n"
                 "Output a JSON object with EXACTLY these keys (no _EN suffix on text slots): "
                 f"{json.dumps(expected_keys)}\n"
                 "No markdown fences. Output only the JSON object."

@@ -172,8 +172,10 @@ else:
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-# Serve static files at / so Vite's default /assets/ paths resolve correctly
-STATIC_URL = '/'
+# In production, serve the React bundle from / so Vite's /assets/ paths resolve.
+# In dev, keep /static/ so runserver doesn't reject MEDIA_URL being inside STATIC_URL.
+if ENVIRONMENT != 'development':
+    STATIC_URL = '/'
 
 # Include React build output so collectstatic picks it up even with --clear
 _frontend_dist = os.path.join(BASE_DIR.parent, 'frontend', 'dist')

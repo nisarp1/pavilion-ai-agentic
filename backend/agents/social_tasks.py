@@ -19,17 +19,116 @@ from celery import shared_task
 logger = logging.getLogger(__name__)
 
 
-# ── Template selection ────────────────────────────────────────────────────────
+# ── Image context extraction (Gemini Vision) ───────────────────────────────────────
 
-def _select_template(tenant, content_hint: str, preferred_id: int = None):
+def _detect_mime_type(image_bytes: bytes) -> str:
+    """Detect image mime type from magic bytes."""
+    if image_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+        return 'image/png'
+    if image_bytes[:3] == b'\xff\xd8\xff':
+        return 'image/jpeg'
+    if image_bytes[:4] == b'RIFF' and image_bytes[8:12] == b'WEBP':
+        return 'image/webp'
+    if image_bytes[:6] in (b'GIF87a', b'GIF89a'):
+        return 'image/gif'
+    return 'image/jpeg'  # safe fallback
+
+
+def analyze_image_context(image_bytes: bytes) -> dict:
+    """
+    Analyze an uploaded image with Gemini Vision.
+
+    Returns a dict:
+      text              — all readable text extracted verbatim
+      content_type_hint — template type: quote_card | stat_comparison | playing_xi |
+                          predicted_xi | match_result | fact_check | ticker | general
+      speaker_count     — number of distinct people quoted
+      speakers          — list of speaker names if identifiable
+    """
+    empty = {'text': '', 'content_type_hint': '', 'speaker_count': 0, 'speakers': []}
+    try:
+        import json
+        from agents.gemini_client import generate_with_parts, make_image_part
+
+        mime_type = _detect_mime_type(image_bytes)
+        logger.info('[SocialTask] Vision analyze: %d bytes mime=%s', len(image_bytes), mime_type)
+
+        prompt = (
+            "You are analyzing an image for a sports news social media team.\n\n"
+            "Return a single JSON object with these keys:\n"
+            "  \"text\": Extract ALL readable text verbatim — tweets, quotes, captions, "
+            "scores, player names, stats. Preserve speaker attribution (e.g. 'Rohit: ...').\n"
+            "  \"content_type\": One of: \"stat_comparison\" (2+ people quoted or head-to-head stats), "
+            "\"quote_card\" (1 person quoted), \"playing_xi\" (confirmed match lineup), "
+            "\"predicted_xi\" (predicted lineup), \"match_result\" (final score/result), "
+            "\"fact_check\" (claim being verified), \"ticker\" (breaking news), \"general\" (other).\n"
+            "  \"speaker_count\": Integer — how many distinct people are quoted.\n"
+            "  \"speakers\": Array of speaker names if visible, else [].\n\n"
+            "Rules:\n"
+            "- If 2 people are quoted (e.g. two players reacting) → content_type must be \"stat_comparison\".\n"
+            "- If 1 person is quoted → \"quote_card\".\n"
+            "- Output ONLY valid JSON. No markdown fences, no explanation.\n"
+            "- If no readable text: {\"text\":\"\",\"content_type\":\"general\","
+            "\"speaker_count\":0,\"speakers\":[]}"
+        )
+
+        raw = generate_with_parts([prompt, make_image_part(image_bytes, mime_type)]).strip()
+
+        # Strip markdown code fences if Gemini wrapped the JSON
+        if raw.startswith('```'):
+            raw = raw.split('```')[1]
+            if raw.startswith('json'):
+                raw = raw[4:]
+            raw = raw.strip()
+
+        data = json.loads(raw)
+        result = {
+            'text':               data.get('text', '').strip(),
+            'content_type_hint':  data.get('content_type', '').strip(),
+            'speaker_count':      int(data.get('speaker_count', 0)),
+            'speakers':           data.get('speakers', []),
+        }
+        logger.info(
+            '[SocialTask] Vision result: %d chars text, type=%r speakers=%d %r',
+            len(result['text']), result['content_type_hint'],
+            result['speaker_count'], result['speakers'],
+        )
+        return result
+
+    except Exception as exc:
+        logger.warning('[SocialTask] Vision analysis failed: %s', exc)
+        return empty
+
+
+def extract_image_context(image_bytes: bytes) -> str:
+    """Thin wrapper — returns just the extracted text from analyze_image_context."""
+    return analyze_image_context(image_bytes).get('text', '')
+
+
+# ── Template selection ─────────────────────────────────────────────────────────────
+
+# Matches "Speaker: <opening-quote>" — handles straight " and curly “
+_SPEAKER_QUOTE_RE = re.compile(r'[A-Za-z].{2,60}?:\s*["\u201c]')
+
+
+def _count_quoted_speakers(text: str) -> int:
+    """Count distinct Speaker: quote patterns. Handles straight and curly opening quotes."""
+    return len(_SPEAKER_QUOTE_RE.findall(text))
+
+
+def _select_template(tenant, content_hint: str, preferred_id: int = None, content_type_hint: str = ''):
     """
     Return the best CanvaTemplate for this tenant.
 
     Priority:
-      1. preferred_id  — explicit user pick from the UI
-      2. content_type keyword heuristic on content_hint
-      3. First active template
-      4. None (generic mode)
+      1. preferred_id          — explicit user pick from the UI
+      2. Multi-speaker signal  — 3+ quoted speakers → stat_comparison (Three Players Quote).
+                                 Runs before content_type_hint so a wrong LLM guess cannot
+                                 override this structural evidence.
+      3. content_type_hint     — direct type from prompt interpreter
+      4. content_type keyword heuristic on content_hint text
+      5. First active hero_headline template
+      6. None (generic mode)
     """
     from cms.models_canva import CanvaTemplate
 
@@ -42,14 +141,67 @@ def _select_template(tenant, content_hint: str, preferred_id: int = None):
         if tmpl:
             return tmpl
 
+    # ── Multi-speaker detection (priority 2) ─────────────────────────────────────────────
+    # 3 or more "Speaker: quote" patterns → Three Players Quote template.
+    # This must run BEFORE content_type_hint because the prompt interpreter
+    # always classifies any quoted text as 'quote', regardless of how many
+    # different people are speaking.
+    _open_quote_count = content_hint.count('\u201c') + content_hint.count('\u201d')
+    _speaker_count    = _count_quoted_speakers(content_hint)
+    logger.info('[TemplateSelector] Quote signals: open_quotes=%d speakers=%d', _open_quote_count, _speaker_count)
+
+    # 2+ distinct speakers or 4+ quote marks -> multi-quote (stat_comparison) template
+    if _speaker_count >= 2 or _open_quote_count >= 4:
+        tmpl = qs.filter(content_type='stat_comparison').first()
+        if tmpl:
+            logger.info(
+                '[TemplateSelector] Multi-speaker signal (%d quotes, %d speakers) -> stat_comparison',
+                _open_quote_count, _speaker_count,
+            )
+            return tmpl
+
+    # 1 speaker or 2+ quote marks -> quote_card
+    if _speaker_count == 1 or _open_quote_count >= 2:
+        tmpl = qs.filter(content_type='quote_card').first()
+        if tmpl:
+            logger.info('[TemplateSelector] Single-speaker quote (%d quotes, %d speakers) -> quote_card',
+                        _open_quote_count, _speaker_count)
+            return tmpl
+
+    # ── Prompt-interpreter hint (priority 3) ──────────────────────────────────────────────
+    if content_type_hint:
+        tmpl = qs.filter(content_type=content_type_hint).first()
+        if tmpl:
+            return tmpl
+
     hint = (content_hint or '').lower()
 
+    # Ordered from most-specific to least-specific so the first match wins.
     type_signals = [
-        (['vs ', ' vs.', 'head to head', 'comparison'],  'stat_comparison'),
-        (['"', '"', 'quote', 'said'],                     'quote_card'),
-        (['result', 'won', 'lost', 'beat', 'defeated'],   'match_result'),
-        (['breaking', 'just in', 'alert', 'update'],      'ticker'),
-        (['player', 'profile', 'spotlight'],              'player_card'),
+        # Playing / Predicted XI (check before generic "vs" signals)
+        (['predicted xi', 'predicted 11', 'predicted eleven', 'expected lineup',
+          'squad prediction', 'likely xi'],                                       'predicted_xi'),
+        (['playing xi', 'playing 11', 'playing eleven', 'toss result',
+          'final xi', 'elected to bat', 'elected to bowl'],                       'playing_xi'),
+        # Fact check / debunk
+        (['fact check', 'fact-check', 'factcheck', 'verdict', 'debunk',
+          'myth', 'hoax', 'claim', 'viral claim', 'misleading'],                  'fact_check'),
+        # Stat comparison / head-to-head / multi-quote
+        (['vs ', ' vs.', 'head to head', 'comparison', 'stats comparison',
+          'three quotes', 'multiple quotes', 'three players'],                    'stat_comparison'),
+        # Quote cards (single speaker) -- curly \u201c and \u2018 handled by _count_quoted_speakers
+        (['quote', 'said', 'stated', 'commented',
+          'reacts', 'responds'],                                                   'quote_card'),
+        # Match result
+        (['result', 'won', 'lost', 'beat', 'defeated', 'victory',
+          'win by', 'innings defeat'],                                             'match_result'),
+        # Breaking / ticker
+        (['breaking', 'just in', 'alert', 'confirmed', 'official announcement',
+          'breaking news'],                                                        'ticker'),
+        # General player/news posts → hero_headline (default)
+        (['announces', 'signs', 'joins', 'transfers', 'named', 'selected',
+          'dropped', 'injured', 'returns', 'debut', 'record', 'milestone',
+          'century', 'wicket', 'profile', 'spotlight'],                           'hero_headline'),
     ]
     for keywords, content_type in type_signals:
         if any(kw in hint for kw in keywords):
@@ -57,7 +209,9 @@ def _select_template(tenant, content_hint: str, preferred_id: int = None):
             if tmpl:
                 return tmpl
 
+    # Default: hero_headline is the general-purpose post template
     return qs.filter(content_type='hero_headline').first() or qs.first()
+
 
 
 # ── Image helpers ─────────────────────────────────────────────────────────────
@@ -102,11 +256,17 @@ def _acquire_image(article, query: str, needs_cutout: bool, slot_key: str) -> st
     """
     Acquire, process, and save an image for one template image slot.
 
-    Steps:
-      1. Use article.featured_image if available (for cutout slots) or if slot is background
-      2. Else DDGS search → download → process_image_to_webp → save to article.featured_image
-      3. If needs_cutout and cutout not yet generated → generate_cutout_image → save
-      Returns: absolute media URL string, or '' on failure.
+    Non-cutout slots (logos, backgrounds):
+      Always search DDGS with the slot-specific query and return the raw CDN URL.
+      This ensures each logo/background slot gets its own independent image instead
+      of all reusing article.featured_image (which only holds one image at a time).
+
+    Cutout slots (player overlays):
+      DDGS search → download → process_image_to_webp → save to article.featured_image
+      → generate_cutout_image → save to article.featured_image_cutout → return URL.
+      Reuses existing cutout if already generated.
+
+    Returns: image URL string, or '' on failure.
     """
     from cms.utils import generate_cutout_image, process_image_to_webp
 
@@ -117,42 +277,52 @@ def _acquire_image(article, query: str, needs_cutout: bool, slot_key: str) -> st
         except Exception:
             return ''
 
-    # ── Cutout slot: prefer existing cutout ───────────────────────────────────
-    if needs_cutout and article.featured_image_cutout:
+    # ── Non-cutout slot (logos, backgrounds) ─────────────────────────────────
+    # Always run a fresh DDGS search so each slot gets the right image.
+    # Return the raw CDN URL without saving to article.featured_image — saving
+    # would overwrite it for every subsequent slot, causing all slots to repeat
+    # the same image.
+    if not needs_cutout:
+        img_url, _ = _ddgs_image_search(query)
+        if img_url:
+            return img_url
+        # Fallback: existing featured_image if DDGS failed
+        return _media_url(article.featured_image) if article.featured_image else ''
+
+    # ── Cutout slot ───────────────────────────────────────────────────────────
+    if article.featured_image_cutout:
         return _media_url(article.featured_image_cutout)
 
-    # ── Background slot: use existing featured_image ──────────────────────────
-    if not needs_cutout and article.featured_image:
-        return _media_url(article.featured_image)
-
-    # ── Fetch via DDGS ────────────────────────────────────────────────────────
-    _, img_bytes = _ddgs_image_search(query)
-    if img_bytes:
-        try:
-            img_file = io.BytesIO(img_bytes)
-            img_file.name = f'social_{slot_key}.jpg'
-            bg_name, bg_content = process_image_to_webp(img_file)
-            if bg_name and bg_content:
-                article.featured_image.save(bg_name, bg_content, save=True)
-                article.refresh_from_db(fields=['featured_image'])
-                logger.info('[SocialTask] Saved DDGS image to featured_image: %s', bg_name)
-        except Exception as exc:
-            logger.warning('[SocialTask] Image save failed for slot %s: %s', slot_key, exc)
+    # ── Fetch source image for cutout — only if user hasn't uploaded one ──────
+    # If article.featured_image is already set (uploaded via context field),
+    # skip DDGS entirely so we don't overwrite the user's image.
+    if not article.featured_image:
+        _, img_bytes = _ddgs_image_search(query)
+        if img_bytes:
+            try:
+                img_file = io.BytesIO(img_bytes)
+                img_file.name = f'social_{slot_key}.jpg'
+                bg_name, bg_content = process_image_to_webp(img_file)
+                if bg_name and bg_content:
+                    article.featured_image.save(bg_name, bg_content, save=True)
+                    article.refresh_from_db(fields=['featured_image'])
+                    logger.info('[SocialTask] Saved DDGS image to featured_image: %s', bg_name)
+            except Exception as exc:
+                logger.warning('[SocialTask] Image save failed for slot %s: %s', slot_key, exc)
 
     if not article.featured_image:
         return ''
 
-    if needs_cutout:
-        try:
-            article.featured_image.open('rb')
-            cutout_name, cutout_content = generate_cutout_image(article.featured_image)
-            article.featured_image.close()
-            if cutout_name and cutout_content:
-                article.featured_image_cutout.save(cutout_name, cutout_content, save=True)
-                article.refresh_from_db(fields=['featured_image_cutout'])
-                return _media_url(article.featured_image_cutout)
-        except Exception as exc:
-            logger.warning('[SocialTask] Cutout generation failed for slot %s: %s', slot_key, exc)
+    try:
+        article.featured_image.open('rb')
+        cutout_name, cutout_content = generate_cutout_image(article.featured_image)
+        article.featured_image.close()
+        if cutout_name and cutout_content:
+            article.featured_image_cutout.save(cutout_name, cutout_content, save=True)
+            article.refresh_from_db(fields=['featured_image_cutout'])
+            return _media_url(article.featured_image_cutout)
+    except Exception as exc:
+        logger.warning('[SocialTask] Cutout generation failed for slot %s: %s', slot_key, exc)
 
     return _media_url(article.featured_image)
 
@@ -259,11 +429,12 @@ def generate_social_post_task(self, article_id: int, options: dict = None):
     from agents.context_analyzer import analyze_context
     from agents.social_post_crew import SocialPostCrew
 
-    options           = options or {}
-    vibe_override     = options.get('vibe_override', '')
-    source_url_opt    = options.get('source_url', '')
-    plain_text        = options.get('plain_text', '')
-    canva_template_pk = options.get('canva_template_id')
+    options            = options or {}
+    vibe_override      = options.get('vibe_override', '')
+    source_url_opt     = options.get('source_url', '')
+    plain_text         = options.get('plain_text', '')
+    canva_template_pk  = options.get('canva_template_id')
+    content_type_hint  = options.get('content_type_hint', '')
 
     try:
         article = Article.objects.get(pk=article_id)
@@ -281,7 +452,9 @@ def generate_social_post_task(self, article_id: int, options: dict = None):
         url = source_url_opt or (article.source_url or '')
         tenant = getattr(article, 'tenant', None)
         social_data_key = (tenant.api_keys or {}).get('socialdata', '') if tenant else ''
-        _log('source', f'url={url!r} plain_text={bool(plain_text)} vibe={vibe_override!r}')
+        _log('source', f'url={url!r} plain_text_len={len(plain_text)} vibe={vibe_override!r}')
+        if plain_text:
+            logger.info('[SocialTask] Article %d | plain_text preview: %r', article_id, plain_text[:200])
 
         # ── 2. Social platform scrape (cascade) ───────────────────────────────
         social_platforms = ('twitter.com', 'x.com', 'instagram.com', 'facebook.com')
@@ -309,13 +482,18 @@ def generate_social_post_task(self, article_id: int, options: dict = None):
         # If social scrape produced more content, prefer it
         if scraped_text and len(scraped_text) > len(context.get('raw_content', '')):
             context['raw_content'] = scraped_text
-        _log('context', f"source_type={context.get('source_type')} topic={context.get('topic','')[:60]!r}")
+        _log('context', f"source_type={context.get('source_type')} topic={context.get('topic','')[:80]!r} raw_content_len={len(context.get('raw_content',''))}")
+        logger.info('[SocialTask] Article %d | raw_content preview: %r', article_id, context.get('raw_content','')[:300])
 
         # ── 4. Template selection ─────────────────────────────────────────────
+        # Use the full raw input for multi-speaker detection; topic is too short.
+        _hint_text = plain_text or context.get('raw_content', '') or context.get('topic', '')
+        logger.info('[SocialTask] Article %d | template hint_text: %r', article_id, _hint_text[:200])
         template = _select_template(
             tenant,
-            context.get('topic', ''),
+            _hint_text,
             preferred_id=int(canva_template_pk) if canva_template_pk else None,
+            content_type_hint=content_type_hint,
         )
         _log('template', f"Selected: {template.name if template else 'Generic (no templates in DB)'}")
 
@@ -363,7 +541,15 @@ def generate_social_post_task(self, article_id: int, options: dict = None):
         # ── 9. Persist ────────────────────────────────────────────────────────
         article.social_post_plan   = plan
         article.social_post_status = 'done'
-        article.save(update_fields=['social_post_plan', 'social_post_status', 'canva_export_log'])
+        # Write the generated social caption back to the article field so it's
+        # immediately available for copy-paste when posting to social platforms.
+        generated_caption = plan.get('social_media_caption', '')
+        if generated_caption:
+            article.social_media_caption = generated_caption
+        article.save(update_fields=[
+            'social_post_plan', 'social_post_status', 'canva_export_log',
+            'social_media_caption',
+        ])
         _log('done', 'Social post plan saved — status: done')
 
         # ── 10. Push to Google Sheet (if template has one linked) ─────────────

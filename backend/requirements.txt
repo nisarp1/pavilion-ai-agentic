@@ -73,5 +73,8 @@ async-timeout>=4.0.2
 # ElevenLabs TTS (premium Malayalam voiceover, manually triggered)
 elevenlabs>=1.0.0
 
+# CrewAI multi-agent pipeline
+crewai>=1.14.4
+
 # LiteLLM (required by crewai for Vertex AI / gemini/ model prefix routing)
 litellm>=1.40.0

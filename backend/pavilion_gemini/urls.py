@@ -19,6 +19,13 @@ class AuthRateThrottle(AnonRateThrottle):
     """Stricter throttle for authentication endpoints (10/minute per IP)."""
     rate = '10/minute'
 
+    def allow_request(self, request, view):
+        try:
+            return super().allow_request(request, view)
+        except Exception:
+            # Fail-open if cache (Redis) is unavailable — prevents 500s on login
+            return True
+
 def api_root(request):
     """Root endpoint that provides API information."""
     return JsonResponse({

@@ -52,13 +52,15 @@ class SPAFallbackMiddleware(MiddlewareMixin):
 
         if os.path.exists(index_path):
             try:
-                # Return index.html with 200 status (not 404)
-                # This allows React Router to handle the routing client-side
-                return FileResponse(
+                response = FileResponse(
                     open(index_path, 'rb'),
                     status=200,
-                    content_type='text/html'
+                    content_type='text/html',
                 )
+                # Never cache index.html — hashed assets change on every deploy
+                response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+                response['Pragma'] = 'no-cache'
+                return response
             except (FileNotFoundError, IOError):
                 pass
 

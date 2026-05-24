@@ -188,6 +188,13 @@ STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 WHITENOISE_USE_FINDERS = True
 WHITENOISE_AUTOREFRESH = True
 
+def _whitenoise_no_cache_index(headers, path, url):
+    if path.endswith('index.html'):
+        headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        headers['Pragma'] = 'no-cache'
+
+WHITENOISE_ADD_HEADERS_FUNCTION = _whitenoise_no_cache_index
+
 # CSRF trusted origins
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
     'https://newsai.pavilionend.in',
@@ -290,6 +297,19 @@ CELERY_TIMEZONE = TIME_ZONE
 # Required for Upstash TLS (rediss://) — ignored for plain redis://
 CELERY_BROKER_USE_SSL = {'ssl_cert_reqs': 'none'} if _redis_url.startswith('rediss://') else None
 CELERY_REDIS_BACKEND_USE_SSL = {'ssl_cert_reqs': 'none'} if _redis_url.startswith('rediss://') else None
+
+# Task routing — keep heavy pipeline tasks off the default queue so
+# RSS/publish tasks aren't blocked behind 10-minute video/social jobs.
+CELERY_TASK_ROUTES = {
+    'agents.tasks.run_reel_pipeline_task':       {'queue': 'pipeline'},
+    'agents.tasks.backfill_reel_video_url':      {'queue': 'pipeline'},
+    'video_studio.tasks.render_video_task':      {'queue': 'pipeline'},
+    'video_studio.tasks.check_render_status':    {'queue': 'pipeline'},
+    'agents.social_tasks.*':                     {'queue': 'social'},
+    'rss_fetcher.tasks.*':                       {'queue': 'default'},
+    'workers.tasks.*':                           {'queue': 'default'},
+}
+CELERY_TASK_DEFAULT_QUEUE = 'default'
 
 # Celery Beat Schedule
 # Fetch interval in minutes (default: 5 minutes for more frequent updates)

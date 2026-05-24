@@ -2362,3 +2362,77 @@ class SocialStudioGenerateView(APIView):
             'article_id':    article.pk,
             'article_title': article.title,
         })
+
+
+class SocialStudioSaveEditsView(APIView):
+    """
+    POST /api/social-studio/save-edits/
+
+    Saves a social media manager's corrections to an AI-generated plan.
+    Diffs original vs edited values and stores them as SocialPostFeedback,
+    which the pipeline injects as few-shot examples on future runs.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        import logging as _logging
+        _logger = _logging.getLogger(__name__)
+
+        from .models import SocialPostFeedback
+
+        article_id     = request.data.get('article_id')
+        edited_plan    = request.data.get('plan') or {}
+        edited_caption = (request.data.get('caption') or '').strip()
+
+        if not article_id:
+            return Response({'error': 'article_id required'}, status=400)
+
+        article          = get_object_or_404(Article, pk=article_id, tenant=request.tenant)
+        original_plan    = article.social_post_plan or {}
+        original_caption = (article.social_media_caption or '').strip()
+
+        # Build slot-level diff (text / caption only — skip metadata and images)
+        corrections = []
+        for key, new_val in edited_plan.items():
+            if key.startswith('_'):
+                continue
+            old_val = str(original_plan.get(key, '') or '').strip()
+            new_str = str(new_val or '').strip()
+            if new_str and new_str != old_val:
+                corrections.append({'slot': key, 'original': old_val, 'correction': new_str})
+
+        if edited_caption and edited_caption != original_caption:
+            corrections.append({
+                'slot':       'social_media_caption',
+                'original':   original_caption,
+                'correction': edited_caption,
+            })
+
+        if corrections:
+            SocialPostFeedback.objects.create(
+                tenant=request.tenant,
+                article=article,
+                template_pk=original_plan.get('_template_pk'),
+                template_name=original_plan.get('_template_name', ''),
+                original_plan=original_plan,
+                edited_plan=edited_plan,
+                original_caption=original_caption,
+                edited_caption=edited_caption,
+                corrections=corrections,
+            )
+            _logger.info('[SocialStudio] Saved %d corrections for article %s', len(corrections), article_id)
+
+        # Merge edits into existing plan (preserve _ metadata keys)
+        merged_plan = dict(original_plan)
+        for key, val in edited_plan.items():
+            if not key.startswith('_'):
+                merged_plan[key] = val
+
+        update_fields = ['social_post_plan']
+        article.social_post_plan = merged_plan
+        if edited_caption:
+            article.social_media_caption = edited_caption
+            update_fields.append('social_media_caption')
+        article.save(update_fields=update_fields)
+
+        return Response({'status': 'saved', 'corrections': len(corrections)})

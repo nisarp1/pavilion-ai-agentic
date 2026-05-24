@@ -91,6 +91,50 @@ export default function SocialPostGenerator() {
   const [generating, setGenerating] = useState(false)
   const pollRef = useRef(null)
 
+  // ── Edit state ────────────────────────────────────────────────────────────────
+  const [editedPlan, setEditedPlan]         = useState(null)  // null = unmodified
+  const [editedCaption, setEditedCaption]   = useState(null)  // null = unmodified
+  const [savingEdits, setSavingEdits]       = useState(false)
+  const [saveStatus, setSaveStatus]         = useState(null)  // null | 'saved' | 'error'
+
+  const isDirty = editedPlan !== null || editedCaption !== null
+
+  const handleSlotEdit = (key, value) => {
+    setEditedPlan(prev => ({ ...(prev || plan), [key]: value }))
+    setSaveStatus(null)
+  }
+
+  const handleCaptionEdit = (value) => {
+    setEditedCaption(value)
+    setSaveStatus(null)
+  }
+
+  const handleSaveEdits = async () => {
+    if (!articleId || !plan) return
+    setSavingEdits(true)
+    setSaveStatus(null)
+    try {
+      const payload = {
+        article_id: parseInt(articleId),
+        plan:       editedPlan || plan,
+        caption:    editedCaption !== null ? editedCaption : (plan.social_media_caption || ''),
+      }
+      await api.post('social-studio/save-edits/', payload)
+      // Merge edits back into canonical plan
+      if (editedPlan) setPlan(prev => ({ ...prev, ...editedPlan }))
+      if (editedCaption !== null) setPlan(prev => ({ ...prev, social_media_caption: editedCaption }))
+      setEditedPlan(null)
+      setEditedCaption(null)
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus(null), 3000)
+    } catch (e) {
+      console.error('Save edits error:', e)
+      setSaveStatus('error')
+    } finally {
+      setSavingEdits(false)
+    }
+  }
+
   // ── Load data on mount ────────────────────────────────────────────────────────
   useEffect(() => {
     api.get('canva-templates/').then(r => setCanvaTemplates(r.data.results || r.data)).catch(() => {})
@@ -112,6 +156,9 @@ export default function SocialPostGenerator() {
         setLog(d.log || [])
         if (d.status === 'done') {
           setPlan(d.plan)
+          setEditedPlan(null)
+          setEditedCaption(null)
+          setSaveStatus(null)
           setGenerating(false)
           clearInterval(pollRef.current)
         } else if (d.status === 'failed') {
@@ -135,6 +182,8 @@ export default function SocialPostGenerator() {
       setLog(d.log || [])
       if (d.status === 'done' && d.plan) {
         setPlan(d.plan)
+        setEditedPlan(null)
+        setEditedCaption(null)
       } else if (d.status === 'running' || d.status === 'queued') {
         setGenerating(true)
         startPolling(articleIdParam)
@@ -225,6 +274,9 @@ export default function SocialPostGenerator() {
 
     setError('')
     setPlan(null)
+    setEditedPlan(null)
+    setEditedCaption(null)
+    setSaveStatus(null)
     setLog([])
     setGenerating(true)
     setStatus('queued')
@@ -795,6 +847,30 @@ export default function SocialPostGenerator() {
               </div>
 
               <div className="flex flex-wrap gap-2 shrink-0">
+                {/* Save edits button — shown when edits are pending */}
+                {isDirty && (
+                  <button
+                    onClick={handleSaveEdits}
+                    disabled={savingEdits}
+                    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-1.5"
+                  >
+                    {savingEdits ? (
+                      <>
+                        <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        Saving…
+                      </>
+                    ) : 'Save Edits'}
+                  </button>
+                )}
+                {saveStatus === 'saved' && !isDirty && (
+                  <span className="text-sm text-emerald-600 font-medium px-3 py-2">✓ Saved &amp; learned</span>
+                )}
+                {saveStatus === 'error' && (
+                  <span className="text-sm text-red-600 font-medium px-3 py-2">Save failed</span>
+                )}
                 <CopyLinkButton articleId={articleId} />
                 {plan._canva_design_url && (
                   <button
@@ -831,15 +907,25 @@ export default function SocialPostGenerator() {
             </div>
 
             {/* Social media caption */}
-            {plan.social_media_caption && (
-              <SocialCaptionCard caption={plan.social_media_caption} />
+            {(plan.social_media_caption || editedCaption !== null) && (
+              <SocialCaptionCard
+                caption={editedCaption !== null ? editedCaption : (plan.social_media_caption || '')}
+                onChange={handleCaptionEdit}
+              />
             )}
 
             {/* Slot cards */}
             {selectedTemplate?.slots ? (
-              <SlotCards slots={selectedTemplate.slots} plan={plan} />
+              <SlotCards
+                slots={selectedTemplate.slots}
+                plan={editedPlan ? { ...plan, ...editedPlan } : plan}
+                onSlotEdit={handleSlotEdit}
+              />
             ) : (
-              <GenericPlanCards plan={plan} />
+              <GenericPlanCards
+                plan={editedPlan ? { ...plan, ...editedPlan } : plan}
+                onSlotEdit={handleSlotEdit}
+              />
             )}
           </div>
         )}
@@ -893,8 +979,9 @@ function CopyLinkButton({ articleId }) {
 
 // ── Social caption card ───────────────────────────────────────────────────────
 
-function SocialCaptionCard({ caption }) {
-  const [copied, setCopied] = useState(false)
+function SocialCaptionCard({ caption, onChange }) {
+  const [copied, setCopied]   = useState(false)
+  const [editing, setEditing] = useState(false)
 
   const handleCopy = () => {
     navigator.clipboard.writeText(caption).then(() => {
@@ -909,25 +996,58 @@ function SocialCaptionCard({ caption }) {
         <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
           📱 Social Media Caption
         </span>
-        <button
-          onClick={handleCopy}
-          className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${
-            copied
-              ? 'bg-green-100 text-green-700'
-              : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
-          }`}
-        >
-          {copied ? '✓ Copied' : 'Copy'}
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => setEditing(e => !e)}
+            className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${
+              editing
+                ? 'bg-indigo-200 text-indigo-800'
+                : 'bg-white/60 text-indigo-600 hover:bg-indigo-100 border border-indigo-200'
+            }`}
+          >
+            {editing ? 'Done' : 'Edit'}
+          </button>
+          <button
+            onClick={handleCopy}
+            className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${
+              copied
+                ? 'bg-green-100 text-green-700'
+                : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+            }`}
+          >
+            {copied ? '✓ Copied' : 'Copy'}
+          </button>
+        </div>
       </div>
-      <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-line">{caption}</p>
+      {editing ? (
+        <textarea
+          className="w-full text-sm text-gray-800 leading-relaxed bg-white/80 border border-indigo-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+          rows={Math.max(4, caption.split('\n').length + 1)}
+          value={caption}
+          onChange={e => onChange(e.target.value)}
+          autoFocus
+        />
+      ) : (
+        <p
+          className="text-sm text-gray-800 leading-relaxed whitespace-pre-line cursor-text hover:bg-white/40 rounded px-1 -mx-1 transition-colors"
+          onClick={() => setEditing(true)}
+          title="Click to edit"
+        >
+          {caption}
+        </p>
+      )}
+      {editing && (
+        <p className="text-xs text-indigo-400 mt-1.5">
+          Edits teach the AI — hit "Save Edits" to apply &amp; learn
+        </p>
+      )}
     </div>
   )
 }
 
 // ── Slot cards (template-driven) ──────────────────────────────────────────────
 
-function SlotCards({ slots, plan }) {
+function SlotCards({ slots, plan, onSlotEdit }) {
   const textSlots  = slots.text  || []
   const imageSlots = slots.image || []
   const colorSlots = slots.color || []
@@ -937,7 +1057,14 @@ function SlotCards({ slots, plan }) {
       {textSlots.length > 0 && (
         <Section title="Text Slots">
           {textSlots.map(s => (
-            <SlotCard key={s.key} label={s.key} canvaName={s.canva_name} value={plan[s.key]} type="text" />
+            <SlotCard
+              key={s.key}
+              label={s.key}
+              canvaName={s.canva_name}
+              value={plan[s.key]}
+              type="text"
+              onEdit={v => onSlotEdit(s.key, v)}
+            />
           ))}
         </Section>
       )}
@@ -961,24 +1088,26 @@ function SlotCards({ slots, plan }) {
 
 // ── Generic fallback cards ────────────────────────────────────────────────────
 
-function GenericPlanCards({ plan }) {
+function GenericPlanCards({ plan, onSlotEdit }) {
   const skip = new Set(['_template_pk', '_template_name', '_canva_template_id', '_canva_design_url', '_canva_design_id', 'social_media_caption'])
   const entries = Object.entries(plan).filter(([k]) => !skip.has(k))
   return (
     <div className="grid grid-cols-1 gap-3">
-      {entries.map(([key, value]) => (
-        <SlotCard
-          key={key}
-          label={key}
-          canvaName={key}
-          value={value}
-          type={
-            key.toLowerCase().includes('image') || key.toLowerCase().includes('cutout') ? 'image'
-            : key.toLowerCase().includes('color') ? 'color'
-            : 'text'
-          }
-        />
-      ))}
+      {entries.map(([key, value]) => {
+        const type = key.toLowerCase().includes('image') || key.toLowerCase().includes('cutout') ? 'image'
+          : key.toLowerCase().includes('color') ? 'color'
+          : 'text'
+        return (
+          <SlotCard
+            key={key}
+            label={key}
+            canvaName={key}
+            value={value}
+            type={type}
+            onEdit={type === 'text' ? v => onSlotEdit(key, v) : undefined}
+          />
+        )
+      })}
     </div>
   )
 }
@@ -996,18 +1125,34 @@ function Section({ title, children }) {
 
 // ── Individual slot card ──────────────────────────────────────────────────────
 
-function SlotCard({ label, canvaName, value, type, needsCutout }) {
-  const isImage = type === 'image'
-  const isColor = type === 'color'
-  const isUrl   = typeof value === 'string' && value.startsWith('http')
+function SlotCard({ label, canvaName, value, type, needsCutout, onEdit }) {
+  const isImage   = type === 'image'
+  const isColor   = type === 'color'
+  const isText    = type === 'text'
+  const isUrl     = typeof value === 'string' && value.startsWith('http')
+  const [editing, setEditing] = useState(false)
+
+  const lineCount = typeof value === 'string' ? value.split('\n').length : 1
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-start gap-3">
+    <div className={`bg-white rounded-xl border p-4 flex items-start gap-3 transition-colors ${editing ? 'border-indigo-300 ring-1 ring-indigo-200' : 'border-gray-200'}`}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <span className="font-semibold text-sm text-gray-800">{label}</span>
           {needsCutout && (
             <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">cutout</span>
+          )}
+          {isText && onEdit && (
+            <button
+              onClick={() => setEditing(e => !e)}
+              className={`ml-auto text-xs px-2 py-0.5 rounded font-medium transition-all ${
+                editing
+                  ? 'bg-indigo-100 text-indigo-700'
+                  : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50'
+              }`}
+            >
+              {editing ? 'Done' : 'Edit'}
+            </button>
           )}
         </div>
         <p className="text-xs text-gray-400 mb-2">
@@ -1021,8 +1166,20 @@ function SlotCard({ label, canvaName, value, type, needsCutout }) {
           </div>
         ) : isImage && isUrl ? (
           <img src={value} alt={label} className="h-24 w-auto object-cover rounded-lg border border-gray-200" onError={e => { e.target.style.display = 'none' }} />
+        ) : isText && editing && onEdit ? (
+          <textarea
+            className="w-full text-sm text-gray-900 bg-indigo-50/40 border border-indigo-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none leading-relaxed"
+            rows={Math.max(2, lineCount + 1)}
+            value={value || ''}
+            onChange={e => onEdit(e.target.value)}
+            autoFocus
+          />
         ) : (
-          <p className={`text-sm ${value ? 'text-gray-900' : 'text-gray-400 italic'} break-words whitespace-pre-line`}>
+          <p
+            className={`text-sm ${value ? 'text-gray-900' : 'text-gray-400 italic'} break-words whitespace-pre-line ${isText && onEdit ? 'cursor-text hover:bg-gray-50 rounded px-1 -mx-1 transition-colors' : ''}`}
+            onClick={isText && onEdit ? () => setEditing(true) : undefined}
+            title={isText && onEdit ? 'Click to edit' : undefined}
+          >
             {value || '(empty)'}
           </p>
         )}

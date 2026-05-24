@@ -498,9 +498,36 @@ def generate_social_post_task(self, article_id: int, options: dict = None):
         _log('template', f"Selected: {template.name if template else 'Generic (no templates in DB)'}")
 
         # ── 5. SocialPostCrew ─────────────────────────────────────────────────
-        _log('crew', 'Starting SocialPostCrew...')
+        # Fetch recent human corrections to inject as few-shot learning examples
+        feedback_examples = []
+        try:
+            from cms.models import SocialPostFeedback
+            template_pk = template.pk if template else None
+            qs = SocialPostFeedback.objects.filter(
+                tenant_id=article.tenant_id,
+            ).order_by('-created_at')[:10]
+            for fb in qs:
+                feedback_examples.extend(fb.corrections or [])
+            feedback_examples = feedback_examples[:8]
+        except Exception as _fb_exc:
+            logger.warning('[SocialTask] Could not load feedback examples: %s', _fb_exc)
+
+        # Detect quote posts — exempt quote slots from word-limit truncation
+        is_quote = (
+            content_type_hint == 'quote_card'
+            or (template and getattr(template, 'content_type', '') == 'quote_card')
+        )
+        post_type = 'quote' if is_quote else (content_type_hint or '')
+
+        _log('crew', f'Starting SocialPostCrew (post_type={post_type!r}, feedback examples: {len(feedback_examples)})...')
         crew = SocialPostCrew()
-        plan = crew.run_pipeline(context, vibe_override=vibe_override, template=template)
+        plan = crew.run_pipeline(
+            context,
+            vibe_override=vibe_override,
+            template=template,
+            post_type=post_type,
+            feedback_examples=feedback_examples or None,
+        )
         _log('crew', f"Crew complete — slots: {[k for k in plan if not k.startswith('_')]}")
 
         # ── 6. Image acquisition ──────────────────────────────────────────────

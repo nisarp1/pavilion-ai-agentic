@@ -269,6 +269,8 @@ class SocialPostCrew:
         source_context: dict,
         vibe_override: str = '',
         template=None,           # CanvaTemplate instance or None (generic mode)
+        post_type: str = '',     # 'quote' triggers full-quote preservation rules
+        feedback_examples: list = None,  # [{slot, original, correction}] from SocialPostFeedback
     ) -> dict:
         """
         Run the 3-agent sequential pipeline.
@@ -278,6 +280,9 @@ class SocialPostCrew:
                              topic, raw_content, facts (list of str), thumbnail_url
             vibe_override:   Optional tone instruction, e.g. "aggressive", "celebratory"
             template:        CanvaTemplate model instance, or None for generic mode
+            post_type:       Detected post type (e.g. 'quote', 'quote_card', 'fact_check').
+                             When 'quote' / 'quote_card', full-quote preservation rules apply.
+            feedback_examples: Recent human corrections for self-learning injection.
 
         Returns:
             dict with keys matching template slot keys + _template_pk, _template_name,
@@ -293,6 +298,77 @@ class SocialPostCrew:
         # this graphic to Instagram/Facebook/Twitter. It is NOT a Canva template slot.
         expected_keys = _all_slot_keys(template) + ['social_media_caption']
         vibe_block   = f'\n\nVIBE / TONE INSTRUCTION: {vibe_override}' if vibe_override else ''
+
+        is_quote = post_type in ('quote', 'quote_card')
+
+        # ── Quote-specific instruction overrides ──────────────────────────────
+        quote_journalist_block = ''
+        quote_localizer_block  = ''
+        quote_art_block        = ''
+        if is_quote:
+            quote_journalist_block = (
+                "\n\n⚠️  QUOTE POST RULES (highest priority — override other instructions):\n"
+                "1. Identify the SINGLE most powerful quote in the source content.\n"
+                "2. Extract it VERBATIM and COMPLETELY — do NOT truncate, summarise, or paraphrase.\n"
+                "   If the quote runs long, include every word. A quote is not a headline.\n"
+                "3. Identify the speaker's full name and their role/context.\n"
+                "4. For the 'social_media_caption_EN', structure it as:\n"
+                "   • Line 1: The FULL quote in English, inside \" \" marks.\n"
+                "     — [Speaker name, Role]\n"
+                "   • 1-2 sentences of context that make the quote land harder.\n"
+                "   • Engagement question + hashtags.\n"
+                "5. For any slot named Quote, Quote_Text, Statement, or similar — "
+                "use the full verbatim quote. max_words does NOT apply to quote content."
+            )
+            quote_localizer_block = (
+                "\n\n⚠️  QUOTE POST RULES — LOCALISATION (highest priority):\n"
+                "1. For every quote slot (Quote, Quote_Text, Statement, or similar):\n"
+                "   • Localise the FULL quote into authentic, flowing Malayalam.\n"
+                "   • You may re-phrase for natural Malayalam flow but you MUST preserve "
+                "the complete meaning, emotion, and all specific details from the original.\n"
+                "   • Do NOT shorten the quote to fit max_words. Quotes are EXEMPT from "
+                "word-count limits — length accuracy matters more than brevity.\n"
+                "   • Keep the speaker's name and any team/club/score references intact.\n"
+                "2. For 'social_media_caption', structure it as:\n"
+                "   • Open with the FULL localised quote inside Malayalam quotation marks "
+                "(\" \") — this is the centrepiece, never cut it short.\n"
+                "   • Follow with: — [Speaker name in Malayalam/English as fits naturally]\n"
+                "   • 1-2 sentences of punchy context in Kerala sports-fan voice.\n"
+                "   • End with an engagement question + hashtags (mix Malayalam + English).\n"
+                "   Example structure:\n"
+                '   "ഞാൻ ഈ ടീമിനുവേണ്ടി സർവ്വസ്വവും കൊടുക്കും, ആ വാഗ്ദാനം '
+                'ഇന്നും നിലനിൽക്കുന്നു."\n'
+                "   — Virat Kohli\n"
+                "   ഈ വാക്കുകൾ ഇന്ത്യൻ ക്രിക്കറ്റ് ആരാധകർ ഒരിക്കലും "
+                "മറക്കില്ല. നിങ്ങൾക്ക് എന്ത് തോന്നുന്നു? "
+                "#ViratKohli #TeamIndia"
+            )
+            quote_art_block = (
+                "\n\n⚠️  QUOTE POST RULES — ART DIRECTION:\n"
+                "Quote slots (Quote, Quote_Text, Statement, or similar) are EXEMPT from "
+                "max_words limits. Do NOT truncate them under any circumstances. "
+                "For all other slots, apply word limits as normal."
+            )
+
+        # Build feedback block from past human corrections
+        feedback_block = ''
+        if feedback_examples:
+            lines = [
+                '\n\nPAST CORRECTIONS FROM THE SOCIAL MEDIA MANAGER — study these carefully '
+                'and apply the same style improvements to your output:\n',
+            ]
+            for i, ex in enumerate(feedback_examples[:8], 1):
+                slot   = ex.get('slot', '?')
+                orig   = (ex.get('original') or '').strip()
+                corr   = (ex.get('correction') or '').strip()
+                if orig and corr and orig != corr:
+                    lines.append(
+                        f'[{i}] Slot "{slot}"\n'
+                        f'    AI wrote:       {orig[:200]}\n'
+                        f'    Editor changed: {corr[:200]}'
+                    )
+            if len(lines) > 1:
+                feedback_block = '\n'.join(lines)
 
         logger.info(
             '[SocialPostCrew] Starting pipeline | topic=%r | template=%s | vibe=%r',
@@ -330,6 +406,7 @@ class SocialPostCrew:
                 "   • End with ONE fan engagement question + 3-5 tight hashtags.\n"
                 "   • Tone: how a passionate Kerala cricket fan would post, NOT a press release.\n"
                 "   • DO NOT start with generic phrases like 'Big news!' or 'Check this out!'.\n\n"
+                f"{quote_journalist_block}\n\n"
                 "Output a JSON object whose keys are EXACTLY the slot keys listed above "
                 "(text slots suffixed with _EN, image and color slots as-is) PLUS "
                 "'social_media_caption_EN'.\n"
@@ -367,6 +444,8 @@ class SocialPostCrew:
                 "the Malayalam from scratch using the same facts.\n"
                 "- Keep all player names, team names, and numbers from the English version.\n"
                 "- End with the same engagement question and hashtags (mix Malayalam + English tags).\n\n"
+                f"{quote_localizer_block}\n\n"
+                f"{feedback_block}\n\n"
                 "Output a JSON object with EXACTLY these keys (no _EN suffix on text slots): "
                 f"{json.dumps(expected_keys)}\n"
                 "No markdown fences. Output only the JSON object."
@@ -392,6 +471,7 @@ class SocialPostCrew:
                 "otherwise choose an appropriate colour).\n"
                 "3. Confirm every IMAGE slot has a non-empty English search query.\n"
                 "4. Output a SINGLE strict JSON object — no markdown fences, no extra keys.\n\n"
+                f"{quote_art_block}\n\n"
                 f"Required keys exactly: {json.dumps(expected_keys)}\n\n"
                 "Example:\n"
                 '{"Headline": "കോലി സെഞ്ച്വറി", "Stat_1": "ഓട്ടം: 142", '

@@ -647,3 +647,33 @@ class ArticleVersion(models.Model):
 
     def __str__(self):
         return f"{self.article.title} v{self.version_number}"
+
+
+class SocialPostFeedback(models.Model):
+    """
+    Records human corrections to AI-generated social post content.
+    The pipeline queries this table before each run to learn from past edits.
+    """
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='social_post_feedback')
+    article = models.ForeignKey(
+        Article, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='social_post_feedback',
+    )
+    template_pk = models.IntegerField(null=True, blank=True)
+    template_name = models.CharField(max_length=200, blank=True)
+    original_plan = models.JSONField()
+    edited_plan = models.JSONField()
+    original_caption = models.TextField(blank=True)
+    edited_caption = models.TextField(blank=True)
+    # List of {slot, original, correction} dicts — one per changed field
+    corrections = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['tenant', 'template_pk', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"Feedback for {self.article} ({len(self.corrections or [])} corrections)"

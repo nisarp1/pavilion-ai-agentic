@@ -1381,7 +1381,14 @@ class ArticleViewSet(viewsets.ModelViewSet):
             'tenant_id':         getattr(request.tenant, 'pk', None),
         }
 
-        task = generate_social_post_task.apply_async(args=[article.pk, options], queue='social')
+        try:
+            task = generate_social_post_task.apply_async(args=[article.pk, options], queue='social')
+        except Exception as broker_exc:
+            _logger.error('[SocialPost] Broker unreachable for article %d: %s', article.pk, broker_exc)
+            return Response(
+                {'error': 'Task broker unavailable. Check REDIS_URL configuration.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         article.social_post_status          = 'queued'
         article.social_post_celery_task_id  = task.id
         article.save(update_fields=['social_post_status', 'social_post_celery_task_id'])
@@ -2348,7 +2355,14 @@ class SocialStudioGenerateView(APIView):
             'tenant_id':          getattr(request.tenant, 'pk', None),
         }
 
-        task = generate_social_post_task.apply_async(args=[article.pk, options], queue='social')
+        try:
+            task = generate_social_post_task.apply_async(args=[article.pk, options], queue='social')
+        except Exception as broker_exc:
+            logger.error('[SocialStudio] Broker unreachable for article %s: %s', article.pk, broker_exc)
+            return Response(
+                {'error': 'Task broker unavailable. Check REDIS_URL configuration.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         article.social_post_status         = 'queued'
         article.social_post_celery_task_id = task.id
         article.canva_export_log           = []

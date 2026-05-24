@@ -188,6 +188,13 @@ STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 WHITENOISE_USE_FINDERS = True
 WHITENOISE_AUTOREFRESH = True
 
+def _whitenoise_no_cache_index(headers, path, url):
+    if path.endswith('index.html'):
+        headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        headers['Pragma'] = 'no-cache'
+
+WHITENOISE_ADD_HEADERS_FUNCTION = _whitenoise_no_cache_index
+
 # CSRF trusted origins
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
     'https://newsai.pavilionend.in',

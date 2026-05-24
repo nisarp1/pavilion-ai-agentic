@@ -291,6 +291,19 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_BROKER_USE_SSL = {'ssl_cert_reqs': 'none'} if _redis_url.startswith('rediss://') else None
 CELERY_REDIS_BACKEND_USE_SSL = {'ssl_cert_reqs': 'none'} if _redis_url.startswith('rediss://') else None
 
+# Task routing — keep heavy pipeline tasks off the default queue so
+# RSS/publish tasks aren't blocked behind 10-minute video/social jobs.
+CELERY_TASK_ROUTES = {
+    'agents.tasks.run_reel_pipeline_task':       {'queue': 'pipeline'},
+    'agents.tasks.backfill_reel_video_url':      {'queue': 'pipeline'},
+    'video_studio.tasks.render_video_task':      {'queue': 'pipeline'},
+    'video_studio.tasks.check_render_status':    {'queue': 'pipeline'},
+    'agents.social_tasks.*':                     {'queue': 'social'},
+    'rss_fetcher.tasks.*':                       {'queue': 'default'},
+    'workers.tasks.*':                           {'queue': 'default'},
+}
+CELERY_TASK_DEFAULT_QUEUE = 'default'
+
 # Celery Beat Schedule
 # Fetch interval in minutes (default: 5 minutes for more frequent updates)
 RSS_FETCH_INTERVAL_MINUTES = env.int('RSS_FETCH_INTERVAL_MINUTES', default=5)

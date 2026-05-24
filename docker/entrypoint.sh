@@ -40,7 +40,7 @@ elif [ "$MODE" = "worker" ]; then
         celery -A pavilion_gemini worker \
         --loglevel=info \
         --concurrency=4 \
-        -Q default,social,celery
+        -Q default,social,pipeline,celery
 
 elif [ "$MODE" = "beat" ]; then
     echo "Starting Celery beat (via celery_runner)..."

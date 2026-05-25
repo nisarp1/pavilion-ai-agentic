@@ -18,6 +18,12 @@ docker-compose -f docker-compose.dev.yml exec django python manage.py createsupe
 docker-compose -f docker-compose.dev.yml exec django python manage.py shell
 ```
 
+**After changing `backend/requirements.txt`** always rebuild with `--no-cache` (Docker caches the pip layer):
+```bash
+docker build --no-cache -t pavilion-ai-agentic-celery -f docker/Dockerfile.dev .
+docker build --no-cache -t pavilion-ai-agentic-django  -f docker/Dockerfile.dev .
+```
+
 ### Backend (Django)
 ```bash
 cd backend
@@ -26,8 +32,8 @@ python manage.py migrate
 python manage.py test                               # All tests
 python manage.py test cms.tests.test_models         # Single test module
 
-# Celery (separate terminals)
-celery -A pavilion_gemini worker --loglevel=info
+# Celery (separate terminals) — MUST include -Q flag so social/pipeline tasks are consumed
+celery -A pavilion_gemini worker --loglevel=info -Q default,social,pipeline,celery
 celery -A pavilion_gemini beat --loglevel=info --scheduler celery.beat.PersistentScheduler
 celery -A pavilion_gemini flower --port=5555
 ```
@@ -121,3 +127,14 @@ Standalone Express service. The Remotion bundle is pre-built into the Docker ima
 | `VITE_GOOGLE_CLIENT_ID` | Google OAuth client ID |
 
 Copy `.env.example` to `.env` in the repo root and `backend/.env` before first run.
+
+**Note on local env vars:** `docker-compose.dev.yml` does NOT set `GEMINI_API_KEY`, `VERTEX_PROJECT`, or `GEMINI_MODEL`. These are loaded automatically from `backend/.env` by `environ.Env.read_env()` in `settings.py` at Django/Celery startup.
+
+## Local Dev Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Social Studio returns 500 / proxy error | Django container is down | `docker start pavilion-django-dev` |
+| Social post stuck on "queued" forever | Celery missing `-Q social` flag | Check `docker inspect pavilion-celery-dev --format '{{json .Config.Cmd}}'`; recreate with full `-Q default,social,pipeline,celery` |
+| `No module named 'crewai'` in Celery logs | Stale Docker image (pre-crewai commit) | `docker exec pavilion-celery-dev pip install "crewai>=1.14.4" "litellm>=1.40.0"` (temp), then rebuild with `--no-cache` |
+| "Given token not valid for any token type" in UI | JWT tokens expired (>7 days since last login) | Clear localStorage in browser devtools, log in again |

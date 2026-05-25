@@ -173,7 +173,40 @@ export default function SocialPostGenerator() {
   }, [])
 
   useEffect(() => {
-    if (!articleIdParam) return
+    if (!articleIdParam) {
+      // "+New Social Post" navigated here without an article — reset everything
+      clearInterval(pollRef.current)
+      // Source / prompt
+      setArticleId('')
+      setSelectedArticle(null)
+      setSelectedVideo(null)
+      setSelectedWebStory(null)
+      setContentType('article')
+      setUserPrompt('')
+      setSelectedPostType(null)
+      setAttachedImage(null)
+      setExtractedContext(null)
+      setExtractError('')
+      setImageContentTypeHint('')
+      setImageSpeakers([])
+      // Pipeline
+      setStatus('idle')
+      setPlan(null)
+      setLog([])
+      setError('')
+      setGenerating(false)
+      // Edits
+      setEditedPlan(null)
+      setEditedCaption(null)
+      setSaveStatus(null)
+      // Advanced
+      setSelectedTemplateId('')
+      setSheetUrlInput('')
+      setSheetLinkError('')
+      setAdvancedOpen(false)
+      setSourceOpen(true)
+      return
+    }
     setArticleId(articleIdParam)
 
     api.get(`articles/${articleIdParam}/social_post_status/`).then(r => {

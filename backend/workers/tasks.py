@@ -624,11 +624,12 @@ def generate_audio_for_article(article, voice_name='chirp'):
     Returns:
         bool: True if audio was generated successfully, False otherwise
     """
-    from google.cloud import texttospeech  # lazy — gRPC init is slow at startup
-    if not TTS_AVAILABLE:
+    try:
+        from google.cloud import texttospeech  # lazy — gRPC init is slow at startup
+    except ImportError:
         logger.warning("Google Cloud Text-to-Speech not available. Skipping audio generation.")
         return False
-    
+
     # Check if Google Cloud service account credentials are configured
     # Google Cloud TTS requires service account credentials (JSON key file)
     if not os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
@@ -1346,11 +1347,12 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
           On success: {'success': True, 'word_timings': [...], 'audio_content': bytes}
           On failure: False
     """
-    from google.cloud import texttospeech  # lazy — gRPC init is slow at startup
-    if not TTS_AVAILABLE:
+    try:
+        from google.cloud import texttospeech  # lazy — gRPC init is slow at startup
+    except ImportError:
         logger.warning("Google Cloud Text-to-Speech not available. Skipping reel audio generation.")
         return False
-    
+
     if not article.instagram_reel_script or not article.instagram_reel_script.strip():
         logger.warning(f"Article {article.id} has no reel script. Skipping audio generation.")
         return False

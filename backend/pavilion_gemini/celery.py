@@ -2,10 +2,6 @@
 Celery configuration for pavilion_gemini project.
 """
 import os
-import time as _time
-_t0 = _time.monotonic()
-def _ts(label):
-    print(f'[CELERY_TIMING] +{_time.monotonic()-_t0:.1f}s {label}', flush=True)
 from celery import Celery
 
 # Set the default Django settings module for the 'celery' program.
@@ -15,21 +11,16 @@ app = Celery('pavilion_gemini')
 
 # Using a string here means the worker doesn't have to serialize
 # the configuration object to child processes.
-_ts('before config_from_object')
 app.config_from_object('django.conf:settings', namespace='CELERY')
-_ts('after config_from_object')
 
 # Load task modules from all registered Django apps.
 # Wrap in try-except to handle missing broker or other startup issues
 try:
-    _ts('before autodiscover_tasks')
     app.autodiscover_tasks()
-    _ts('after autodiscover_tasks')
 except Exception as e:
     # If autodiscover fails (e.g., no broker configured), continue
     # This is acceptable for WSGI deployments where Celery tasks are not needed
     import warnings
-    _ts(f'autodiscover_tasks FAILED: {e}')
     warnings.warn(f"Celery autodiscover failed: {e}. Tasks will not be available.")
 
 @app.task(bind=True, ignore_result=True)

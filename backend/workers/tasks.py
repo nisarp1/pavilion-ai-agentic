@@ -1,12 +1,6 @@
 """
 Celery tasks for article generation and processing.
 """
-import time as _wt
-_wt0 = _wt.monotonic()
-def _wts(label):
-    print(f'[WORKERS_TASKS] +{_wt.monotonic()-_wt0:.1f}s {label}', flush=True)
-
-_wts('start')
 try:
     from celery import shared_task
     CELERY_AVAILABLE = True
@@ -19,10 +13,8 @@ except ImportError:
         return decorator
 
 from django.utils import timezone
-_wts('after django.utils')
 from django.conf import settings
 from cms.models import Article, Category
-_wts('after cms.models')
 from slugify import slugify
 import logging
 import requests
@@ -31,27 +23,20 @@ from urllib.parse import urljoin, urlparse
 from io import BytesIO
 from django.core.files.base import ContentFile
 from PIL import Image
-_wts('after PIL')
 import re
 import json
 import os
 import html
 import time
-from cms.video_generator import generate_sports_video, get_did_status, upload_to_blob
-_wts('after cms.video_generator')
+# cms.video_generator imports google.cloud.texttospeech which initializes gRPC
+# and takes ~120s in Cloud Run's VPC. Import lazily inside task_generate_sports_video.
 
 logger = logging.getLogger(__name__)
 
-# Google Cloud Text-to-Speech
-try:
-    _wts('before google.cloud.texttospeech')
-    from google.cloud import texttospeech
-    TTS_AVAILABLE = True
-    _wts('after google.cloud.texttospeech')
-except ImportError:
-    TTS_AVAILABLE = False
-    _wts('google.cloud.texttospeech NOT AVAILABLE')
-    logger.warning("google-cloud-texttospeech not available. Audio generation will be disabled.")
+# Google Cloud Text-to-Speech — imported lazily inside tasks that use it (gRPC init is slow).
+TTS_AVAILABLE = True  # assume available; actual import happens inside tasks
+
+GEMINI_MODEL = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')
 
 GEMINI_MODEL = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')
 
@@ -631,16 +616,17 @@ def generate_audio_for_article(article, voice_name='chirp'):
     """
     Generate audio for article body using Google Cloud Text-to-Speech.
     Uses Malayalam (ml-IN) voices with an energetic news anchor style.
-    
+
     Args:
         article: Article instance with body content
         voice_name: Voice name to use (default: 'karthika')
-                    Options: 'karthika', 'ml-IN-Wavenet-A', 'ml-IN-Wavenet-B', 
+                    Options: 'karthika', 'ml-IN-Wavenet-A', 'ml-IN-Wavenet-B',
                             'ml-IN-Standard-A', 'ml-IN-Standard-B', etc.
-    
+
     Returns:
         bool: True if audio was generated successfully, False otherwise
     """
+    from google.cloud import texttospeech  # lazy — gRPC init is slow at startup
     if not TTS_AVAILABLE:
         logger.warning("Google Cloud Text-to-Speech not available. Skipping audio generation.")
         return False
@@ -1362,6 +1348,7 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
           On success: {'success': True, 'word_timings': [...], 'audio_content': bytes}
           On failure: False
     """
+    from google.cloud import texttospeech  # lazy — gRPC init is slow at startup
     if not TTS_AVAILABLE:
         logger.warning("Google Cloud Text-to-Speech not available. Skipping reel audio generation.")
         return False
@@ -1587,6 +1574,7 @@ def task_generate_sports_video(self, article_id, format="portrait", script_conte
     Celery task to generate sports video for an article.
     Updated to save status and results directly to the Article model.
     """
+    from cms.video_generator import generate_sports_video, get_did_status, upload_to_blob
     try:
         article = Article.objects.get(id=article_id)
         

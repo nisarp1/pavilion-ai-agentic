@@ -3,8 +3,9 @@ import requests
 import time
 import logging
 from django.conf import settings
-from google.cloud import texttospeech
 from vercel_blob import put
+# google.cloud.texttospeech initializes gRPC on import and takes ~120s in Cloud Run.
+# Import it lazily inside generate_audio() only.
 
 logger = logging.getLogger(__name__)
 
@@ -44,26 +45,27 @@ def generate_audio(script_content):
     Generate Malayalam audio using Google Cloud TTS (Neural2/Wavenet).
     """
     try:
+        from google.cloud import texttospeech
         client = texttospeech.TextToSpeechClient()
-        
+
         input_text = texttospeech.SynthesisInput(text=script_content)
-        
+
         voice = texttospeech.VoiceSelectionParams(
             language_code="ml-IN",
             name="ml-IN-Wavenet-B", # High quality Wavenet voice
             ssml_gender=texttospeech.SsmlVoiceGender.MALE
         )
-        
+
         audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.MP3,
             pitch=1.0,
             speaking_rate=1.05 # Slightly faster for 'high-energy'
         )
-        
+
         response = client.synthesize_speech(
             input=input_text, voice=voice, audio_config=audio_config
         )
-        
+
         return response.audio_content
     except Exception as e:
         logger.error(f"Error generating audio via Google TTS: {e}", exc_info=True)

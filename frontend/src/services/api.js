@@ -93,6 +93,9 @@ api.interceptors.response.use(
         localStorage.removeItem('tenant_id')
         if (window.location.pathname !== '/login') {
           window.location.href = '/login'
+          // Return a promise that never settles — the page is navigating away,
+          // so we don't want any component catch-blocks showing stale errors.
+          return new Promise(() => {})
         }
         return Promise.reject(refreshError)
       }

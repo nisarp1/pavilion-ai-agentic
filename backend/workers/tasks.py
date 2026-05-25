@@ -354,7 +354,6 @@ def generate_article_with_gemini(article, mode='core'):
         dict: A dictionary with generated content fields
     """
     try:
-        from agents.gemini_client import get_client as _gc, get_model_name as _gm
         # Get original English content for context
         original_title = article.title  # Keep original for slug generation
         original_summary = article.summary if article.summary and article.summary.strip() else "No summary provided"

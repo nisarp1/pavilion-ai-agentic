@@ -127,9 +127,12 @@ def call_vertex_ai(prompt: str, model: str = 'gemini-2.5-flash', location: str =
 def configure_gemini():
     """Return a sentinel truthy value so callers can fall back to RSS when Gemini is unavailable."""
     try:
-        from agents.gemini_client import get_client
-        get_client()   # raises if neither Vertex AI nor API key is configured
-        return True    # callers only test truthiness
+        import os
+        vertex_project = os.environ.get('VERTEX_PROJECT') or os.environ.get('VERTEXAI_PROJECT', '')
+        api_key = os.environ.get('GEMINI_API_KEY', '')
+        if not vertex_project and not api_key:
+            raise RuntimeError('Neither VERTEX_PROJECT nor GEMINI_API_KEY is configured')
+        return True
     except Exception as exc:
         logger.warning('Gemini not available — agentic trends will use RSS fallback only: %s', exc)
         return None

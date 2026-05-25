@@ -17,6 +17,11 @@ import json
 import re
 import logging
 
+# Prevent LiteLLM from fetching model cost data from GitHub at import time.
+# Without this, `from crewai import ...` can block for up to 5 s (or indefinitely
+# when the Cloud Run VPC drops packets to raw.githubusercontent.com).
+os.environ.setdefault('LITELLM_LOCAL_MODEL_COST_MAP', 'True')
+
 from crewai import Agent, Task, Crew, Process
 
 logger = logging.getLogger(__name__)

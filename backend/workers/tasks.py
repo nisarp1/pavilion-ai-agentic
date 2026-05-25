@@ -38,8 +38,6 @@ TTS_AVAILABLE = True  # assume available; actual import happens inside tasks
 
 GEMINI_MODEL = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')
 
-GEMINI_MODEL = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')
-
 
 def fetch_featured_image_from_url(article_url):
     """

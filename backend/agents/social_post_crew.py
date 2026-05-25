@@ -189,7 +189,11 @@ class SocialPostCrew:
     def __init__(self):
         model_name = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash-lite')
         if not model_name.startswith('gemini/') and not model_name.startswith('vertex_ai/'):
-            model_name = f'gemini/{model_name}'
+            # Use vertex_ai/ prefix when Vertex AI is configured (Cloud Run production);
+            # fall back to gemini/ prefix (AI Studio) only if no VERTEX_PROJECT is set.
+            vertex_project = os.environ.get('VERTEX_PROJECT') or os.environ.get('VERTEXAI_PROJECT', '')
+            prefix = 'vertex_ai/' if vertex_project else 'gemini/'
+            model_name = f'{prefix}{model_name}'
         self.llm_model = model_name
 
     # ── Agents ────────────────────────────────────────────────────────────────

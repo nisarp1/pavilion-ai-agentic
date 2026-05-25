@@ -15,6 +15,7 @@ import re
 
 import requests as _requests
 from celery import shared_task
+from celery.exceptions import SoftTimeLimitExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -415,11 +416,10 @@ def _scrape_social_url(url: str, social_data_key: str = '') -> str:
 
 @shared_task(
     bind=True,
-    max_retries=1,
-    default_retry_delay=60,
-    time_limit=600,
-    acks_late=True,
-    reject_on_worker_lost=True,
+    max_retries=0,
+    time_limit=300,
+    soft_time_limit=270,
+    acks_late=False,
 )
 def generate_social_post_task(self, article_id: int, options: dict = None):
     """
@@ -432,10 +432,13 @@ def generate_social_post_task(self, article_id: int, options: dict = None):
       canva_template_id (int)  — CanvaTemplate PK; None = auto-select
       tenant_id         (int)  — used for per-tenant SocialData API key lookup
     """
-    # Close any stale inherited DB connections from the prefork parent so this
-    # worker gets a fresh connection (prevents CONN_MAX_AGE hang on first query).
+    logger.info('[SocialTask] >>> TASK STARTED for article %d (request_id=%s)', article_id, self.request.id)
+
+    # Close any stale inherited DB connections from the prefork parent.
+    logger.info('[SocialTask] >>> Closing old DB connections...')
     from django.db import close_old_connections
     close_old_connections()
+    logger.info('[SocialTask] >>> DB connections cleared')
 
     options            = options or {}
     vibe_override      = options.get('vibe_override', '')
@@ -445,14 +448,20 @@ def generate_social_post_task(self, article_id: int, options: dict = None):
     content_type_hint  = options.get('content_type_hint', '')
 
     try:
+        logger.info('[SocialTask] >>> Importing cms.models.Article...')
         from cms.models import Article
+        logger.info('[SocialTask] >>> Importing agents.context_analyzer...')
         from agents.context_analyzer import analyze_context
+        logger.info('[SocialTask] >>> Importing agents.social_post_crew...')
         from agents.social_post_crew import SocialPostCrew
+        logger.info('[SocialTask] >>> All imports done — fetching article from DB...')
 
         article = Article.objects.get(pk=article_id)
+        logger.info('[SocialTask] >>> Article %d fetched (status=%s), saving running status...', article_id, article.status)
         article.social_post_status = 'running'
         article.canva_export_log   = []
         article.save(update_fields=['social_post_status', 'canva_export_log'])
+        logger.info('[SocialTask] >>> Status set to running')
 
         def _log(stage: str, msg: str, **kw):
             entry = {'stage': stage, 'message': msg, **kw}
@@ -627,14 +636,25 @@ def generate_social_post_task(self, article_id: int, options: dict = None):
             'slot_keys':  [k for k in plan if not k.startswith('_')],
         }
 
-    except Article.DoesNotExist:
-        logger.error('[SocialTask] Article %d not found', article_id)
-        return {'status': 'error', 'message': 'Article not found'}
-
-    except Exception as exc:
-        logger.error('[SocialTask] Article %d failed: %s', article_id, exc, exc_info=True)
+    except SoftTimeLimitExceeded:
+        logger.error('[SocialTask] Article %d — soft time limit exceeded; marking failed', article_id)
         try:
-            Article.objects.filter(pk=article_id).update(social_post_status='failed')
+            from cms.models import Article as _Article
+            _Article.objects.filter(pk=article_id).update(social_post_status='failed')
         except Exception:
             pass
-        raise self.retry(exc=exc)
+        return {'status': 'error', 'message': 'Task timed out'}
+
+    except Exception as exc:
+        # Guard: Article may not be imported if exception happened during imports
+        _article_not_found = type(exc).__name__ == 'DoesNotExist'
+        if _article_not_found:
+            logger.error('[SocialTask] Article %d not found', article_id)
+            return {'status': 'error', 'message': 'Article not found'}
+        logger.error('[SocialTask] Article %d failed: %s', article_id, exc, exc_info=True)
+        try:
+            from cms.models import Article as _Article
+            _Article.objects.filter(pk=article_id).update(social_post_status='failed')
+        except Exception:
+            pass
+        return {'status': 'error', 'message': str(exc)}

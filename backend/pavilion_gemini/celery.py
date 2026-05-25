@@ -27,3 +27,16 @@ except Exception as e:
 def debug_task(self):
     print(f'Request: {self.request!r}')
 
+
+# Close inherited DB connections after each fork so every worker pool process
+# gets its own fresh connection.  Without this, forked children share the
+# parent's socket file-descriptor and DB reads hang indefinitely when
+# CONN_MAX_AGE > 0.
+from celery.signals import worker_process_init  # noqa: E402
+
+@worker_process_init.connect
+def close_db_connections_on_fork(**kwargs):
+    from django.db import connections
+    for conn in connections.all():
+        conn.close()
+

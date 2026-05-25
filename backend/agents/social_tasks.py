@@ -413,7 +413,14 @@ def _scrape_social_url(url: str, social_data_key: str = '') -> str:
 
 # ── Main Celery task ──────────────────────────────────────────────────────────
 
-@shared_task(bind=True, max_retries=1, default_retry_delay=60, time_limit=600)
+@shared_task(
+    bind=True,
+    max_retries=1,
+    default_retry_delay=60,
+    time_limit=600,
+    acks_late=True,
+    reject_on_worker_lost=True,
+)
 def generate_social_post_task(self, article_id: int, options: dict = None):
     """
     Generate a Canva-ready Social Post plan for an Article.
@@ -425,9 +432,10 @@ def generate_social_post_task(self, article_id: int, options: dict = None):
       canva_template_id (int)  — CanvaTemplate PK; None = auto-select
       tenant_id         (int)  — used for per-tenant SocialData API key lookup
     """
-    from cms.models import Article
-    from agents.context_analyzer import analyze_context
-    from agents.social_post_crew import SocialPostCrew
+    # Close any stale inherited DB connections from the prefork parent so this
+    # worker gets a fresh connection (prevents CONN_MAX_AGE hang on first query).
+    from django.db import close_old_connections
+    close_old_connections()
 
     options            = options or {}
     vibe_override      = options.get('vibe_override', '')
@@ -437,6 +445,10 @@ def generate_social_post_task(self, article_id: int, options: dict = None):
     content_type_hint  = options.get('content_type_hint', '')
 
     try:
+        from cms.models import Article
+        from agents.context_analyzer import analyze_context
+        from agents.social_post_crew import SocialPostCrew
+
         article = Article.objects.get(pk=article_id)
         article.social_post_status = 'running'
         article.canva_export_log   = []

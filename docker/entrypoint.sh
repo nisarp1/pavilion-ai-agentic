@@ -36,9 +36,13 @@ if [ "$MODE" = "web" ]; then
 
 elif [ "$MODE" = "worker" ]; then
     echo "Starting Celery worker (via celery_runner)..."
+    # --pool=threads: avoids os.fork() which causes grpcio C-extension to hang in
+    # Cloud Run's VPC. Social/pipeline tasks are IO-bound (LLM API calls) so threads
+    # perform identically to prefork for our workload, with no fork-related startup hang.
     exec python3 /app/docker/celery_runner.py \
         celery -A pavilion_gemini worker \
         --loglevel=info \
+        --pool=threads \
         --concurrency=4 \
         -Q default,social,pipeline,celery
 

@@ -238,7 +238,7 @@ export default function SocialPostGenerator() {
       setImageSpeakers(r.data.speakers || [])
     } catch (e) {
       console.warn('Image context extraction failed:', e)
-      const msg = e.response?.data?.error || e.message || 'Vision API error'
+      const msg = e.response?.data?.error?.message || e.response?.data?.detail || e.message || 'Vision API error'
       setExtractError(msg)
       setExtractedContext('')
     } finally {
@@ -324,7 +324,7 @@ export default function SocialPostGenerator() {
       }
       startPolling(aid)
     } catch (err) {
-      setError('Failed to start: ' + (err.response?.data?.error || err.message))
+      setError('Failed to start: ' + (err.response?.data?.error?.message || err.response?.data?.detail || err.message))
       setGenerating(false)
       setStatus('idle')
     }
@@ -373,7 +373,7 @@ export default function SocialPostGenerator() {
       setCanvaTemplates(r.data.results || r.data)
       setSheetUrlInput('')
     } catch (err) {
-      setSheetLinkError(err.response?.data?.detail || 'Failed to save sheet URL.')
+      setSheetLinkError(err.response?.data?.error?.message || err.response?.data?.detail || 'Failed to save sheet URL.')
     } finally {
       setLinkingSheet(false)
     }

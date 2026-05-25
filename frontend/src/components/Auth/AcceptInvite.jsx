@@ -29,7 +29,7 @@ function AcceptInvite() {
         dispatch(fetchTenants())
         setTimeout(() => navigate('/'), 3000)
       } catch (err) {
-        setError(err.response?.data?.error || 'Failed to accept invitation')
+        setError(err.response?.data?.error?.message || response?.data?.detail || 'Failed to accept invitation')
         setStatusMsg('error')
       }
     }

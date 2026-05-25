@@ -27,7 +27,7 @@ function InviteUser() {
       setMessage(response.data.message)
       setEmail('')
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to send invitation')
+      setError(err.response?.data?.error?.message || response?.data?.detail || 'Failed to send invitation')
     } finally {
       setLoading(false)
     }

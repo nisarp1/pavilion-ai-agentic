@@ -109,7 +109,7 @@ function VoiceoverTab({ plan, onPlanRefresh }) {
         showSuccess('ElevenLabs audio ready — render will use this track')
       }
     } catch (err) {
-      const msg = err.response?.data?.error || 'ElevenLabs generation failed'
+      const msg = err.response?.data?.error?.message || response?.data?.detail || 'ElevenLabs generation failed'
       setElError(msg); showError(msg)
     } finally { setElLoading(false) }
   }, [plan.article_id, activeScript, refreshPlan])
@@ -129,7 +129,7 @@ function VoiceoverTab({ plan, onPlanRefresh }) {
         showSuccess('Google TTS audio ready')
       }
     } catch (err) {
-      const msg = err.response?.data?.error || 'Google TTS generation failed'
+      const msg = err.response?.data?.error?.message || response?.data?.detail || 'Google TTS generation failed'
       showError(msg)
     } finally { setGtLoading(false) }
   }, [plan.article_id, activeScript, refreshPlan])

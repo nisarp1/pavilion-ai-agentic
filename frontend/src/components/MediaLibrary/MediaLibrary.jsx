@@ -134,7 +134,7 @@ function MediaLibrary({ isOpen, onClose, onSelect, initialMediaId, initialUrl })
       }
     } catch (error) {
       console.error('Error saving external image:', error)
-      showError(`Failed to import image: ${error.response?.data?.error || error.message}`)
+      showError(`Failed to import image: ${error.response?.data?.error?.message || response?.data?.detail || error.message}`)
     } finally {
       setUploading(false)
     }
@@ -259,7 +259,7 @@ function MediaLibrary({ isOpen, onClose, onSelect, initialMediaId, initialUrl })
 
     } catch (error) {
       console.error('Error saving cropped image:', error)
-      showError(`Failed to save cropped image: ${error.response?.data?.error || error.message}`)
+      showError(`Failed to save cropped image: ${error.response?.data?.error?.message || response?.data?.detail || error.message}`)
     } finally {
       setUploading(false)
     }

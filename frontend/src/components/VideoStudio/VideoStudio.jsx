@@ -273,7 +273,7 @@ export default function VideoStudio() {
         showSuccess(`✅ Pipeline complete! Upload ${neededCount} asset${neededCount !== 1 ? 's' : ''} in the Assets tab.${savedMsg}`)
       }
     } catch (err) {
-      const errMsg = err.response?.data?.error || err.message || ''
+      const errMsg = err.response?.data?.error?.message || response?.data?.detail || err.message || ''
       const is429 = err.response?.status === 429 || errMsg.includes('429') || errMsg.toLowerCase().includes('quota')
       if (is429) {
         const retryMatch = errMsg.match(/retry[^\d]*(\d+(?:\.\d+)?)/i)

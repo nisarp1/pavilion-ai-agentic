@@ -363,7 +363,7 @@ function GoogleTrendsWidget({ onArticleCreated }) {
         showError(response.data.error || 'Failed to fetch articles.')
       }
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to fetch articles for this topic.')
+      showError(err.response?.data?.error?.message || response?.data?.detail || 'Failed to fetch articles for this topic.')
     } finally {
       setFetchingTopic(null)
     }

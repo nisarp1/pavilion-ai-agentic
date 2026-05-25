@@ -509,7 +509,7 @@ function ArticleEdit() {
       }
     } catch (error) {
       console.error(`Error generating audio with ${voiceName}:`, error)
-      const errorMsg = error.response?.data?.error || error.message
+      const errorMsg = error.response?.data?.error?.message || response?.data?.detail || error.message
       showError(`Failed to generate audio with ${voiceName} voice: ${errorMsg}`)
     } finally {
       setGeneratingAudio(prev => ({ ...prev, [voiceName]: false }))

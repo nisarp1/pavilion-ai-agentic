@@ -43,7 +43,7 @@ export function GoogleLoginComponent({ tenantId, onLoginSuccess }) {
       }
     } catch (err) {
       console.error('Google login failed:', err)
-      setError(err.response?.data?.error || 'Failed to authenticate with Google. Please try again.')
+      setError(err.response?.data?.error?.message || response?.data?.detail || 'Failed to authenticate with Google. Please try again.')
     } finally {
       setLoading(false)
     }

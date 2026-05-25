@@ -117,6 +117,7 @@ steps:
       - '--service-account=pavilion-cloudrun@$_PROJECT_ID.iam.gserviceaccount.com'
       - '--memory=2Gi'
       - '--cpu=1'
+      - '--no-cpu-throttling'
       - '--min-instances=1'
       - '--max-instances=3'
       - '--concurrency=1'

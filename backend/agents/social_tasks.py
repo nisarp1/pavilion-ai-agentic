@@ -417,8 +417,8 @@ def _scrape_social_url(url: str, social_data_key: str = '') -> str:
 @shared_task(
     bind=True,
     max_retries=0,
-    time_limit=300,
-    soft_time_limit=270,
+    time_limit=660,
+    soft_time_limit=600,
     acks_late=False,
 )
 def generate_social_post_task(self, article_id: int, options: dict = None):

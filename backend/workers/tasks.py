@@ -1,6 +1,12 @@
 """
 Celery tasks for article generation and processing.
 """
+import time as _wt
+_wt0 = _wt.monotonic()
+def _wts(label):
+    print(f'[WORKERS_TASKS] +{_wt.monotonic()-_wt0:.1f}s {label}', flush=True)
+
+_wts('start')
 try:
     from celery import shared_task
     CELERY_AVAILABLE = True
@@ -13,8 +19,10 @@ except ImportError:
         return decorator
 
 from django.utils import timezone
+_wts('after django.utils')
 from django.conf import settings
 from cms.models import Article, Category
+_wts('after cms.models')
 from slugify import slugify
 import logging
 import requests
@@ -23,21 +31,26 @@ from urllib.parse import urljoin, urlparse
 from io import BytesIO
 from django.core.files.base import ContentFile
 from PIL import Image
+_wts('after PIL')
 import re
 import json
 import os
 import html
 import time
 from cms.video_generator import generate_sports_video, get_did_status, upload_to_blob
+_wts('after cms.video_generator')
 
 logger = logging.getLogger(__name__)
 
 # Google Cloud Text-to-Speech
 try:
+    _wts('before google.cloud.texttospeech')
     from google.cloud import texttospeech
     TTS_AVAILABLE = True
+    _wts('after google.cloud.texttospeech')
 except ImportError:
     TTS_AVAILABLE = False
+    _wts('google.cloud.texttospeech NOT AVAILABLE')
     logger.warning("google-cloud-texttospeech not available. Audio generation will be disabled.")
 
 GEMINI_MODEL = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')

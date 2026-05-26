@@ -6,9 +6,53 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Pavilion AI is a multi-tenant AI-powered newsroom platform. Editors manage articles and media; an agentic pipeline (Gemini + CrewAI) generates short-form video reels from articles with Malayalam TTS voiceover; Remotion renders the final MP4s.
 
+## Deployment Layers
+
+There are three independent layers. **Changes only move between layers via explicit git operations — nothing is automatic except a push to `main`.**
+
+| Layer | Branch | Directory (on VM) | URL | Who uses it |
+|---|---|---|---|---|
+| **Live production** | `main` | Cloud Run only | `newsai.pavilionend.in` | Public / clients |
+| **Staff production** | `team-production-beta` | `/home/nisar/pavilion-ai-agentic` | `http://35.226.18.168:3001` | Internal newsroom team |
+| **Dev build** | `dev` | `/home/nisar/pavilion-ai-agentic-dev` | Cloudflare tunnel on port 3002 | Developers only |
+
+### Promotion workflow
+```
+dev (build + test) → approved → merge to team-production-beta → staff get it
+team-production-beta (stable) → approved → merge to main → Cloud Build deploys to Cloud Run
+```
+
+### Key rule
+- Edit files in `/home/nisar/pavilion-ai-agentic-dev` → affects dev layer only
+- Edit files in `/home/nisar/pavilion-ai-agentic` → affects staff layer only
+- Push to `main` → triggers Cloud Build → deploys to live production
+
+---
+
 ## Development Commands
 
-### Full Stack (Docker — recommended)
+### Staff production stack (`/home/nisar/pavilion-ai-agentic`)
+```bash
+docker compose -f docker-compose.dev.yml up -d          # Start all services
+docker compose -f docker-compose.dev.yml logs -f         # Tail all logs
+docker compose -f docker-compose.dev.yml down            # Stop all
+docker compose -f docker-compose.dev.yml exec django python backend/manage.py migrate
+docker compose -f docker-compose.dev.yml exec django python backend/manage.py shell
+```
+
+### Dev build stack (`/home/nisar/pavilion-ai-agentic-dev`)
+```bash
+docker compose -f docker-compose.build.yml up -d         # Start all services
+docker compose -f docker-compose.build.yml logs -f        # Tail all logs
+docker compose -f docker-compose.build.yml down           # Stop all
+docker compose -f docker-compose.build.yml exec django python backend/manage.py migrate
+docker compose -f docker-compose.build.yml exec django python backend/manage.py shell
+
+# Start the Cloudflare dev tunnel (URL changes each run — share new URL with testers)
+cloudflared tunnel --url http://localhost:3002 --no-autoupdate &
+```
+
+### Full Stack (Docker — legacy alias, staff stack only)
 ```bash
 docker-compose -f docker-compose.dev.yml up -d          # Start all services
 docker-compose -f docker-compose.dev.yml logs -f         # Tail all logs
@@ -55,17 +99,35 @@ npm run dev       # Express render API on port 8080
 ## Architecture
 
 ### Services
-| Service | Port | Purpose |
+
+**Staff production stack** (container suffix `-dev`, network `pavilion-ai-agentic_pavilion-network`):
+
+| Service | Host Port | Purpose |
 |---|---|---|
 | `django` | 8000 | REST API + SPA static files |
-| `frontend` | 3001 | Vite dev server (dev only) |
-| `remotion-renderer` | 3003→8080 | Video render API (Chromium + Remotion) |
+| `frontend` | 3001 | Vite dev server |
+| `remotion-renderer` | 3003→8080 | Video render API |
 | `celery` | — | Async task worker |
 | `celery-beat` | — | Periodic task scheduler |
-| `postgres` | 5432 | Primary database |
+| `postgres` | 5432 | DB: `pavilion_agentic_local` |
 | `redis` | 6379 | Celery broker (DB 0) + cache (DB 1) |
 
-**Production:** `docker/Dockerfile.cloudrun` builds a single image (React → Django static files). Django's `SPAFallbackMiddleware` serves `index.html` for non-API routes. The remotion-renderer is a separate Cloud Run service.
+**Dev build stack** (container suffix `-build`, network `pavilion-ai-agentic-dev_pavilion-build-network`, dir `/home/nisar/pavilion-ai-agentic-dev`):
+
+| Service | Host Port | Purpose |
+|---|---|---|
+| `django` | 8001 | REST API |
+| `frontend` | 3002 | Vite dev server |
+| `remotion-renderer` | 3004→8080 | Video render API (reuses `-dev` image) |
+| `celery` | — | Async task worker |
+| `celery-beat` | — | Periodic task scheduler |
+| `postgres` | 5433 | DB: `pavilion_agentic_build` |
+| `redis` | 6380 | Celery broker + cache |
+| `flower` | 5556 | Celery monitoring UI |
+
+The two stacks share no network, no database, and no Docker volume. Edits in one directory cannot affect the other.
+
+**Cloud Run production:** `docker/Dockerfile.cloudrun` builds a single image (React → Django static files). Django's `SPAFallbackMiddleware` serves `index.html` for non-API routes. The remotion-renderer is a separate Cloud Run service.
 
 ### Backend (`backend/`)
 Django project: `pavilion_gemini/`. Single `settings.py` driven by env vars.
@@ -132,9 +194,13 @@ Copy `.env.example` to `.env` in the repo root and `backend/.env` before first r
 
 ## Local Dev Troubleshooting
 
+Commands below use the `-dev` suffix (staff stack). For the dev build stack swap every `-dev` → `-build` and use `docker-compose.build.yml`.
+
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Social Studio returns 500 / proxy error | Django container is down | `docker start pavilion-django-dev` |
 | Social post stuck on "queued" forever | Celery missing `-Q social` flag | Check `docker inspect pavilion-celery-dev --format '{{json .Config.Cmd}}'`; recreate with full `-Q default,social,pipeline,celery` |
 | `No module named 'crewai'` in Celery logs | Stale Docker image (pre-crewai commit) | `docker exec pavilion-celery-dev pip install "crewai>=1.14.4" "litellm>=1.40.0"` (temp), then rebuild with `--no-cache` |
 | "Given token not valid for any token type" in UI | JWT tokens expired (>7 days since last login) | Clear localStorage in browser devtools, log in again |
+| Dev tunnel URL stopped working | cloudflared process died | `cloudflared tunnel --url http://localhost:3002 --no-autoupdate &` — note the URL changes on each restart |
+| Dev build stack container name conflict | Old containers not removed | `docker ps -a --filter name=build \| xargs docker rm -f` then `docker compose -f docker-compose.build.yml up -d` |

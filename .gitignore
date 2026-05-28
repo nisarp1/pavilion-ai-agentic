@@ -132,3 +132,6 @@ backend/credentials/
 backend/**/*.key.json
 backend/**/*credentials*
 remotion-renderer/src/templates/my-video/
+.env
+.gcp-secrets/
+db-credentials.txt

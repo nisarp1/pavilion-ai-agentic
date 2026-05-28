@@ -53,7 +53,7 @@ def trigger_render(props: dict, job_id: str, output_blob: str, composition_id: s
         'props': props,
         'jobId': job_id,
         'outputGcsPath': output_blob,
-        'bucketName': os.environ.get('GCS_BUCKET_NAME', ''),
+        'bucketName': os.environ.get('AWS_S3_BUCKET', ''),
     }
     headers = {'Content-Type': 'application/json', **_auth_header(base_url)}
 
@@ -71,25 +71,23 @@ def upload_plan_as_manifest(props: dict, job_id: str, output_blob: str) -> dict:
     The manifest can later be used to render once Cloud Run is configured.
     """
     import json
-    bucket_name = os.environ.get('GCS_BUCKET_NAME', '')
+    import boto3
+    bucket_name = os.environ.get('AWS_S3_BUCKET', '')
     if not bucket_name:
-        logger.warning(f"[VideoJob {job_id}] GCS_BUCKET_NAME not set — cannot upload manifest")
+        logger.warning(f"[VideoJob {job_id}] AWS_S3_BUCKET not set — cannot upload manifest")
         return {}
 
     try:
-        from google.cloud import storage
-        client = storage.Client()
-        bucket = client.bucket(bucket_name)
-
-        # Upload props as JSON manifest
-        manifest_blob = output_blob.replace('.mp4', '_manifest.json')
-        blob = bucket.blob(manifest_blob)
-        blob.upload_from_string(
-            json.dumps(props, ensure_ascii=False, indent=2),
-            content_type='application/json'
+        region = os.environ.get('AWS_REGION', 'us-east-1')
+        s3 = boto3.client('s3', region_name=region)
+        manifest_key = output_blob.replace('.mp4', '_manifest.json')
+        body = json.dumps(props, ensure_ascii=False, indent=2).encode()
+        s3.put_object(Bucket=bucket_name, Key=manifest_key, Body=body, ContentType='application/json')
+        manifest_url = s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket_name, 'Key': manifest_key},
+            ExpiresIn=7 * 86400,
         )
-        blob.make_public()
-        manifest_url = blob.public_url
         logger.info(f"[VideoJob {job_id}] Manifest uploaded: {manifest_url}")
         return {"videoUrl": manifest_url, "type": "manifest", "note": "Cloud Run not configured — manifest only"}
     except Exception as e:

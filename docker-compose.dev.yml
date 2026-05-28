@@ -44,13 +44,11 @@ services:
       dockerfile: Dockerfile
     container_name: pavilion-remotion-dev
     environment:
-      GCS_BUCKET_NAME: pavilion-media
-      GOOGLE_APPLICATION_CREDENTIALS: /app/.gcp-secrets/service-account-key.json
+      AWS_S3_BUCKET: pavilion-media
+      AWS_REGION: us-east-1
       PORT: '8080'
     ports:
       - "3003:8080"
-    volumes:
-      - ./.gcp-secrets:/app/.gcp-secrets:ro
     networks:
       - pavilion-network
 
@@ -68,15 +66,14 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       REDIS_URL: redis://redis:6379/0
       REDIS_CACHE_URL: redis://redis:6379/1
-      GOOGLE_APPLICATION_CREDENTIALS: /app/.gcp-secrets/service-account-key.json
       CLOUD_RUN_RENDERER_URL: http://remotion-renderer:8080
       DJANGO_INTERNAL_URL: http://django:8000
-      GCS_BUCKET_NAME: pavilion-media
+      AWS_S3_BUCKET: pavilion-media
+      AWS_REGION: us-east-1
       ENVIRONMENT: development
       DEBUG: 'true'
     volumes:
       - .:/app
-      - ./.gcp-secrets:/app/.gcp-secrets:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,12 +98,10 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       REDIS_URL: redis://redis:6379/0
       REDIS_CACHE_URL: redis://redis:6379/1
-      GOOGLE_APPLICATION_CREDENTIALS: /app/.gcp-secrets/service-account-key.json
       ENVIRONMENT: development
       DEBUG: 'true'
     volumes:
       - .:/app
-      - ./.gcp-secrets:/app/.gcp-secrets:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -131,9 +126,9 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       REDIS_URL: redis://redis:6379/0
       REDIS_CACHE_URL: redis://redis:6379/1
-      GOOGLE_APPLICATION_CREDENTIALS: /app/.gcp-secrets/service-account-key.json
       CLOUD_RUN_RENDERER_URL: http://remotion-renderer:8080
-      GCS_BUCKET_NAME: pavilion-media
+      AWS_S3_BUCKET: pavilion-media
+      AWS_REGION: us-east-1
       ENVIRONMENT: development
       DEBUG: 'true'
       ALLOWED_HOSTS: '*'
@@ -142,7 +137,6 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
-      - ./.gcp-secrets:/app/.gcp-secrets:ro
     depends_on:
       postgres:
         condition: service_healthy

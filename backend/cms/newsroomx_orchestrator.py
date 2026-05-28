@@ -4,7 +4,12 @@ import time
 import logging
 import base64
 from django.conf import settings
-from google.cloud import texttospeech
+try:
+    from google.cloud import texttospeech
+    _TTS_AVAILABLE = True
+except ImportError:
+    texttospeech = None
+    _TTS_AVAILABLE = False
 from .video_generator import upload_to_blob, generate_script
 import json
 
@@ -57,23 +62,26 @@ def process_step_a_audio(dna, article_id=None):
             except Exception as e:
                 logger.error(f"ElevenLabs error: {e}. Falling back to Google.")
 
-        # 2. Fallback to Google Cloud TTS (Chirp)
+        # 2. Fallback to Google Cloud TTS (Chirp) — disabled, stub active
+        if not _TTS_AVAILABLE:
+            logger.warning("TTS: Google Cloud TTS disabled — stub active")
+            return None
         client = texttospeech.TextToSpeechClient()
         synthesis_input = texttospeech.SynthesisInput(ssml=ssml_content if '<speak>' in str(ssml_content) else None, text=text_content if '<speak>' not in str(text_content) else None)
-        
+
         voice = texttospeech.VoiceSelectionParams(
             language_code="ml-IN",
             name="ml-IN-Chirp3-HD-Zephyr"
         )
-        
+
         audio_config_params = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.MP3
         )
-        
+
         response = client.synthesize_speech(
             input=synthesis_input, voice=voice, audio_config=audio_config_params
         )
-        
+
         timestamp = int(time.time())
         filename = f"newsroomx_audio_{article_id or 'temp'}_{timestamp}.mp3"
         return upload_to_blob(response.audio_content, filename)

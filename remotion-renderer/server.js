@@ -42,7 +42,8 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', bundle: BUNDLE_URL, c
 
 app.post('/render', async (req, res) => {
   const { renderMedia, selectComposition } = await import('@remotion/renderer');
-  const { Storage } = await import('@google-cloud/storage');
+  const { S3Client, PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
+  const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
 
   const {
     compositionId = 'PavilionReel',
@@ -54,11 +55,14 @@ app.post('/render', async (req, res) => {
 
   if (!props) return res.status(400).json({ error: 'props is required' });
 
-  const gcsBucket = bucketName || process.env.GCS_BUCKET_NAME;
-  if (!gcsBucket) return res.status(400).json({ error: 'bucketName or GCS_BUCKET_NAME env var is required' });
+  const s3Bucket = bucketName || process.env.AWS_S3_BUCKET;
+  if (!s3Bucket) return res.status(400).json({ error: 'bucketName or AWS_S3_BUCKET env var is required' });
 
-  const label     = jobId || Date.now();
-  const blobPath  = outputGcsPath || `videos/render_${label}.mp4`;
+  const awsRegion = process.env.AWS_REGION || 'us-east-1';
+  const s3 = new S3Client({ region: awsRegion });
+
+  const label    = jobId || Date.now();
+  const blobPath = outputGcsPath || `videos/render_${label}.mp4`;
   const cpuCount  = os.cpus().length;
 
   // ── Deduplication: if this jobId is already being rendered, wait for it ──
@@ -117,28 +121,26 @@ app.post('/render', async (req, res) => {
       });
 
       const sizeMb = (fs.statSync(tmpOutput).size / 1024 / 1024).toFixed(1);
-      console.log(`[${label}] Render done in ${elapsedS()}s · ${sizeMb}MB · uploading to gs://${gcsBucket}/${blobPath}`);
+      console.log(`[${label}] Render done in ${elapsedS()}s · ${sizeMb}MB · uploading to s3://${s3Bucket}/${blobPath}`);
 
-      // Stream MP4 to GCS. resumable:false = single-request upload (no extra IAM needed).
-      const storage = new Storage();
-      const gcsFile = storage.bucket(gcsBucket).file(blobPath);
-      await new Promise((resolve, reject) => {
-        fs.createReadStream(tmpOutput)
-          .pipe(gcsFile.createWriteStream({ resumable: false, contentType: 'video/mp4' }))
-          .on('error', reject)
-          .on('finish', resolve);
-      });
+      // Upload MP4 to S3 using IAM role credentials (no explicit keys needed).
+      await s3.send(new PutObjectCommand({
+        Bucket:      s3Bucket,
+        Key:         blobPath,
+        Body:        fs.createReadStream(tmpOutput),
+        ContentType: 'video/mp4',
+      }));
 
       let videoUrl;
       try {
-        const [signedUrl] = await gcsFile.getSignedUrl({
-          action:  'read',
-          expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
-        });
-        videoUrl = signedUrl;
+        videoUrl = await getSignedUrl(
+          s3,
+          new GetObjectCommand({ Bucket: s3Bucket, Key: blobPath }),
+          { expiresIn: 7 * 24 * 60 * 60 },
+        );
       } catch (signErr) {
-        console.warn(`[${label}] Signed URL failed (${signErr.message}), using public URL`);
-        videoUrl = `https://storage.googleapis.com/${gcsBucket}/${blobPath}`;
+        console.warn(`[${label}] Presigned URL failed (${signErr.message}), using path-style URL`);
+        videoUrl = `https://${s3Bucket}.s3.${awsRegion}.amazonaws.com/${blobPath}`;
       }
 
       console.log(`[${label}] Done in ${elapsedS()}s → ${videoUrl}`);

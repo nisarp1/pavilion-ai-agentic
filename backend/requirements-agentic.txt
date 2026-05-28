@@ -30,13 +30,11 @@ alembic==1.13.1
 # Google Cloud Platform
 # ============================================================================
 google-cloud-aiplatform==1.35.0
-google-cloud-storage==2.14.0
 cloud-sql-python-connector==1.4.3
 google-cloud-secret-manager==2.16.4
 google-cloud-logging==3.8.0
 google-cloud-trace==1.11.1
 google-cloud-tasks==2.14.1
-google-cloud-texttospeech==2.14.2
 google-cloud-vision==3.6.0
 google-api-python-client==2.109.0
 google-auth==2.27.0
@@ -187,4 +185,4 @@ django-cachalot==2.6.1  # ORM caching
 # - For async Vertex AI: use vertexai 0.1.1+
 # - For async database: use psycopg (not psycopg2)
 async-timeout>=4.0.2
-google-cloud-storage
+

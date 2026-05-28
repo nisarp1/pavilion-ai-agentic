@@ -406,11 +406,12 @@ if GOOGLE_APPLICATION_CREDENTIALS:
 NEWS_API_KEY = env('NEWS_API_KEY', default='')
 
 # ── Video Studio ──────────────────────────────────────────────────────────────
-# GCS bucket used for rendered videos and fallback ZIP exports
-GCS_BUCKET_NAME = env('GCS_BUCKET_NAME', default='')
-# Cloud Run URL of the Remotion renderer service (Track A)
+# S3 bucket used for rendered videos and fallback ZIP exports
+AWS_S3_BUCKET = env('AWS_S3_BUCKET', default='')
+AWS_REGION = env('AWS_REGION', default='us-east-1')
+# Cloud Run / renderer URL (Track A)
 CLOUD_RUN_RENDERER_URL = env('CLOUD_RUN_RENDERER_URL', default='')
-# GCS path (gs://bucket/path or blob-name) to the base After Effects .aep template (Track B)
+# S3 path (s3://bucket/path or key) to the base After Effects .aep template (Track B)
 AEP_TEMPLATE_GCS_PATH = env('AEP_TEMPLATE_GCS_PATH', default='')
 
 # ── Google Custom Search (Image Fetcher Agent) ────────────────────────────────

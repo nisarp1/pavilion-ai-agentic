@@ -319,57 +319,15 @@ class TTSAgent:
         return header + all_pcm
 
     def _get_client(self):
-        """Lazy-load Google Cloud TTS client."""
-        if self._tts_client is None:
-            from google.cloud import texttospeech_v1beta1 as texttospeech
-            self._tts_client = texttospeech.TextToSpeechClient()
-        return self._tts_client
+        """TTS disabled — stub active."""
+        return None
 
     def _synthesize_chunk(
         self, text: str, voice_name: str, use_ssml: bool = False
     ) -> tuple[bytes, list, str]:
-        """
-        Call Google Cloud TTS for one chunk.
-        For Chirp3-HD voices, injects SSML word marks to capture per-word timing.
-        Returns (audio_bytes, word_timings [{word, start_ms, end_ms}], voice_used).
-        """
-        from google.cloud import texttospeech_v1beta1 as texttospeech
-
-        client = self._get_client()
-
-        words: list = [w for w in re.split(r"\s+", text.strip()) if w]
-
-        if use_ssml:
-            # Caller-provided SSML — trust it as-is
-            synthesis_input = texttospeech.SynthesisInput(ssml=text)
-        else:
-            # Plain text for ALL voices — Chirp3-HD treats any SSML element
-            # (<prosody>, <mark>, even <speak>) as phrase boundaries and inserts
-            # audible gaps between words. Rate is controlled via AudioConfig instead.
-            synthesis_input = texttospeech.SynthesisInput(text=text)
-
-        voice_params = texttospeech.VoiceSelectionParams(
-            language_code=LANGUAGE_CODE,
-            name=voice_name,
-        )
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.LINEAR16,
-            sample_rate_hertz=SAMPLE_RATE,
-            speaking_rate=1.05,
-            effects_profile_id=["telephony-class-application"],
-        )
-
-        request = texttospeech.SynthesizeSpeechRequest(
-            input=synthesis_input,
-            voice=voice_params,
-            audio_config=audio_config,
-        )
-        response = client.synthesize_speech(request=request)
-
-        duration_ms = self._estimate_duration_ms(response.audio_content)
-        word_timings = _proportional_word_timings(words, duration_ms)
-
-        return response.audio_content, word_timings, voice_name
+        """Google Cloud TTS disabled — stub active. Returns silent audio."""
+        logger.warning("TTS: Google Cloud TTS disabled — stub active")
+        return b"", [], voice_name
 
     def _synthesize_with_fallback(self, text: str) -> tuple[bytes, list, str]:
         """Try fallback voices in order."""
@@ -412,58 +370,22 @@ class TTSAgent:
         return int((samples / SAMPLE_RATE) * 1000)
 
     def _upload_to_gcs(self, audio_bytes: bytes, gcs_path: str) -> str:
-        """Save audio to Django media (primary) or GCS (fallback).
-
-        Django media URLs (/media/...) are always browser-accessible via the Vite
-        proxy in dev and Django's media serving in prod — no GCS ACL issues.
-        GCS is still tried as a fallback so the STT agent can use gs:// URIs.
-        """
-        # ── Primary: Django default_storage (permanent, browser-accessible) ──
+        """Save audio to Django media storage."""
         try:
             import os as _os
             from django.core.files.storage import default_storage
             from django.core.files.base import ContentFile
-            fname = _os.path.basename(gcs_path)                 # e.g. voiceover_abc123.wav
-            article_part = gcs_path.split('/')                  # reels/<article_id>/voiceover_...
+            fname = _os.path.basename(gcs_path)
+            article_part = gcs_path.split('/')
             article_id_part = article_part[1] if len(article_part) > 2 else 'unknown'
             media_path = f"articles/reels/tts_{article_id_part}_{fname}"
             saved_path = default_storage.save(media_path, ContentFile(audio_bytes))
-            url = default_storage.url(saved_path)              # /media/articles/reels/tts_...wav
+            url = default_storage.url(saved_path)
             logger.info(f"[TTSAgent] Saved to Django media: {url}")
             return url
         except Exception as e:
-            logger.warning(f"[TTSAgent] Django media save failed, falling back to GCS: {e}")
-
-        # ── Fallback: GCS upload ──────────────────────────────────────────────
-        try:
-            from google.cloud import storage
-            client = storage.Client()
-            bucket = client.bucket(self._gcs_bucket)
-            blob = bucket.blob(gcs_path)
-            blob.upload_from_string(audio_bytes, content_type="audio/wav")
-
-            # Try make_public (works when UBLA is not enabled)
-            try:
-                blob.make_public()
-                return blob.public_url
-            except Exception:
-                pass
-
-            # Try signed URL (7-day expiry; works even with UBLA)
-            try:
-                import datetime
-                return blob.generate_signed_url(
-                    expiration=datetime.timedelta(days=7),
-                    method='GET',
-                    version='v4',
-                )
-            except Exception as sign_err:
-                logger.warning(f"[TTSAgent] Signed URL failed: {sign_err}")
-
-            return blob.public_url  # last resort — may be inaccessible but at least HTTP
-        except Exception as e:
-            logger.error(f"[TTSAgent] GCS upload failed: {e}")
-            return f"gcs://{self._gcs_bucket}/{gcs_path}"
+            logger.error(f"[TTSAgent] Django media save failed: {e}")
+            return ""
 
 
 # ── Convenience function for pipeline use ─────────────────────────────────────

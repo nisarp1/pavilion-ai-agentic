@@ -1,88 +1,87 @@
-import datetime
 import os
 import logging
 from urllib.parse import urlparse
 
+import boto3
+
 logger = logging.getLogger(__name__)
 
 
-def _get_client():
-    from google.cloud import storage
-    return storage.Client()
+def _s3():
+    region = os.environ.get('AWS_REGION', 'us-east-1')
+    return boto3.client('s3', region_name=region)
 
 
-def _bucket_name():
-    name = os.environ.get('GCS_BUCKET_NAME', '')
+def _bucket():
+    name = os.environ.get('AWS_S3_BUCKET', '')
     if not name:
-        raise ValueError("GCS_BUCKET_NAME environment variable is not set")
+        raise ValueError("AWS_S3_BUCKET environment variable is not set")
     return name
 
 
-def _blob_url(blob) -> str:
-    """Return the best available URL for a blob.
+def _parse_s3_url(url: str) -> tuple:
+    """Return (bucket, key) from an s3:// or https S3 URL."""
+    if url.startswith('s3://'):
+        parts = url[5:].split('/', 1)
+        return parts[0], parts[1]
+    parsed = urlparse(url)
+    if '.s3.' in parsed.netloc or '.s3-' in parsed.netloc:
+        bucket = parsed.netloc.split('.')[0]
+        key = parsed.path.lstrip('/')
+        return bucket, key
+    if 's3.amazonaws.com' in parsed.netloc:
+        path_parts = parsed.path.lstrip('/').split('/', 1)
+        return path_parts[0], path_parts[1] if len(path_parts) > 1 else ''
+    # Treat as a key in the default bucket
+    return _bucket(), url
 
-    Tries a signed URL first (works with uniform bucket-level access and private
-    buckets). Falls back to the plain public URL if signing isn't available
-    (e.g. bucket already has allUsers objectViewer IAM).
-    """
+
+def signed_url_for_gcs_url(url: str, expiry_days: int = 7) -> str:
+    """Return a fresh presigned S3 URL for an S3 object URL (GCS name kept for compat)."""
     try:
-        return blob.generate_signed_url(
-            expiration=datetime.timedelta(days=7),
-            method='GET',
-            version='v4',
+        client = _s3()
+        bucket, key = _parse_s3_url(url)
+        key = key.split('?')[0]  # strip any existing query string
+        return client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket, 'Key': key},
+            ExpiresIn=expiry_days * 86400,
         )
     except Exception as e:
-        logger.warning(f"Signed URL generation failed ({e}), falling back to public URL")
-        return blob.public_url
+        logger.warning("S3 presigned URL generation failed (%s), returning original URL", e)
+        return url
 
 
-def signed_url_for_gcs_url(gcs_url: str, expiry_days: int = 7) -> str:
-    """Given a gs:// or https://storage.googleapis.com/... URL, return a fresh signed URL."""
-    client = _get_client()
-    if gcs_url.startswith('gs://'):
-        parts = gcs_url[5:].split('/', 1)
-        bucket_name, blob_name = parts[0], parts[1]
-    elif gcs_url.startswith('https://storage.googleapis.com/'):
-        path = gcs_url[len('https://storage.googleapis.com/'):]
-        bucket_name, blob_name = path.split('/', 1)
-        # Strip existing query string (old signed URL)
-        blob_name = blob_name.split('?')[0]
-    else:
-        return gcs_url  # Not a GCS URL — return as-is
-
-    blob = client.bucket(bucket_name).blob(blob_name)
-    return blob.generate_signed_url(
-        expiration=datetime.timedelta(days=expiry_days),
-        method='GET',
-        version='v4',
+def upload_bytes(data: bytes, key: str, content_type: str = 'application/octet-stream') -> str:
+    """Upload raw bytes to S3 and return a presigned URL."""
+    client = _s3()
+    bucket = _bucket()
+    client.put_object(Body=data, Bucket=bucket, Key=key, ContentType=content_type)
+    return client.generate_presigned_url(
+        'get_object',
+        Params={'Bucket': bucket, 'Key': key},
+        ExpiresIn=7 * 86400,
     )
 
 
-def upload_bytes(data: bytes, blob_name: str, content_type: str = 'application/octet-stream') -> str:
-    """Upload raw bytes and return a usable URL."""
-    client = _get_client()
-    bucket = client.bucket(_bucket_name())
-    blob = bucket.blob(blob_name)
-    blob.upload_from_string(data, content_type=content_type)
-    return _blob_url(blob)
+def upload_file(local_path: str, key: str, content_type: str = 'application/octet-stream') -> str:
+    """Upload a local file to S3 and return a presigned URL."""
+    client = _s3()
+    bucket = _bucket()
+    client.upload_file(local_path, bucket, key, ExtraArgs={'ContentType': content_type})
+    return client.generate_presigned_url(
+        'get_object',
+        Params={'Bucket': bucket, 'Key': key},
+        ExpiresIn=7 * 86400,
+    )
 
 
-def upload_file(local_path: str, blob_name: str, content_type: str = 'application/octet-stream') -> str:
-    """Upload a local file and return a usable URL."""
-    client = _get_client()
-    bucket = client.bucket(_bucket_name())
-    blob = bucket.blob(blob_name)
-    blob.upload_from_filename(local_path, content_type=content_type)
-    return _blob_url(blob)
-
-
-def download_bytes(gcs_uri_or_blob_name: str) -> bytes:
-    """Download from a gs:// URI or a blob name within the default bucket."""
-    client = _get_client()
-    if gcs_uri_or_blob_name.startswith('gs://'):
-        parts = gcs_uri_or_blob_name[5:].split('/', 1)
-        bucket_name, blob_name = parts[0], parts[1]
+def download_bytes(s3_uri_or_key: str) -> bytes:
+    """Download from an s3:// URI or a key within the default bucket."""
+    client = _s3()
+    if s3_uri_or_key.startswith('s3://'):
+        bucket, key = _parse_s3_url(s3_uri_or_key)
     else:
-        bucket_name, blob_name = _bucket_name(), gcs_uri_or_blob_name
-    blob = client.bucket(bucket_name).blob(blob_name)
-    return blob.download_as_bytes()
+        bucket, key = _bucket(), s3_uri_or_key
+    response = client.get_object(Bucket=bucket, Key=key)
+    return response['Body'].read()

@@ -125,6 +125,27 @@ def generate_text(prompt: str, *, json_mode: bool = False, temperature: float | 
     return _ai_studio_generate(prompt, json_mode=json_mode, temperature=temperature)
 
 
+def _ai_studio_generate_multimodal(parts, *, json_mode=False, temperature=None):
+    import base64 as b64, io, google.generativeai as genai
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("No GEMINI_API_KEY set")
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(get_model_name())
+    cfg = {}
+    if json_mode: cfg["response_mime_type"] = "application/json"
+    if temperature is not None: cfg["temperature"] = temperature
+    cp = []
+    for p in parts:
+        if "text" in p:
+            cp.append(p["text"])
+        elif "inlineData" in p:
+            import PIL.Image
+            cp.append(PIL.Image.open(io.BytesIO(b64.b64decode(p["inlineData"]["data"]))))
+    r = model.generate_content(cp, generation_config=cfg or None)
+    return r.text.strip() if r and r.text else ""
+
+
 def generate_with_parts(parts: list, *, json_mode: bool = False, temperature: float | None = None) -> str:
     """
     Call Gemini with mixed content (text + images).
@@ -135,9 +156,7 @@ def generate_with_parts(parts: list, *, json_mode: bool = False, temperature: fl
     vertex_project = os.environ.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT", "")
     if vertex_project:
         return _vertex_post(normalised, json_mode=json_mode, temperature=temperature)
-    # AI Studio fallback: text-only (extract text parts)
-    text_only = " ".join(p["text"] for p in normalised if "text" in p)
-    return _ai_studio_generate(text_only, json_mode=json_mode, temperature=temperature)
+    return _ai_studio_generate_multimodal(normalised, json_mode=json_mode, temperature=temperature)
 
 
 def make_image_part(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:

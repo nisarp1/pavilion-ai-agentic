@@ -1449,8 +1449,10 @@ class ArticleViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
 
-        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', template_name)[:30]
-        filename  = f'canva_{safe_name}_article_{article.pk}.csv'
+        headline_raw = str(plan.get("Headline", plan.get("headline", "")) or "").strip()
+        headline_slug = re.sub(r"[^a-zA-Z0-9_ഀ-ൿ ]", "", headline_raw).strip().replace(" ", "_")[:50]
+        safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", template_name)[:30]
+        filename = (headline_slug + " - " + safe_name + ".csv") if headline_slug else ("canva_" + safe_name + ".csv")
 
         def _slot_value(slot_key, raw):
             """
@@ -1512,6 +1514,64 @@ class ArticleViewSet(viewsets.ModelViewSet):
         response = HttpResponse(content.encode('utf-8'), content_type='text/csv; charset=utf-8')
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
+
+
+
+    @action(detail=True, methods=['get'], url_path='canva_csv_url')
+    def canva_csv_url(self, request, pk=None):
+        import csv, io
+        from video_studio.gcs import upload_bytes
+
+        article = self.get_object()
+        plan = article.social_post_plan or {}
+        if not plan:
+            return Response({'error': 'No social post plan found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        template = None
+        template_pk = plan.get('_template_pk')
+        if template_pk:
+            try:
+                from cms.models_canva import CanvaTemplate
+                template = CanvaTemplate.objects.get(pk=template_pk)
+            except Exception:
+                pass
+
+        def _sv(key, raw):
+            import re as _re
+            if isinstance(raw, list): raw = chr(10).join(str(x) for x in raw)
+            val = str(raw) if raw is not None else ''
+            if key == 'Squad_List':
+                val = val.replace(chr(92)+'n', chr(10))
+                parts = _re.split(r'\s*[,;]\s*|'+chr(10), val)
+                val = chr(10).join(p.strip().strip(chr(34)+chr(39)) for p in parts if p.strip())
+            elif key in ('Match_Header', 'Match_Teams'):
+                val = val.replace(chr(92)+'n', chr(10))
+            return val
+
+        if template:
+            slots = template.all_slots_flat()
+            cols = ['Template_ID'] + [s['canva_name'] for s in slots]
+            row = {'Template_ID': template.canva_template_id}
+            for s in slots:
+                row[s['canva_name']] = _sv(s['key'], plan.get(s['key'], ''))
+        else:
+            cols = ['Template_ID','Headline','Subheadline','Caption']
+            row = {'Template_ID': plan.get('_canva_template_id',''), 'Headline': plan.get('Headline',''), 'Subheadline': plan.get('Subheadline',''), 'Caption': plan.get('Caption','')}
+
+        buf = io.StringIO(newline='')
+        writer = csv.DictWriter(buf, fieldnames=cols, extrasaction='ignore')
+        writer.writeheader()
+        writer.writerow(row)
+        csv_bytes = (chr(0xfeff) + buf.getvalue()).encode('utf-8')
+
+        import re as _re
+        headline = str(plan.get("Headline", plan.get("headline", "")) or "post").strip()
+        headline_slug = _re.sub(r"[^\w\s]", "", headline).strip().replace(" ", "_")[:50]
+        template_slug = _re.sub(r"[^a-zA-Z0-9_]", "_", (template.name if template else "canva"))[:30]
+        friendly_name = headline_slug + " - " + template_slug + ".csv"
+        s3_key = "canva-exports/" + str(article.pk) + "/canva_post.csv"
+        url = upload_bytes(csv_bytes, s3_key, content_type='text/csv; charset=utf-8')
+        return Response({"csv_url": url, "filename": friendly_name, "expires_in": "7 days"})
 
 
 class CategoryViewSet(viewsets.ModelViewSet):

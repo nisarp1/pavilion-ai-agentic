@@ -1,206 +1,218 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with this repository.
 
 ## What This Project Is
 
-Pavilion AI is a multi-tenant AI-powered newsroom platform. Editors manage articles and media; an agentic pipeline (Gemini + CrewAI) generates short-form video reels from articles with Malayalam TTS voiceover; Remotion renders the final MP4s.
-
-## Deployment Layers
-
-There are three independent layers. **Changes only move between layers via explicit git operations — nothing is automatic except a push to `main`.**
-
-| Layer | Branch | Directory (on VM) | URL | Who uses it |
-|---|---|---|---|---|
-| **Live production** | `main` | Cloud Run only | `newsai.pavilionend.in` | Public / clients |
-| **Staff production** | `team-production-beta` | `/home/nisar/pavilion-ai-agentic` | `http://35.226.18.168:3001` | Internal newsroom team |
-| **Dev build** | `dev` | `/home/nisar/pavilion-ai-agentic-dev` | Cloudflare tunnel on port 3002 | Developers only |
-
-### Promotion workflow
-```
-dev (build + test) → approved → merge to team-production-beta → staff get it
-team-production-beta (stable) → approved → merge to main → Cloud Build deploys to Cloud Run
-```
-
-### Key rule
-- Edit files in `/home/nisar/pavilion-ai-agentic-dev` → affects dev layer only
-- Edit files in `/home/nisar/pavilion-ai-agentic` → affects staff layer only
-- Push to `main` → triggers Cloud Build → deploys to live production
+PavilionEnd is a multi-tenant AI-powered sports newsroom CMS. Editors manage articles and media; an agentic pipeline (Gemini + CrewAI) generates social media posts and short-form video reels; Remotion renders MP4s; Social Studio creates Canva-ready posts with AI Vision.
 
 ---
 
-## Development Commands
+## Infrastructure (AWS — migrated from GCP May 2026)
 
-### Staff production stack (`/home/nisar/pavilion-ai-agentic`)
+| Service | AWS Equivalent | Details |
+|---|---|---|
+| Compute | EC2 t3.xlarge | 4 vCPU, 16GB RAM, us-east-1 |
+| Database | RDS PostgreSQL 15 | `pavilion-db.cuxeea2gkh4l.us-east-1.rds.amazonaws.com` |
+| Storage | S3 | Bucket: `pavilion-media-009846` |
+| Auth | IAM Role | `pavilion-ec2-roles` attached to EC2 (no static keys needed) |
+| Public IP | Elastic IP | `44.194.52.172` (permanent) |
+
+**GCP is fully shut down.** Gemini is accessed via API key only (no Vertex AI / GCP credentials).
+
+---
+
+## Active Deployment (Dev Stack)
+
+| Item | Value |
+|---|---|
+| Directory | `/home/ubuntu/pavilion-ai-agentic-dev` |
+| Branch | `develop` |
+| Frontend | `http://44.194.52.172:3001` |
+| Django API | `http://44.194.52.172:8000` |
+| Django Admin | `http://44.194.52.172:8000/admin/` |
+| Flower | `http://44.194.52.172:5556` |
+| Admin login | `admin` / `Pavilion@2026!` |
+
+---
+
+## Docker Commands
+
 ```bash
-docker compose -f docker-compose.dev.yml up -d          # Start all services
-docker compose -f docker-compose.dev.yml logs -f         # Tail all logs
-docker compose -f docker-compose.dev.yml down            # Stop all
-docker compose -f docker-compose.dev.yml exec django python backend/manage.py migrate
-docker compose -f docker-compose.dev.yml exec django python backend/manage.py shell
+cd ~/pavilion-ai-agentic-dev
+
+# Start all services
+docker compose -f docker-compose.dev.yml -f docker-compose.override.yml up -d
+
+# Start specific services (after config changes)
+docker compose -f docker-compose.dev.yml -f docker-compose.override.yml up -d django celery celery-beat
+
+# Restart a single service
+docker compose -f docker-compose.dev.yml -f docker-compose.override.yml restart django
+
+# View logs
+docker logs pavilion-django-dev -f --tail=50
+docker logs pavilion-celery-dev -f --tail=50
+
+# Run Django management commands
+docker exec pavilion-django-dev python backend/manage.py migrate
+docker exec pavilion-django-dev python backend/manage.py shell
+docker exec pavilion-django-dev python backend/manage.py seed_canva_templates
+
+# Check all container statuses
+docker ps -a --format "table {{.Names}}\t{{.Status}}"
 ```
 
-### Dev build stack (`/home/nisar/pavilion-ai-agentic-dev`)
-```bash
-docker compose -f docker-compose.build.yml up -d         # Start all services
-docker compose -f docker-compose.build.yml logs -f        # Tail all logs
-docker compose -f docker-compose.build.yml down           # Stop all
-docker compose -f docker-compose.build.yml exec django python backend/manage.py migrate
-docker compose -f docker-compose.build.yml exec django python backend/manage.py shell
+### Running Containers (all should be Up)
+| Container | Purpose |
+|---|---|
+| `pavilion-django-dev` | Django API on port 8000 |
+| `pavilion-frontend-dev` | React/Vite frontend on port 3001 (mapped to 3100 internally) |
+| `pavilion-celery-dev` | Celery worker (-Q default,social,pipeline,celery) |
+| `pavilion-celery-beat-dev` | Celery beat scheduler |
+| `pavilion-flower-dev` | Celery monitor on port 5556 |
+| `pavilion-redis-dev` | Redis broker + cache |
+| `pavilion-postgres-dev` | Local PostgreSQL (dev only — production uses RDS) |
+| `pavilion-remotion-dev` | Remotion video renderer on port 3003 |
 
-# Start the Cloudflare dev tunnel (URL changes each run — share new URL with testers)
-cloudflared tunnel --url http://localhost:3002 --no-autoupdate &
+---
+
+## Key Environment Variables (`.env` in project root)
+
+```
+DATABASE_URL=postgresql://pavilion_user:vTHvSreHKTFKdFF0N3sB@pavilion-db.cuxeea2gkh4l.us-east-1.rds.amazonaws.com:5432/pavilion_agentic
+CELERY_BROKER_URL=redis://redis:6379/0
+REDIS_URL=redis://redis:6379/0
+AWS_S3_BUCKET=pavilion-media-009846
+AWS_REGION=us-east-1
+GEMINI_API_KEY=<current key>
+GEMINI_MODEL=gemini-2.5-flash-lite
+SECRET_KEY=<django secret>
+CLOUD_RUN_RENDERER_URL=http://remotion-renderer:8080
+DJANGO_SETTINGS_MODULE=pavilion_gemini.settings
+ENVIRONMENT=development
 ```
 
-### Full Stack (Docker — legacy alias, staff stack only)
+**Note:** `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` are NOT needed — the EC2 IAM role (`pavilion-ec2-roles`) provides credentials automatically via instance metadata.
+
+After changing `.env`, restart affected containers:
 ```bash
-docker-compose -f docker-compose.dev.yml up -d          # Start all services
-docker-compose -f docker-compose.dev.yml logs -f         # Tail all logs
-docker-compose -f docker-compose.dev.yml down            # Stop all
-docker-compose -f docker-compose.dev.yml exec django python manage.py migrate
-docker-compose -f docker-compose.dev.yml exec django python manage.py createsuperuser
-docker-compose -f docker-compose.dev.yml exec django python manage.py shell
+docker compose -f docker-compose.dev.yml -f docker-compose.override.yml up -d django celery celery-beat
 ```
 
-**After changing `backend/requirements.txt`** always rebuild with `--no-cache` (Docker caches the pip layer):
-```bash
-docker build --no-cache -t pavilion-ai-agentic-celery -f docker/Dockerfile.dev .
-docker build --no-cache -t pavilion-ai-agentic-django  -f docker/Dockerfile.dev .
-```
-
-### Backend (Django)
-```bash
-cd backend
-python manage.py runserver 0.0.0.0:8000
-python manage.py migrate
-python manage.py test                               # All tests
-python manage.py test cms.tests.test_models         # Single test module
-
-# Celery (separate terminals) — MUST include -Q flag so social/pipeline tasks are consumed
-celery -A pavilion_gemini worker --loglevel=info -Q default,social,pipeline,celery
-celery -A pavilion_gemini beat --loglevel=info --scheduler celery.beat.PersistentScheduler
-celery -A pavilion_gemini flower --port=5555
-```
-
-### Frontend
-```bash
-cd frontend
-npm run dev       # Vite dev server on port 3001
-npm run build     # Production bundle to dist/
-```
-
-### Remotion Renderer
-```bash
-cd remotion-renderer
-npm run bundle    # Pre-bundle (done at Docker build time)
-npm run dev       # Express render API on port 8080
-```
+---
 
 ## Architecture
 
-### Services
-
-**Staff production stack** (container suffix `-dev`, network `pavilion-ai-agentic_pavilion-network`):
-
-| Service | Host Port | Purpose |
-|---|---|---|
-| `django` | 8000 | REST API + SPA static files |
-| `frontend` | 3001 | Vite dev server |
-| `remotion-renderer` | 3003→8080 | Video render API |
-| `celery` | — | Async task worker |
-| `celery-beat` | — | Periodic task scheduler |
-| `postgres` | 5432 | DB: `pavilion_agentic_local` |
-| `redis` | 6379 | Celery broker (DB 0) + cache (DB 1) |
-
-**Dev build stack** (container suffix `-build`, network `pavilion-ai-agentic-dev_pavilion-build-network`, dir `/home/nisar/pavilion-ai-agentic-dev`):
-
-| Service | Host Port | Purpose |
-|---|---|---|
-| `django` | 8001 | REST API |
-| `frontend` | 3002 | Vite dev server |
-| `remotion-renderer` | 3004→8080 | Video render API (reuses `-dev` image) |
-| `celery` | — | Async task worker |
-| `celery-beat` | — | Periodic task scheduler |
-| `postgres` | 5433 | DB: `pavilion_agentic_build` |
-| `redis` | 6380 | Celery broker + cache |
-| `flower` | 5556 | Celery monitoring UI |
-
-The two stacks share no network, no database, and no Docker volume. Edits in one directory cannot affect the other.
-
-**Cloud Run production:** `docker/Dockerfile.cloudrun` builds a single image (React → Django static files). Django's `SPAFallbackMiddleware` serves `index.html` for non-API routes. The remotion-renderer is a separate Cloud Run service.
-
 ### Backend (`backend/`)
-Django project: `pavilion_gemini/`. Single `settings.py` driven by env vars.
+Django 4.2, DRF, JWT auth. Settings in `pavilion_gemini/settings.py`.
 
 **Apps:**
-- `tenants` — Multi-tenancy: `Tenant` + `TenantUser` models. Resolved via `X-Tenant-ID` header → subdomain → first active. Roles: `admin`, `editor`, `viewer`, `viewer-only`. `Tenant.api_keys` stores per-tenant third-party keys in a JSONField.
-- `cms` — Core content: `Article`, `Category`, `Media`, `WebStory`, `PosterTemplate`
-- `rss_fetcher` — RSS ingestion + Google Trends integration (Celery tasks every 5 min)
-- `workers` — Article publish scheduling + agentic trends (Celery tasks)
-- `agents` — Multi-agent video production pipeline (see below)
-- `video_studio` — `VideoJob` model; dispatches render jobs to the remotion-renderer
-- `style_library` — `StyleTemplate` model for reusable Remotion scene templates
+- `tenants` — Multi-tenancy via `X-Tenant-ID` header. Roles: `admin`, `editor`, `viewer`
+- `cms` — Articles, Categories, Media, WebStories, CanvaTemplates, PosterTemplates
+- `agents` — Gemini + CrewAI pipeline: social posts, video scripts, image fetcher, TTS (stubbed)
+- `video_studio` — VideoJob model + S3 upload via `gcs.py` (boto3, kept name for compat)
+- `rss_fetcher` — RSS ingestion + Google Trends
+- `workers` — Scheduled article publishing
+- `style_library` — Remotion style templates
 
-**API prefix:** All REST endpoints under `/api/`. Auth via JWT (`djangorestframework-simplejwt`): access token 24h, refresh 7 days. The `X-Tenant-ID` header is required for most authenticated endpoints.
+**S3 utility** (`backend/video_studio/gcs.py`): All GCS references replaced with boto3. Functions: `upload_bytes`, `upload_file`, `download_bytes`, `signed_url_for_gcs_url`.
 
-### Agentic Video Pipeline
-Flow: `POST /api/pipeline/generate/` → Celery task → CrewAI agents → `VideoProductionPlan` JSON → TTS audio (Google Cloud TTS, Chirp3 HD, Malayalam `ml-IN`) → GCS upload → article status `review` → producer triggers `POST /api/video/render/` → `VideoJob` → remotion-renderer HTTP call → MP4 → GCS.
+**TTS:** Stubbed — `_synthesize_chunk` returns `b""`. Replace with real TTS when needed.
 
-Key files:
-- `backend/agents/video_pipeline.py` — `VideoProductionPipeline` orchestrator (Context Analyzer → Script Writer → Scene Planner)
-- `backend/agents/tts_agent.py` — TTS generation
-- `backend/agents/image_fetcher.py` — Google Custom Search image injection
-- `backend/video_studio/tasks.py` — `render_video_task` Celery task
+### Social Studio Pipeline
+1. User attaches image → `POST /api/social-studio/extract-image-context/`
+2. Backend calls Gemini Vision (`agents/gemini_client.py` → `_ai_studio_generate_multimodal`) with PIL image
+3. Returns extracted text, content_type_hint, speakers
+4. User hits Generate → Celery task → `agents/social_tasks.py` → CrewAI social post crew
+5. Result stored in `article.social_post_plan` (JSON)
+6. Frontend shows "Open in Canva" button
 
-LLM: `google-generativeai` (Gemini). Default model: `gemini-2.5-flash-lite` (override via `GEMINI_MODEL` env var).
+### Canva CSV Export
+- `GET /api/articles/{id}/export_canva_csv/` — direct file download
+- `GET /api/articles/{id}/canva_csv_url/` — uploads CSV to S3, returns 7-day presigned URL
 
-### Frontend (`frontend/src/`)
-React 18 + Vite + Redux Toolkit. Axios client (`services/api.js`) injects `Authorization: Bearer` and `X-Tenant-ID` from localStorage on every request.
+**Filename format:** `{Headline} - {TemplateName}.csv` (e.g. `Rohit_Sharma_quote - Player_Quote_Card.csv`)
 
-**Routing:** Protected routes under `/` (Dashboard shell). Key routes: `/articles`, `/webstories`, `/video-studio`, `/rss-feeds`, `/settings`, `/onboarding`.
+**Templates:** 12 templates seeded via `manage.py seed_canva_templates`. View/edit at `/admin/cms/canvatemplate/`.
 
-**Video Studio** (`components/VideoStudio/`): `?article=ID` URL param switches between list and editor mode. Uses `@remotion/player` for in-browser preview and calls the backend render API for final export.
+**Canva Autofill API:** Applied for access (pending approval). Code in `agents/canva_push.py`. Set `CANVA_API_TOKEN` when approved.
 
-**Dev proxy:** `vite.config.js` proxies `/api` and `/media` to `http://pavilion-django-dev:8000` (Docker hostname). Override with `VITE_API_PROXY_TARGET`.
+### Gemini Client (`agents/gemini_client.py`)
+- Primary: Vertex AI REST (if `VERTEX_PROJECT` set) — not currently used
+- Fallback: `google-generativeai` SDK with `GEMINI_API_KEY`
+- `generate_with_parts()` — multimodal (text + images) via `_ai_studio_generate_multimodal()`
+- `generate_text()` — text only
+- Free tier limit: 20 req/day per key. Rotate key in `.env` + restart if quota hit.
 
 ### Remotion Renderer (`remotion-renderer/`)
-Standalone Express service. The Remotion bundle is pre-built into the Docker image at build time (`npm run bundle`). At runtime, `server.js` handles `POST /render` requests, spawns Chromium via `@remotion/renderer`, and uploads the output MP4 to GCS.
+Express + Chromium. Pre-bundled at Docker build time. Uses AWS SDK (`@aws-sdk/client-s3`) for MP4 upload.
 
-**Compositions** (`src/Root.tsx`):
-- `PavilionReel` (1080×1920, 30fps) — modular multi-scene; duration computed from scene `start_frame + duration_frames`
-- `CaptionedVideo` (1080×1920, 30fps) — TikTok-style captioned video
+**Missing lib files** were created manually (blocked by `.gitignore`):
+- `src/lib/constants.ts` — FPS, INTRO_DURATION, TAIL_BUFFER_FRAMES
+- `src/lib/types.ts` — Zod schemas: TimelineSchema, BackgroundElementSchema
+- `src/lib/utils.ts` — calculateFrameTiming, calculateBlur
 
-**Scene types** (`src/scenes/`): `Scene1`, `Scene2`, `QuoteCard`, `Scoreboard`, `StatComparison`, `TickerHeadline`
+---
 
-## Key Environment Variables
+## Development Access
 
-| Variable | Purpose |
+### VS Code Remote SSH (recommended)
+SSH config in `~/.ssh/config` on Mac:
+```
+Host 44.194.52.172
+  HostName 44.194.52.172
+  User ubuntu
+  IdentityFile ~/Downloads/pavilion-key.pem
+  ServerAliveInterval 60
+  ServerAliveCountMax 10
+  StrictHostKeyChecking no
+```
+Connect: `Cmd+Shift+P` → "Remote-SSH: Connect to Host" → `44.194.52.172`
+
+### SSH from terminal
+```bash
+ssh -i ~/Downloads/pavilion-key.pem ubuntu@44.194.52.172
+tmux attach -t dev   # or: tmux new -s dev
+```
+
+### Port forwarding (localhost dev access)
+In VS Code → Ports tab → forward `3001` and `8000`.
+Or terminal: `ssh -i ~/Downloads/pavilion-key.pem -N -L 3001:localhost:3001 -L 8000:localhost:8000 ubuntu@44.194.52.172`
+
+### Claude Code CLI on VM
+```bash
+# SSH into VM, then:
+cd ~/pavilion-ai-agentic-dev
+claude
+```
+
+---
+
+## Git Branches
+
+| Branch | Purpose |
 |---|---|
-| `SECRET_KEY` | Django secret key |
-| `DATABASE_URL` | PostgreSQL connection string (dev) |
-| `REDIS_URL` | Celery broker |
-| `GEMINI_API_KEY` | Google Gemini API key |
-| `GEMINI_MODEL` | LLM model (default: `gemini-2.5-flash-lite`) |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to GCP service account JSON |
-| `GCS_BUCKET_NAME` | GCS bucket for rendered MP4s |
-| `CLOUD_RUN_RENDERER_URL` | URL of the remotion-renderer Cloud Run service |
-| `GOOGLE_CUSTOM_SEARCH_API_KEY` + `_ENGINE_ID` | Image fetcher agent |
-| `VITE_API_BASE_URL` | Frontend API base URL |
-| `VITE_GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `develop` | Active development (current) |
+| `main` | Production-ready |
+| `backup/pre-aws-migration` | Safety snapshot before AWS migration |
 
-Copy `.env.example` to `.env` in the repo root and `backend/.env` before first run.
+```bash
+git add -p              # Stage selectively
+git commit -m "feat: ..."
+git push origin develop
+```
 
-**Note on local env vars:** `docker-compose.dev.yml` does NOT set `GEMINI_API_KEY`, `VERTEX_PROJECT`, or `GEMINI_MODEL`. These are loaded automatically from `backend/.env` by `environ.Env.read_env()` in `settings.py` at Django/Celery startup.
+---
 
-## Local Dev Troubleshooting
+## Troubleshooting
 
-Commands below use the `-dev` suffix (staff stack). For the dev build stack swap every `-dev` → `-build` and use `docker-compose.build.yml`.
-
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| Social Studio returns 500 / proxy error | Django container is down | `docker start pavilion-django-dev` |
-| Social post stuck on "queued" forever | Celery missing `-Q social` flag | Check `docker inspect pavilion-celery-dev --format '{{json .Config.Cmd}}'`; recreate with full `-Q default,social,pipeline,celery` |
-| `No module named 'crewai'` in Celery logs | Stale Docker image (pre-crewai commit) | `docker exec pavilion-celery-dev pip install "crewai>=1.14.4" "litellm>=1.40.0"` (temp), then rebuild with `--no-cache` |
-| "Given token not valid for any token type" in UI | JWT tokens expired (>7 days since last login) | Clear localStorage in browser devtools, log in again |
-| Dev tunnel URL stopped working | cloudflared process died | `cloudflared tunnel --url http://localhost:3002 --no-autoupdate &` — note the URL changes on each restart |
-| Dev build stack container name conflict | Old containers not removed | `docker ps -a --filter name=build \| xargs docker rm -f` then `docker compose -f docker-compose.build.yml up -d` |
+| Symptom | Fix |
+|---|---|
+| SSH timeout | Security group may have blocked port 22. Open via AWS CloudShell: `aws ec2 authorize-security-group-ingress --group-id sg-02a46596bc72c05a3 --protocol tcp --port 22 --cidr 0.0.0.0/0 --region us-east-1` |
+| Gemini Vision returns empty | Check quota: `docker logs pavilion-django-dev \| grep SocialTask`. If 429, rotate `GEMINI_API_KEY` in `.env` |
+| Container not picking up new `.env` | Restart: `docker compose -f docker-compose.dev.yml -f docker-compose.override.yml up -d django celery celery-beat` |
+| "depends on undefined service" | Override file puts postgres/remotion in profiles. Base file must not have them in depends_on |
+| JWT expired after container restart | Log out and log back in at `/login` |
+| Flower exited (code 2) | Restart: `docker compose -f docker-compose.dev.yml -f docker-compose.override.yml up -d flower` |
+| S3 access denied | Check IAM role attached to EC2: `aws sts get-caller-identity` should show `pavilion-ec2-roles` |

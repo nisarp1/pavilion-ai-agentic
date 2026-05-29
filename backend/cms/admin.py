@@ -153,3 +153,27 @@ class WebStorySlideAdmin(admin.ModelAdmin):
     search_fields = ['story__title', 'caption']
     ordering = ['story', 'order']
 
+
+
+from .models_canva import CanvaTemplate
+
+@admin.register(CanvaTemplate)
+class CanvaTemplateAdmin(admin.ModelAdmin):
+    list_display = ['name', 'content_type', 'canva_template_id', 'tenant', 'is_active']
+    list_filter = ['content_type', 'is_active', 'tenant']
+    search_fields = ['name', 'canva_template_id']
+    readonly_fields = ['created_at', 'updated_at']
+    fieldsets = (
+        ('Basic Info', {
+            'fields': ('name', 'tenant', 'content_type', 'is_active', 'description')
+        }),
+        ('Canva Config', {
+            'fields': ('canva_template_id', 'slots', 'team_colors')
+        }),
+        ('Integrations', {
+            'fields': ('google_sheet_id',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )

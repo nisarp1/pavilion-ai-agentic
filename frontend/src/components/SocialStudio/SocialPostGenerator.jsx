@@ -82,6 +82,8 @@ export default function SocialPostGenerator() {
   const [sheetUrlInput, setSheetUrlInput]   = useState('')
   const [linkingSheet, setLinkingSheet]     = useState(false)
   const [sheetLinkError, setSheetLinkError] = useState('')
+  const [csvLink, setCsvLink] = useState(null)  // { url, filename } from S3
+  const [csvLinkLoading, setCsvLinkLoading] = useState(false)
 
   // ── Pipeline state ────────────────────────────────────────────────────────────
   const [status, setStatus]         = useState('idle')
@@ -391,9 +393,22 @@ export default function SocialPostGenerator() {
     }
   }
 
-  const handleOpenInCanva = (canvaUrl) => {
-    window.open(canvaUrl, '_blank', 'noopener,noreferrer')
-    handleDownloadCSV(`${_articleTitle()}.csv`)
+  const handleOpenInCanva = async (canvaUrl) => {
+    window.open(canvaUrl, "_blank", "noopener,noreferrer")
+    const hl = ((plan && (plan.Headline || plan.headline)) || "post").replace(/[^a-zA-Z0-9 ]/g, "").trim().replace(/ +/g, "_").slice(0, 50)
+    const tn = ((plan && plan._template_name) || "canva").replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)
+    handleDownloadCSV(hl + " - " + tn + ".csv")
+    if (!articleId) return
+    setCsvLinkLoading(true)
+    setCsvLink(null)
+    try {
+      const r = await api.get("articles/" + articleId + "/canva_csv_url/")
+      setCsvLink({ url: r.data.csv_url, filename: r.data.filename })
+    } catch (e) {
+      console.error("CSV S3 link failed", e)
+    } finally {
+      setCsvLinkLoading(false)
+    }
   }
 
   const handleLinkSheet = async () => {
@@ -937,6 +952,22 @@ export default function SocialPostGenerator() {
                   Download CSV
                 </button>
               </div>
+              {csvLinkLoading && (
+                <div className="text-xs text-gray-500 flex items-center gap-1.5 mt-2">
+                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"/><path fill="currentColor" d="M4 12a8 8 0 018-8v8z" className="opacity-75"/></svg>
+                  Uploading CSV to shared link...
+                </div>
+              )}
+              {csvLink && !csvLinkLoading && (
+                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-xs font-semibold text-blue-800 mb-1">CSV ready — valid 7 days</p>
+                  <div className="flex items-center gap-2">
+                    <input readOnly value={csvLink.url} className="flex-1 text-xs text-blue-700 bg-white border border-blue-200 rounded px-2 py-1 truncate" />
+                    <button onClick={() => navigator.clipboard.writeText(csvLink.url).then(() => alert("Link copied!"))} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded font-medium whitespace-nowrap">Copy Link</button>
+                    <a href={csvLink.url} download={csvLink.filename} className="text-xs bg-white hover:bg-gray-50 text-blue-700 border border-blue-300 px-3 py-1.5 rounded font-medium whitespace-nowrap">Download</a>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Social media caption */}

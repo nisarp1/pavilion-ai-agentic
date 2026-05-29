@@ -43,8 +43,9 @@ services:
       context: ./remotion-renderer
       dockerfile: Dockerfile
     container_name: pavilion-remotion-dev
+    restart: unless-stopped
     environment:
-      AWS_S3_BUCKET: pavilion-media
+      AWS_S3_BUCKET: pavilion-media-009846
       AWS_REGION: us-east-1
       PORT: '8080'
     ports:
@@ -58,6 +59,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.dev
     container_name: pavilion-celery-dev
+    restart: unless-stopped
     command: celery -A pavilion_gemini worker --loglevel=info -Q default,social,pipeline,celery
     environment:
       DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
@@ -68,19 +70,17 @@ services:
       REDIS_CACHE_URL: redis://redis:6379/1
       CLOUD_RUN_RENDERER_URL: http://remotion-renderer:8080
       DJANGO_INTERNAL_URL: http://django:8000
-      AWS_S3_BUCKET: pavilion-media
+      AWS_S3_BUCKET: pavilion-media-009846
       AWS_REGION: us-east-1
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+      SECRET_KEY: "${SECRET_KEY}"
       ENVIRONMENT: development
       DEBUG: 'true'
     volumes:
       - .:/app
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
-      remotion-renderer:
-        condition: service_started
     networks:
       - pavilion-network
 
@@ -90,6 +90,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.dev
     container_name: pavilion-celery-beat-dev
+    restart: unless-stopped
     command: celery -A pavilion_gemini beat --loglevel=info --scheduler celery.beat.PersistentScheduler
     environment:
       DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
@@ -98,13 +99,13 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       REDIS_URL: redis://redis:6379/0
       REDIS_CACHE_URL: redis://redis:6379/1
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+      SECRET_KEY: "${SECRET_KEY}"
       ENVIRONMENT: development
       DEBUG: 'true'
     volumes:
       - .:/app
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
@@ -116,6 +117,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.dev
     container_name: pavilion-django-dev
+    restart: unless-stopped
     command: >
       sh -c "python backend/manage.py migrate &&
              python backend/manage.py runserver 0.0.0.0:8000"
@@ -127,10 +129,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       REDIS_CACHE_URL: redis://redis:6379/1
       CLOUD_RUN_RENDERER_URL: http://remotion-renderer:8080
-      AWS_S3_BUCKET: pavilion-media
+      AWS_S3_BUCKET: pavilion-media-009846
       AWS_REGION: us-east-1
       ENVIRONMENT: development
       DEBUG: 'true'
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+      SECRET_KEY: "${SECRET_KEY}"
       ALLOWED_HOSTS: '*'
       CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:8000
     ports:
@@ -138,12 +142,8 @@ services:
     volumes:
       - .:/app
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
-      remotion-renderer:
-        condition: service_started
     networks:
       - pavilion-network
     stdin_open: true
@@ -155,6 +155,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.dev
     container_name: pavilion-flower-dev
+    restart: unless-stopped
     command: celery -A pavilion_gemini flower --port=5555
     environment:
       DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
@@ -177,6 +178,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.dev
     container_name: pavilion-frontend-dev
+    restart: unless-stopped
     environment:
       VITE_API_BASE_URL: /api
       VITE_ENVIRONMENT: development

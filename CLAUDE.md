@@ -12,11 +12,14 @@ PavilionEnd is a multi-tenant AI-powered sports newsroom CMS. Editors manage art
 
 | Service | AWS Equivalent | Details |
 |---|---|---|
-| Compute | EC2 t3.xlarge | 4 vCPU, 16GB RAM, us-east-1 |
-| Database | RDS PostgreSQL 15 | `pavilion-db.cuxeea2gkh4l.us-east-1.rds.amazonaws.com` |
+| Compute | EC2 t3.xlarge **(Spot)** | 4 vCPU, 16GB RAM, us-east-1 — persistent-stop, auto-restarts |
+| Database | PostgreSQL 15 **(Docker local)** | Container pavilion-postgres-dev, daily S3 backup 02:00 UTC |
 | Storage | S3 | Bucket: `pavilion-media-009846` |
 | Auth | IAM Role | `pavilion-ec2-roles` attached to EC2 (no static keys needed) |
 | Public IP | Elastic IP | `44.194.52.172` (permanent) |
+
+
+> **DB Backups:** Daily pg_dump → S3  at 02:00 UTC (30-day retention). Restore: see .
 
 **GCP is fully shut down.** Gemini is accessed via API key only (no Vertex AI / GCP credentials).
 

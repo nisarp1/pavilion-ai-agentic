@@ -133,12 +133,14 @@ class NewsWriterAgent:
         )
 
         # ── Step 2: Write ─────────────────────────────────────────────────────
-        # Try Vertex AI first (service account — no free-tier quota limits)
-        result = self._write_with_vertex(topic, context)
-        if result:
-            return result
+        # Try Vertex AI only if VERTEX_PROJECT is configured (not on this AWS setup)
+        import os as _os
+        if _os.environ.get('VERTEX_PROJECT') or _os.environ.get('VERTEXAI_PROJECT'):
+            result = self._write_with_vertex(topic, context)
+            if result:
+                return result
 
-        # Fall back to AI Studio key if Vertex AI is unavailable
+        # Use AI Studio key directly (AWS setup — no Vertex credentials)
         genai = configure_gemini()
         if genai:
             result = self._write_with_context(genai, topic, context)

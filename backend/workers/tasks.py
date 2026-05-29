@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 # Google Cloud Text-to-Speech — imported lazily inside tasks that use it (gRPC init is slow).
 TTS_AVAILABLE = True  # assume available; actual import happens inside tasks
 
-GEMINI_MODEL = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')
+GEMINI_MODEL = getattr(settings, 'GEMINI_MODEL', 'gemini-2.0-flash')  # 2.0-flash: no thinking overhead, 3x cheaper
 
 
 def fetch_featured_image_from_url(article_url):

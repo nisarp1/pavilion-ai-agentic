@@ -334,7 +334,7 @@ CELERY_BEAT_SCHEDULE = {
     },
     'refresh-agentic-trends': {
         'task': 'workers.tasks.run_agentic_trends_celery',
-        'schedule': timedelta(minutes=5),
+        'schedule': timedelta(hours=1),
     },
 }
 
@@ -355,7 +355,7 @@ CACHES = {
 }
 
 # Agentic Trends configuration
-TRENDS_CACHE_TTL = 300  # seconds (5 min)
+TRENDS_CACHE_TTL = 3600  # seconds (1 hr) — matches beat schedule
 TRENDS_MAX_TOPICS = 15
 TRENDS_SPORTS = ['cricket', 'football', 'kabaddi', 'tennis', 'hockey', 'badminton']
 

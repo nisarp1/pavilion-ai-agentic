@@ -56,7 +56,7 @@ def get_model_priority_list():
     """Returns model names in priority order (for backward compat — tools arg ignored)."""
     from agents.gemini_client import get_model_name
     configured = get_model_name()
-    fallbacks = ['gemini-2.5-flash', 'gemini-2.0-flash']
+    fallbacks = ['gemini-2.0-flash', 'gemini-1.5-flash']
     seen: set[str] = set()
     result = []
     for m in [configured] + fallbacks:
@@ -69,7 +69,7 @@ def get_model_priority_list():
 _vertex_creds_cache = {'creds': None, 'project': None, 'expires_at': 0}
 
 
-def call_vertex_ai(prompt: str, model: str = 'gemini-2.5-flash', location: str = 'us-central1') -> str | None:
+def call_vertex_ai(prompt: str, model: str = 'gemini-2.0-flash', location: str = 'us-central1') -> str | None:
     """
     Call Vertex AI Gemini via the REST API using the GCP service account.
     Bypasses the AI Studio free-tier quota entirely — uses cloud-platform scope.

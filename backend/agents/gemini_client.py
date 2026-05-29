@@ -108,6 +108,9 @@ def _ai_studio_generate(prompt: str, *, json_mode: bool = False, temperature: fl
         cfg["response_mime_type"] = "application/json"
     if temperature is not None:
         cfg["temperature"] = temperature
+    # Disable thinking mode — flash-lite/2.0-flash don't need it and 2.5-flash thinking
+    # costs 6x more per token. Always off for background/automated tasks.
+    cfg["thinking_config"] = {"thinking_budget": 0}
 
     response = model.generate_content(prompt, generation_config=cfg or None)
     return response.text.strip() if response and response.text else ""
@@ -135,6 +138,7 @@ def _ai_studio_generate_multimodal(parts, *, json_mode=False, temperature=None):
     cfg = {}
     if json_mode: cfg["response_mime_type"] = "application/json"
     if temperature is not None: cfg["temperature"] = temperature
+    cfg["thinking_config"] = {"thinking_budget": 0}  # disable thinking — saves 6x on tokens
     cp = []
     for p in parts:
         if "text" in p:

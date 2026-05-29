@@ -316,28 +316,19 @@ CELERY_TASK_DEFAULT_QUEUE = 'default'
 RSS_FETCH_INTERVAL_MINUTES = env.int('RSS_FETCH_INTERVAL_MINUTES', default=5)
 
 CELERY_BEAT_SCHEDULE = {
-    'fetch-rss-feeds': {
-        'task': 'rss_fetcher.tasks.fetch_rss_feeds',
-        'schedule': timedelta(minutes=RSS_FETCH_INTERVAL_MINUTES),
+    # RSS feed fetch — no Gemini calls, safe to keep scheduled
+    "fetch-rss-feeds": {
+        "task": "rss_fetcher.tasks.fetch_rss_feeds",
+        "schedule": timedelta(minutes=RSS_FETCH_INTERVAL_MINUTES),
     },
-    'fetch-trends-sports': {
-        'task': 'rss_fetcher.tasks.fetch_google_trends_sports',
-        'schedule': timedelta(hours=1),
+    # Article publishing check — no Gemini calls
+    "publish-scheduled-articles": {
+        "task": "workers.tasks.publish_scheduled_articles",
+        "schedule": timedelta(minutes=1),
     },
-    'enhance-with-google-trends': {
-        'task': 'rss_fetcher.tasks.enhance_articles_with_google_trends',
-        'schedule': timedelta(hours=1),
-    },
-    'publish-scheduled-articles': {
-        'task': 'workers.tasks.publish_scheduled_articles',
-        'schedule': timedelta(minutes=1),
-    },
-    'refresh-agentic-trends': {
-        'task': 'workers.tasks.run_agentic_trends_celery',
-        'schedule': timedelta(hours=1),
-    },
+    # fetch-trends-sports, enhance-with-google-trends, refresh-agentic-trends
+    # removed from schedule — ON-DEMAND only via Refresh button in UI
 }
-
 # Django cache backend
 # Upstash free tier is single-DB, so broker and cache share the same URL —
 # key prefixes prevent collisions. On Memorystore, REDIS_CACHE_URL uses DB 1.

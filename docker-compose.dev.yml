@@ -183,6 +183,7 @@ services:
       - "1200:1200"
     environment:
       NODE_ENV: production
+      TWITTER_AUTH_TOKEN: "${TWITTER_AUTH_TOKEN}"
     networks:
       - pavilion-network
 

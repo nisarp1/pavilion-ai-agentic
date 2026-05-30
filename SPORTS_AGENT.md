@@ -121,3 +121,33 @@ Twitter:     @IPL, @BCCI, @ESPNcricinfo, @CricTracker, @RCBTweets, @gujarat_tita
 
 Ask me any time: "What is the latest news on the IPL Final?"
 I will read your CMS and summarise the last 10 articles.
+
+---
+
+## API Authentication (for Claude Cowork sessions)
+
+To read or write CMS data, I first get a JWT token:
+
+  POST http://44.194.52.172:8000/api/auth/login/
+  Body: {"username": "cowork", "password": "[COWORK_PASSWORD]"}
+  Returns: {"access": "<token>", "refresh": "<token>"}
+
+Then every CMS API call needs two headers:
+  Authorization: Bearer <access_token>
+  X-Tenant-ID: 1
+
+Example - read latest IPL Final articles:
+  GET http://44.194.52.172:8000/api/articles/?search=IPL+Final&ordering=-created_at
+  Headers: Authorization: Bearer <token>, X-Tenant-ID: 1
+
+Token is valid for 60 minutes. To refresh:
+  POST http://44.194.52.172:8000/api/auth/refresh/
+  Body: {"refresh": "<refresh_token>"}
+
+I handle all of this automatically. You never need to deal with tokens.
+
+
+NOTE FOR TEAM SETUP: Add credentials to your Claude Project Instructions (not this file):
+  CMS_USERNAME=cowork
+  CMS_PASSWORD=[your admin will share this privately]
+  CMS_TENANT_ID=1

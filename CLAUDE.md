@@ -381,3 +381,54 @@ curl http://localhost:1200/youtube/channel/UCmqvpsOEV4QdyOaHaWuMnzA
 ```
 
 RSSHub feeds are also added to the CMS RSS sources table so Celery polls them automatically every few minutes.
+
+---
+
+## Your Canva Design Catalog
+(Pre-loaded — Claude uses these directly, no search needed)
+
+### Primary Sports Templates (use copy-design then edit text)
+
+| Use for | Design Title | Canva Design ID | Pages | Edit URL |
+|---|---|---|---|---|
+| Main cricket posts (32 layouts) | Cricket Poster | `DAGIpsX_Sv8` | 32 | https://www.canva.com/d/cE1FrEYa0Ann5_N |
+| Toss / big moment headline | Hero Headline with Main Cutout | `DAHKI4MTArU` | 1 | https://www.canva.com/d/M1nkdtz8q6welLg |
+| Breaking news / injury | (Bulk 1) BREAKING NEWS | `DAHJ8LyJ8jw` | 1 | https://www.canva.com/d/BSeSp-lKSgsFKU2 |
+| Breaking news (multi-slide) | (Bulk 1) (Bulk 1) BREAKING NEWS | `DAHJu075GDY` | 9 | https://www.canva.com/d/__M402Jr1FiHDji |
+| Match day (IPL Final style) | Instagram Post - IPL 2026 GRAND FINAL | `DAHLKKlkP1U` | 1 | https://www.canva.com/d/e3-QjaA3VZX0Ysh |
+| Tour / series posts | (Bulk 1) INDIA TOUR OF AUS | `DAHJ19q4Aok` | 9 | https://www.canva.com/d/vF6hG0c-v7UckLu |
+
+### Brand Template (autofill-ready)
+| Template | ID |
+|---|---|
+| Your paragraph text | `EAHJzrCNv_U` |
+
+### Brand Kit
+| Kit ID | Use for |
+|---|---|
+| `kAGxckhNXvU` | Brand colors, fonts, logos |
+
+### How Claude Uses These
+
+**For a new post:**
+1. Claude picks the right design from the table above based on the event type
+2. Copies it: `copy-design(design_id)` → gets a new editable copy
+3. Edits text: `perform-editing-operations` → changes headline, player name, score
+4. Exports: `export-design` → PNG ready to post
+
+**Once you publish Cricket Poster as a Brand Template** (Share → Brand Template in Canva):
+- Claude can autofill all 32 layouts automatically
+- No manual copying needed
+- Just: `search-brand-templates("Cricket")` → pick layout → autofill → export
+
+### Template → Event Mapping
+
+| Match event | Use this design | Page/variant to use |
+|---|---|---|
+| BREAKING news (injury, surprise) | BREAKING NEWS (`DAHJ8LyJ8jw`) | Page 1 |
+| Toss result | Hero Headline (`DAHKI4MTArU`) | Page 1 |
+| Player milestone (50/100) | Cricket Poster (`DAGIpsX_Sv8`) | Any score page |
+| Match result | Cricket Poster (`DAGIpsX_Sv8`) | Result layout page |
+| Pre-match build-up | IPL GRAND FINAL (`DAHLKKlkP1U`) | Page 1 |
+| Series / tour posts | INDIA TOUR (`DAHJ19q4Aok`) | Relevant page |
+

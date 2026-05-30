@@ -172,6 +172,20 @@ services:
     networks:
       - pavilion-network
 
+
+  # RSSHub — bridges Twitter/X, Instagram, Facebook, YouTube to RSS
+  # Feeds: http://localhost:1200/twitter/user/<handle>
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: pavilion-rsshub
+    restart: unless-stopped
+    ports:
+      - "1200:1200"
+    environment:
+      NODE_ENV: production
+    networks:
+      - pavilion-network
+
   # React Frontend (optional)
   frontend:
     build:

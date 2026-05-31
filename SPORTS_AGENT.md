@@ -291,7 +291,7 @@ For screenshots:
 Write player and team names in Malayalam transliteration everywhere — headings and captions. Never in English.
 
 ```
-PLAYER NAMES:
+CRICKET PLAYERS:
   Virat Kohli      → വിരാട് കോഹ്‌ലി
   Rohit Sharma     → രോഹിത് ശർമ
   Shubman Gill     → ഷൂബ്‌മൻ ഗിൽ
@@ -303,13 +303,321 @@ PLAYER NAMES:
   Suryakumar Yadav → സൂര്യകുമാർ യാദവ്
   Rishabh Pant     → ഋഷഭ് പന്ത്
 
-TEAM NAMES:
-  Gujarat Titans   → ഗുജറാത്ത് ടൈറ്റൻസ്   (GT is ok in stat lines)
-  Mumbai Indians   → മുംബൈ ഇന്ത്യൻസ്
-  Chennai Super Kings → ചെന്നൈ സൂപ്പർ കിംഗ്സ്
+CRICKET TEAMS:
+  Gujarat Titans              → ഗുജറാത്ത് ടൈറ്റൻസ്   (GT ok in stat lines)
+  Mumbai Indians              → മുംബൈ ഇന്ത്യൻസ്
+  Chennai Super Kings         → ചെന്നൈ സൂപ്പർ കിംഗ്സ്
   Royal Challengers Bengaluru → റോയൽ ചലഞ്ചേഴ്സ് ബെംഗളൂരു
-  Rajasthan Royals → രാജസ്ഥാൻ റോയൽസ്
-  India            → ഇന്ത്യ
+  Rajasthan Royals            → രാജസ്ഥാൻ റോയൽസ്
+  India                       → ഇന്ത്യ
+
+FOOTBALL PLAYERS — Official Malayalam Reference Table
+  (Source: Training data sheet. Always use these exact spellings.)
+
+  Lionel Messi           → ലയണൽ മെസ്സി
+  Cristiano Ronaldo      → ക്രിസ്റ്റ്യാനോ റൊണാൾഡോ
+  Pelé                   → പെലെ
+  Diego Maradona         → ഡീഗോ മറഡോണ
+  Johan Cruyff           → യൊഹാൻ ക്രൈഫ്
+  Zinedine Zidane        → സിനദീൻ സിദാൻ
+  Ronaldo Nazário        → റൊണാൾഡോ നസാരിയോ
+  Ronaldinho             → റൊണാൾഡീഞ്ഞോ
+  Michel Platini         → മിഷേൽ പ്ലാറ്റിനി
+  Alfredo Di Stéfano     → ആൽഫ്രെഡോ ഡി സ്റ്റെഫാനോ
+  Ferenc Puskás          → ഫെറൻക് പുസ്കാസ്
+  Franz Beckenbauer      → ഫ്രാൻസ് ബെക്കൻബവർ
+  George Best            → ജോർജ്ജ് ബെസ്റ്റ്
+  Marco van Basten       → മാർക്കോ വാൻ ബാസ്റ്റൺ
+  Paolo Maldini          → പൗലോ മാൾഡീനി
+  Xavi Hernandez         → സാവി ഹെർണാണ്ടസ്
+  Andrés Iniesta         → ആന്ദ്രേസ് ഇനിയേസ്റ്റ
+  Thierry Henry          → തിയറി ഒൻറി
+  Roberto Baggio         → റോബർട്ടോ ബാജിയോ
+  Garrincha              → ഗരിഞ്ച
+  Eusebio                → യൂസേബിയോ
+  Lev Yashin             → ലെവ് യാഷിൻ
+  Zico                   → സീക്കോ
+  Romário                → റൊമാരിയോ
+  Lothar Matthäus        → ലോതർ മത്തേയൂസ്
+  Ruud Gullit            → റൂഡ് ഗുള്ളിറ്റ്
+  Bobby Charlton         → ബോബി ചാൾട്ടൺ
+  Franco Baresi          → ഫ്രാങ്കോ ബറേസി
+  Gerd Müller            → ഗെർഡ് മുള്ളർ
+  Gianluigi Buffon       → ജിയാൻലൂജി ബഫൺ
+  Iker Casillas          → ഇക്കർ കസിയസ്
+  Manuel Neuer           → മാനുവൽ ന്യൂയർ
+  Peter Schmeichel       → പീറ്റർ ഷ്മൈക്കൽ
+  Oliver Kahn            → ഒലിവർ കാൻ
+  Dino Zoff              → ഡിനോ സോഫ്
+  Cafu                   → കഫു
+  Roberto Carlos         → റോബർട്ടോ കാർലോസ്
+  Philipp Lahm           → ഫിലിപ്പ് ലാം
+  Javier Zanetti         → ഹാവിയർ സാനെറ്റി
+  Dani Alves             → ഡാനി ആൽവസ്
+  Carlos Alberto         → കാർലോസ് ആൽബർട്ടോ
+  Fabio Cannavaro        → ഫാബിയോ കന്നവാരോ
+  Alessandro Nesta       → അലസ്സാൻഡ്രോ നെസ്റ്റ
+  Sergio Ramos           → സെർജിയോ റാമോസ്
+  Carles Puyol           → കാർലെസ് പുയോൾ
+  John Terry             → ജോൺ ടെറി
+  Rio Ferdinand          → റിയോ ഫെർഡിനാൻഡ്
+  Nemanja Vidić          → നെമാൻജ വിഡിച്ച്
+  Virgil van Dijk        → വിർജിൽ വാൻ ഡൈക്ക്
+  Ashley Cole            → ആഷ്‌ലി കോൾ
+  Andrea Pirlo           → ആൻഡ്രിയ പിർലോ
+  Roy Keane              → റോയ് കീൻ
+  Patrick Vieira         → പാട്രിക് വിയേര
+  Claude Makélélé        → ക്ലോഡ് മക്കലേലെ
+  Sergio Busquets        → സെർജിയോ ബുസ്ക്വെറ്റ്സ്
+  N'Golo Kanté           → എൻഗോളോ കാന്റെ
+  Xabi Alonso            → സാബി അലോൺസോ
+  Paul Scholes           → പോൾ സ്കോൾസ്
+  Steven Gerrard         → സ്റ്റീവൻ ജെറാർഡ്
+  Frank Lampard          → ഫ്രാങ്ക് ലാംപാർഡ്
+  Luka Modrić            → ലൂക്കാ മോഡ്രിച്ച്
+  Kevin De Bruyne        → കെവിൻ ഡി ബ്രൂയ്ൻ
+  Toni Kroos             → ടോണി ക്രൂസ്
+  Ryan Giggs             → റയാൻ ഗിഗ്സ്
+  Luís Figo              → ലൂയിസ് ഫിഗോ
+  Rivaldo                → റിവാൾഡോ
+  Kaká                   → കക്ക
+  Francesco Totti        → ഫ്രാൻസെസ്കോ ടോട്ടി
+  Alessandro Del Piero   → അലസ്സാൻഡ്രോ ഡെൽ പിയേറോ
+  Wayne Rooney           → വെയ്ൻ റൂണി
+  Dennis Bergkamp        → ഡെന്നിസ് ബെർഗ്കാംപ്
+  Eric Cantona           → എറിക് കാന്റോണ
+  Hristo Stoichkov       → ഹ്രിസ്റ്റോ സ്റ്റോയിച്ച്കോവ്
+  George Weah            → ജോർജ്ജ് വിയ
+  Andriy Shevchenko      → ആൻഡ്രി ഷെവ്ചെങ്കോ
+  Gabriel Batistuta      → ഗബ്രിയേൽ ബാറ്റിസ്റ്റ്യൂട്ട
+  Alan Shearer           → അലൻ ഷിയറർ
+  Gary Lineker           → ഗാരി ലിനേക്കർ
+  Raúl                   → റൗൾ
+  David Villa            → ഡേവിഡ് വിയ്യ
+  Fernando Torres        → ഫെർണാണ്ടോ ടോറസ്
+  Samuel Eto'o           → സാമുവൽ എറ്റോ
+  Didier Drogba          → ദിദിയർ ദ്രോഗ്ബ
+  Zlatan Ibrahimović     → സ്ലാറ്റൻ ഇബ്രാഹിമോവിച്ച്
+  Robert Lewandowski     → റോബർട്ട് ലെവൻഡോവ്സ്കി
+  Karim Benzema          → കരീം ബെൻസെമ
+  Luis Suárez            → ലൂയിസ് സുവാരസ്
+  Neymar                 → നെയ്മർ
+  Kylian Mbappé          → കിലിയൻ എംബാപ്പെ
+  Erling Haaland         → എർലിംഗ് ഹാലൻഡ്
+  Mohamed Salah          → മുഹമ്മദ് സലാ
+  Sadio Mané             → സാദിയോ മാനെ
+  Eden Hazard            → ഏദൻ ഹസാർഡ്
+  Gareth Bale            → ഗാരെത് ബെയ്ൽ
+  Antoine Griezmann      → അന്റോയിൻ ഗ്രീസ്മാൻ
+  Harry Kane             → ഹാരി കെയ്ൻ
+  Son Heung-min          → സൺ ഹ്യൂങ്-മിൻ
+  Angel Di Maria         → എയ്ഞ്ചൽ ഡി മരിയ
+  Thomas Müller          → തോമസ് മുള്ളർ
+  Arjen Robben           → ആര്യൻ റോബൻ
+  Franck Ribéry          → ഫ്രാങ്ക് റിബറി
+  Wesley Sneijder        → വെസ്ലി സ്നൈഡർ
+  Robin van Persie       → റോബിൻ വാൻ പേഴ്സി
+  Ruud van Nistelrooy    → റൂഡ് വാൻ നിസ്റ്റൽറൂയ്
+  Hidetoshi Nakata       → ഹിഡെതോഷി നകാറ്റ
+  Park Ji-sung           → പാർക്ക് ജി-സങ്
+  Ali Daei               → അലി ദായി
+  Tim Cahill             → ടിം കാഹിൽ
+  Clint Dempsey          → ക്ലിന്റ് ഡെംപ്സി
+  Landon Donovan         → ലാൻഡൻ ഡോണവൻ
+  Christian Pulisic      → ക്രിസ്റ്റ്യൻ പുലിസിച്ച്
+  Rafael Márquez         → റാഫേൽ മാർക്വേസ്
+  Javier Hernández       → ഹാവിയർ ഹെർണാണ്ടസ്
+  Keylor Navas           → കെയ്‌ലർ നവാസ്
+  Carlos Valderrama      → കാർലോസ് വാൾഡെറാമ
+  Radamel Falcao         → റഡാമൽ ഫാൽക്കാവോ
+  James Rodríguez        → ഹാമിസ് റോഡ്രിഗസ്
+  Alexis Sánchez         → അലക്സിസ് സാഞ്ചസ്
+  Sergio Agüero          → സെർജിയോ അഗ്യൂറോ
+  Carlos Tevez           → കാർലോസ് ടെവസ്
+  Gonzalo Higuaín        → ഗോൺസാലോ ഹിഗ്വെയ്ൻ
+  Paulo Dybala           → പൗലോ ഡിബാല
+  Thiago Silva           → തിയാഗോ സിൽവ
+  Casemiro               → കാസെമിറോ
+  Alisson Becker         → ആലിസൺ ബെക്കർ
+  Vinícius Júnior        → വിനീഷ്യസ് ജൂനിയർ
+  Rodrygo                → റോഡ്രിഗോ
+  Raphinha               → റാഫീഞ്ഞ
+  Richarlison            → റിച്ചാർലിസൺ
+  Gabriel Magalhaes      → ഗബ്രിയേൽ മഗൽഹൈസ്
+  Diego Godín            → ഡീഗോ ഗോഡിൻ
+  Edinson Cavani         → എഡിൻസൺ കവാനി
+  Juan Román Riquelme    → യുവാൻ റോമൻ റിക്വൽമെ
+  Javier Mascherano      → ഹാവിയർ മഷറാനോ
+
+CRICKET PLAYERS — Full Reference Table
+  (Source: Training data sheet. Always use these exact spellings.)
+
+  — INDIA —
+  Sachin Tendulkar     → സച്ചിൻ ടെണ്ടുൽക്കർ
+  Virat Kohli          → വിരാട് കോഹ്‌ലി
+  MS Dhoni             → എം.എസ്. ധോണി
+  Rohit Sharma         → രോഹിത് ശർമ
+  Sourav Ganguly       → സൗരവ് ഗാംഗുലി
+  Rahul Dravid         → രാഹുൽ ദ്രാവിഡ്
+  Anil Kumble          → അനിൽ കുംബ്ലെ
+  VVS Laxman           → വി.വി.എസ്. ലക്ഷ്മൺ
+  Kapil Dev            → കപിൽ ദേവ്
+  Shubman Gill         → ഷൂബ്‌മൻ ഗിൽ
+  Jasprit Bumrah       → ജസ്‌പ്രീത് ബുംറ
+  KL Rahul             → കെ.എൽ. രാഹുൽ
+  Hardik Pandya        → ഹർദ്ദിക് പാണ്ഡ്യ
+  Suryakumar Yadav     → സൂര്യകുമാർ യാദവ്
+  Rishabh Pant         → ഋഷഭ് പന്ത്
+  Ruturaj Gaikwad      → രുതുരാജ് ഗായ്ക്‌വാഡ്
+  Ravindra Jadeja      → രവീന്ദ്ര ജഡേജ
+  Ravichandran Ashwin  → രവിചന്ദ്രൻ അശ്വിൻ
+  Yuvraj Singh         → യുവരാജ് സിങ്
+  Mohammad Shami       → മുഹമ്മദ് ഷാമി
+  Kuldeep Yadav        → കുൽദീപ് യാദവ്
+  Axar Patel           → അക്ഷർ പട്ടേൽ
+  Shreyas Iyer         → ശ്രേയസ് അയ്യർ
+  Ishan Kishan         → ഈശാൻ കിഷൻ
+  Mohammed Siraj       → മുഹമ്മദ് സിറാജ്
+  Virender Sehwag      → വീരേന്ദർ സേവാഗ്
+  Harbhajan Singh      → ഹർഭജൻ സിങ്
+  Yusuf Pathan         → യൂസഫ് പഠാൻ
+  Irfan Pathan         → ഇർഫാൻ പഠാൻ
+  Zaheer Khan          → സഹീർ ഖാൻ
+
+  — AUSTRALIA —
+  Don Bradman          → ഡോൺ ബ്രാഡ്മാൻ
+  Ricky Ponting        → റിക്കി പൊന്റിംഗ്
+  Steve Waugh          → സ്റ്റീവ് വ
+  Shane Warne          → ഷെയ്ൻ വോൺ
+  Glenn McGrath        → ഗ്ലെൻ മക്‌ഗ്രാ
+  Adam Gilchrist       → ആഡം ഗിൽക്രിസ്റ്റ്
+  David Warner         → ഡേവിഡ് വാർണർ
+  Steve Smith          → സ്റ്റീവ് സ്മിത്ത്
+  Pat Cummins          → പാറ്റ് കമ്മിൻസ്
+  Mitchell Starc       → മിച്ചൽ സ്റ്റാർക്ക്
+
+  — ENGLAND —
+  Joe Root             → ജോ റൂട്ട്
+  James Anderson       → ജെയിംസ് ആൻഡേഴ്സൺ
+  Stuart Broad         → സ്റ്റുവർട്ട് ബ്രോഡ്
+  Kevin Pietersen      → കെവിൻ പീറ്റേഴ്സൺ
+  Andrew Flintoff      → ആൻഡ്രൂ ഫ്ലിന്റോഫ്
+  Ben Stokes           → ബെൻ സ്റ്റോക്സ്
+  Jonny Bairstow       → ജോണി ബെയ്‌ർസ്‌റ്റോ
+  Jos Buttler          → ജോസ് ബട്‌ലർ
+
+  — SOUTH AFRICA —
+  AB de Villiers       → എ.ബി. ഡി വിലിയേഴ്സ്
+  Graeme Smith         → ഗ്രഹാം സ്മിത്ത്
+  Jacques Kallis       → ഷാൾ കലിസ്
+  Dale Steyn           → ഡെയ്ൽ സ്റ്റെയ്ൻ
+  Kagiso Rabada        → കഗിസോ റബഡ
+
+  — NEW ZEALAND —
+  Martin Crowe         → മാർട്ടിൻ ക്രോ
+  Ross Taylor          → റോസ് ടെയ്‌ലർ
+  Brendon McCullum     → ബ്രെൻഡൻ മക്കുള്ളം
+  Kane Williamson      → കെയ്ൻ വില്യംസൺ
+  Trent Boult          → ട്രെന്റ് ബൗൾട്ട്
+
+  — WEST INDIES —
+  Brian Lara           → ബ്രയൻ ലാറ
+  Viv Richards         → വിവ് റിച്ചാർഡ്സ്
+  Clive Lloyd          → ക്ലൈവ് ലോയ്ഡ്
+  Curtly Ambrose       → കർട്ടലി ആംബ്രോസ്
+  Chris Gayle          → ക്രിസ് ഗെയ്ൽ
+  Dwayne Bravo         → ദ്വെയ്ൻ ബ്രാവോ
+
+  — PAKISTAN —
+  Imran Khan           → ഇംറാൻ ഖാൻ
+  Wasim Akram          → വസീം അക്‌റം
+  Inzamam-ul-Haq      → ഇൻസമാം-ഉൾ-ഹഖ്
+  Shahid Afridi        → ഷഹീദ് അഫ്രീദി
+  Babar Azam           → ബബർ ആസം
+  Shaheen Afridi       → ഷഹീൻ അഫ്രീദി
+
+  — SRI LANKA —
+  Kumar Sangakkara     → കുമാർ സംഗക്കാര
+  Mahela Jayawardene   → മഹേല ജയവർദ്ദേനെ
+  Muttiah Muralitharan → മുത്തയ്യ മുരളീതരൻ
+  Arjuna Ranatunga     → അർജുന റണതൂംഗ
+  Lasith Malinga       → ലസിത് മലിംഗ
+
+  — BANGLADESH —
+  Shakib Al Hasan      → ഷക്കിബ് അൽ ഹസൻ
+  Tamim Iqbal          → തമീം ഇക്ബൽ
+  Mushfiqur Rahim      → മുഷ്ഫിഖുർ റഹിം
+
+  — AFGHANISTAN —
+  Rashid Khan          → റഷീദ് ഖാൻ
+  Mohammad Nabi        → മുഹമ്മദ് നബി
+
+RULE FOR UNKNOWN PLAYERS:
+  1. Check this table first — if found, use exact spelling
+  2. If NOT in table → transliterate phonetically using existing patterns
+  3. Add "[unverified]" note → confirm with editor before next post
+  4. DO NOT delay production waiting for confirmation — post with best phonetic
+     transliteration and flag it
+```
+
+### Social Media Terms — CHECK THIS FIRST (Before Writing Any Caption)
+
+These are the slang and viral terms that make our content relatable and human.
+Before writing a caption, check if any of these terms fit the moment.
+Priority: use the MALAYALAM TERM wherever possible over generic English descriptions.
+
+```
+HYPE / VIRAL TERMS (for big moments — use these aggressively):
+  തൂക്കി          → Thookki — nailed it, delivered perfectly with confidence
+  അടിപൊളി         → Adipoli — absolutely fantastic, mind-blowing, super cool
+  തകർപ്പൻ         → Thakarppan — shattered expectations, impressively dominant
+  തകർത്തടിച്ചു    → Thakartthadichchu — absolutely dominated, crushed it
+  കൊലവിളിയുമായി  → Kolaviliyumayi — arriving with full hype and intensity
+  വമ്പൻ            → Vampan — massive, legendary, on a whole different level
+  ഹൈപ്പ്           → Hype — overwhelming buzz and excitement
+  ക്ലാസ്           → Class — pure class, elegance, effortless superiority
+  കട്ടക്ക്         → Kattakk — solid, sturdy, top-tier quality
+  ബഹളം             → Bahalaam — viral buzz and commotion something creates
+  ബോംബ്            → Bomb — explosive impact, bombshell moment
+  ആളൊരു            → Aaloru — "what a person!" used in awe/admiration
+  തിരിച്ചുവരവ്     → Thirichhuvarav — comeback, triumphant return
+  ഫൈറ്റ്           → Fight/Phait — the spirit of going hard, standing your ground
+  ഫ്ലോ             → Flow — in the zone, effortlessly smooth performance
+  ഫുൾ ഫോം          → Full Form — giving maximum energy, 100% commitment
+  ലെവൽ അപ്         → Level Up — levelled up, improved skill, noticeable glow-up
+  മൈൻഡ് ബ്ലോ       → Mind Blow — genuinely shocking or awe-inspiring
+  സൂപ്പർ ഹിറ്റ്    → Super Hit — massive success, cultural talking point
+  ചുട്ടമറുപടി     → Chuttamarupadi — scorching clap-back, savage response
+  തള്ളൽ            → Thallal — dramatic flexing, over-the-top showing off
+
+POWER WORDS (for stats and descriptions):
+  പൊളി             → Poli — awesome, excellent
+  കിടു             → Kidu — superb, great
+  മാസ്             → Mass — stylish and powerful
+  ഉയിർ             → Uyir — life/soul, beloved (for fan's hero)
+  കട്ട             → Katta — strong, hardcore
+  വൈബ്             → Vibe — feeling or atmosphere
+  സംഭവം           → Sambhavam — something big or special
+  ഗ്യാങ്           → Gang — squad, crew
+  പവർ              → Power — energy or impact
+
+SPORTS-SPECIFIC SLANG:
+  ഗോട്ട്           → GOAT — greatest of all time
+  ഫിനിഷർ           → Finisher — one who ends the game (Dhoni-style)
+  ക്ലീൻ സ്വീപ്പ്   → Clean Sweep — winning all matches
+  ഹാട്രിക്         → Hat-trick — three consecutive wins/wickets/goals
+  ചാമ്പ്യൻ         → Champion — winner
+  ഐക്കോണിക്        → Iconic — famous, legendary
+
+SOCIAL MEDIA PLATFORM TERMS:
+  വൈറൽ             → Viral — popular online
+  ട്രെൻഡിങ്        → Trending — currently popular
+  മീം മെറ്റീരിയൽ   → Meme Material — something funny to make memes
+  ഫോളോവേഴ്സ്        → Followers — fans
+  ലൈക്ക്           → Like — appreciation on a post
+  ഷെയർ             → Share — distributing content
+  സ്റ്റോറി          → Story — Instagram story
+  റീൽസ്            → Reels — short videos
 ```
 
 ### Abbreviation Rules — THE ONLY ENGLISH ALLOWED
@@ -533,3 +841,144 @@ Format of each entry:
 
 If I see patterns in corrections (e.g. "player names were in English — correct to Malayalam"),
 I apply that rule immediately for the rest of the session and note it at the top of my response.
+
+---
+
+## Football Terms Reference
+
+When writing football content, use these Malayalam terms instead of English.
+(Source: Training data sheet — Footballing Terms)
+
+```
+POSITIONS:
+  Striker / Forward     → സ്ട്രൈക്കർ / ഫോർവേഡ്
+  Midfielder            → മിഡ്ഫീൽഡർ
+  Defender              → ഡിഫൻഡർ
+  Goalkeeper            → ഗോൾകീപ്പർ
+  Winger                → വിംഗർ
+  Center-back           → സെന്റർ ബാക്ക്
+  Full-back             → ഫുൾ ബാക്ക്
+  Attacking midfielder  → അറ്റാക്കിംഗ് മിഡ്ഫീൽഡർ
+  Defensive midfielder  → ഡിഫൻസീവ് മിഡ്ഫീൽഡർ
+  Playmaker             → പ്ലേമേക്കർ
+  False nine            → ഫാൾസ് നയൻ
+  Wing-back             → വിംഗ്-ബാക്ക്
+  Captain               → ക്യാപ്റ്റൻ
+
+MATCH EVENTS:
+  Goal                  → ഗോൾ
+  Penalty               → പെനാൽറ്റി
+  Free kick             → ഫ്രീ കിക്ക്
+  Corner kick           → കോർണർ കിക്ക്
+  Offside               → ഓഫ്‌സൈഡ്
+  Yellow card           → യെല്ലോ കാർഡ്
+  Red card              → റെഡ് കാർഡ്
+  Hat-trick             → ഹാട്രിക്ക്
+  Assist                → അസിസ്റ്റ്
+  Header                → ഹെഡർ
+  Own goal              → ഓൺ ഗോൾ
+  Equalizer             → ഇക്വലൈസർ
+  Tackle                → ടാക്കിൾ
+  Dribble               → ഡ്രിബിൾ
+  Foul                  → ഫൗൾ
+  Throw-in              → ത്രോ-ഇൻ
+  Substitution          → സബ്സ്റ്റിറ്റ്യൂഷൻ
+  Bicycle kick          → ബൈസിക്കിൾ കിക്ക്
+  Volley                → വോളി
+  Counter-attack        → കൗണ്ടർ അറ്റാക്ക്
+
+MATCH CONTEXT:
+  Half-time             → ഹാഫ് ടൈം
+  Full-time             → ഫുൾ ടൈം
+  Extra time            → എക്സ്ട്രാ ടൈം
+  Penalty shootout      → പെനാൽറ്റി ഷൂട്ടൗട്ട്
+  Clean sheet           → ക്ലീൻ ഷീറ്റ്
+  Possession            → പൊസഷൻ
+  Formation             → ഫോർമേഷൻ
+  Derby                 → ഡെർബി
+  Relegation            → റിലഗേഷൻ
+  Promotion             → പ്രൊമോഷൻ
+  Transfer              → ട്രാൻസ്ഫർ
+  Golden boot           → ഗോൾഡൻ ബൂട്ട്
+  Man of the match      → മാൻ ഓഫ് ദ മാച്ച്
+  VAR                   → വാർ (keep as VAR in headings)
+  Championship          → ചാമ്പ്യൻഷിപ്പ്
+  World Cup             → വേൾഡ് കപ്പ്
+
+SKILLS:
+  Nutmeg                → നട്ട്മെഗ്
+  Cruyff turn           → ക്രൈഫ് ടേൺ
+  Panenka               → പനെൻക
+  Rabona                → റബോണ
+  Stepover              → സ്റ്റെപ്പ്ഓവർ
+```
+
+---
+
+## Cricket Terms Reference
+
+When writing cricket content, use these Malayalam terms.
+(Source: Training data sheet — Cricket Terms)
+
+```
+BATTING:
+  Six                   → സിക്സ്
+  Four                  → ഫോർ
+  Century / Ton         → സെഞ്ച്വറി
+  Half-century          → ഹാഫ് സെഞ്ച്വറി
+  Duck                  → ഡക്ക്
+  Not out               → നോട്ട് ഔട്ട്
+  Strike rate (SR)      → SR (keep in English)
+  Cover drive           → കവർ ഡ്രൈവ്
+  Helicopter shot       → ഹെലികോപ്റ്റർ ഷോട്ട്
+  Slog sweep            → സ്ലോഗ് സ്വീപ്പ്
+  Pull                  → പുൾ
+  Hook                  → ഹുക്ക്
+
+BOWLING:
+  Wicket                → വിക്കറ്റ്
+  Hat-trick             → ഹാട്രിക്
+  Five-wicket haul      → ഫൈഫർ
+  Yorker                → യോർക്കർ
+  Bouncer               → ബൗൺസർ
+  No ball               → നോ ബോൾ
+  Wide                  → വൈഡ്
+  Free hit              → ഫ്രീ ഹിറ്റ്
+  Googly                → ഗൂഗ്ലി
+  Slower ball           → സ്ലോവർ ബോൾ
+  Swing                 → സ്വിംഗ്
+
+FIELDING:
+  Catch                 → ക്യാച്ച്
+  Run out               → റൺ ഔട്ട്
+  Stumped               → സ്റ്റമ്പ്ഡ്
+  LBW                   → LBW (keep in English)
+  Direct hit            → ഡയറക്ട് ഹിറ്റ്
+
+MATCH FORMAT:
+  Test match            → ടെസ്റ്റ് മാച്ച്
+  ODI (in caption)      → ഏകദിനം
+  T20 (in caption)      → ട്വന്റി20
+  Powerplay             → പവർപ്ലേ
+  Super Over            → സൂപ്പർ ഓവർ
+  DLS method            → ഡിഎൽഎസ് മെത്തേഡ്
+  DRS                   → DRS (keep in English)
+  Toss                  → ടോസ്
+  Follow-on             → ഫോളോ-ഓൺ
+  Declaration           → ഡിക്ലറേഷൻ
+
+MATCH CONTEXT:
+  Man of the match      → മാൻ ഓഫ് ദ മാച്ച്
+  World Cup             → വേൾഡ് കപ്പ്
+  Champions Trophy      → ചാമ്പ്യൻസ് ട്രോഫി
+  World Test Championship → വേൾഡ് ടെസ്റ്റ് ചാമ്പ്യൻഷിപ്പ്
+  Ashes                 → ആഷസ്
+  Partnership           → പാർട്ണർഷിപ്പ്
+  Innings               → ഇന്നിംഗ്സ്
+  Run rate              → റൺ റേറ്റ്
+  Run chase             → റൺ ചേസ്
+  Target                → ടാർഗെറ്റ്
+  Playing XI            → പ്ലേയിംഗ് ഇലവൻ
+  Captain               → ക്യാപ്റ്റൻ
+  All-rounder           → ഓൾ റൗണ്ടർ
+```

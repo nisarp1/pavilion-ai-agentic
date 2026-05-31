@@ -25,7 +25,7 @@ Key endpoints:
 Brand Template: EAHLN0zMWG4  ("Cricket Templates For Claude")
 Brand Kit ID  : kAGxckhNXvU
 
-13 pages — one brand template, all layouts:
+18 pages — one brand template, all layouts:
 
   Page  Layout                            Use for
   ────  ──────────────────────────────    ──────────────────────────────────
@@ -42,6 +42,9 @@ Brand Kit ID  : kAGxckhNXvU
   11    Predicted XI (player on left)     Alternate Predicted XI layout
   12    Poll (3 options + player photos)  Fan engagement polls
   13    Stats Comparison (head-to-head)   Player vs player, 5-category stats
+  15    First Innings Scorecard           End-of-innings score + top batter/bowler
+  17    Figures Card (big number)         Bowling figures, batting milestones (50/100/500)
+  18    Screenshot Post (stats list)      Standings, stat tables, data from screenshots
 
 How I use these:
 1. Pick the right page from the routing table below
@@ -225,6 +228,22 @@ PAGE 15 — First Innings Scorecard
   top_bowler      → PB90LYBxWGQR58qP-LBqY1LYx8T7nysTz   (best bowler figures)
   innings_label   → PB90LYBxWGQR58qP-LBHrhYq0PBj3Nwct   (e.g. "GT ഒന്നാം ഇന്നിങ്‌സ്")
   chase_text      → PB90LYBxWGQR58qP-LBr5glpcdJhK3ZRl   (target/context e.g. "RCB-ക്ക് വേണ്ടത് 154 റൺസ്!")
+
+PAGE 17 — Bowling / Batting Figures Card (big number)
+  Page ID : PBC7LpJgYGnk3fs4
+  match_label  → PBC7LpJgYGnk3fs4-LB9ffBHK5zj8T03R   (top bar e.g. "RCB vs GT | IPL 2026 ഫൈനൽ")
+  figures      → PBC7LpJgYGnk3fs4-LBrzDSF81l9DhqS7   (BIG number e.g. "3/27 (4)" or "50* (25)")
+  name         → PBC7LpJgYGnk3fs4-LBkhXXpKBKBrDHKF   (player + context e.g. "റാഷിക് സലാം — GT-ക്കെതിരെ")
+  Used for: bowling figures, batting milestones (50/100), any single big-number stat
+
+PAGE 18 — Screenshot Post (headline + stats list)  ← "screenshot post" template
+  Page ID : PBjGBs8NSVSF5m6L
+  match_label  → PBjGBs8NSVSF5m6L-LBYPRprmd1SMpn1g   (top bar label)
+  headline     → PBjGBs8NSVSF5m6L-LBgG41QJ4XxNYBpL   (main content / stats list — supports 10+ lines)
+  sub_headline → PBjGBs8NSVSF5m6L-LBvlRglCk7DKfYQx   (sub-line / punchy tagline below headline)
+  bg_image     → PBjGBs8NSVSF5m6L-LB1v6dCKRycxg5gm   (editable background image)
+  Used for: standings tables, stat lists, screenshot-style data posts
+  NOTE: sub_headline sits at ~y:327; if headline has 6+ lines, reduce font or omit sub_headline to avoid overlap
 ─────────────────────────────────────────────────────────────────────
 ```
 

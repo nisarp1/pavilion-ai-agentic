@@ -22,85 +22,238 @@ Key endpoints:
 
 ## Your Canva Design Catalog
 
-Post type                              Design ID       Pages
-BREAKING news (injury / surprise)      DAHJu075GDY     9
-Toss result / big headline             DAHKI4MTArU     1
-Score milestone (50 / 100 / 5-wicket)  DAGIpsX_Sv8     32
-Match result                           DAGIpsX_Sv8     32
-IPL Final / Grand event posts          DAHLKKlkP1U     1
-India tour / series                    DAHJ19q4Aok     9
+Brand Template: EAHLN0zMWG4  ("Cricket Templates For Claude")
+Brand Kit ID  : kAGxckhNXvU
 
-Brand Kit ID: kAGxckhNXvU (brand colors and fonts)
+13 pages — one brand template, all layouts:
+
+  Page  Layout                            Use for
+  ────  ──────────────────────────────    ──────────────────────────────────
+  1     Multi-Expert Quotes (3 rows)      Pre-match pundit opinions, panels
+  2     Breaking / Big Headline           Toss, BREAKING news, big moments
+  3     News Story v1 (center player)     Match news, quotes, milestones
+  4     News Story v2 (left-aligned)      News with attribution, stats news
+  5     News Story v3 (right player)      News with right-side player photo
+  6     Fact Check                        Rumour verdict, corrections
+  7     Two-Quote Story                   Head-to-head opinions, 2 quotes
+  8     Playing XI (player on right)      Live Playing XI announcement
+  9     Playing XI (player on center)     Alternate Playing XI layout
+  10    Predicted XI (player on right)    Pre-match Predicted XI
+  11    Predicted XI (player on left)     Alternate Predicted XI layout
+  12    Poll (3 options + player photos)  Fan engagement polls
+  13    Stats Comparison (head-to-head)   Player vs player, 5-category stats
 
 How I use these:
-1. Pick the right design ID from the routing table below
-2. Copy it in Canva so the original stays untouched
-3. Edit the text using pre-catalogued element IDs (no discovery step)
-4. Show you the Canva link to review
+1. Pick the right page from the routing table below
+2. create-design-from-brand-template(EAHLN0zMWG4, page_numbers=[N]) — clean copy
+3. Edit text using pre-catalogued element IDs (no discovery step)
+4. Show you the Canva link + thumbnail to review
 5. Export the final PNG when you say "approved"
-
-Tip: Open "Cricket Poster" in Canva → Share → Brand Template → Publish as "Cricket Post".
-Once published, I can autofill all 32 layouts automatically without manual copying.
 
 ---
 
 ## Template Manifest — Pre-Catalogued Element IDs
 
-Canva copies preserve the original template's element IDs. These are known in advance — I use them directly without a discovery step, which cuts production time in half.
+All 13 pages of brand template EAHLN0zMWG4 are catalogued below.
+create-design-from-brand-template preserves these IDs in every copy.
+Use them directly — no discovery step needed.
 
 ```
-HERO HEADLINE (DAHKI4MTArU) — page 1
-  Page ID prefix : PBdx6KbwfyBrmnBq
-  title          → PBdx6KbwfyBrmnBq-LBS3cz47rcjXstPb   (big bold top line)
-  subtitle       → PBdx6KbwfyBrmnBq-LBqSF2jlJcQWD0qV   (player / team name)
-  body           → PBdx6KbwfyBrmnBq-LBlXPLYLvs3DPD1F   (stat / context text)
-  Used for: toss, headline, milestone (fallback), stats (fallback)
+─────────────────────────────────────────────────────────────────────
+PAGE 1 — Multi-Expert Quotes (3 rows)
+  Page ID : PBB5WmrgMC3cR5Vn
+  headline        → PBB5WmrgMC3cR5Vn-LBhH5fDPG0xxzqKK   (big top title)
+  sub_headline    → PBB5WmrgMC3cR5Vn-LBNGPhYmPfNSS11g   (repeating ticker below title)
+  quote1          → PBB5WmrgMC3cR5Vn-LBsdP2j74R66cL39   (expert 1 quote)
+  attribution1    → PBB5WmrgMC3cR5Vn-LB8j25fnHbfNjlpT   (-Expert 1 name)
+  quote2          → PBB5WmrgMC3cR5Vn-LBmTf2L5j5sLBVDg   (expert 2 quote)
+  attribution2    → PBB5WmrgMC3cR5Vn-LBLFPMZ5lQqmMGsY   (-Expert 2 name)
+  quote3          → PBB5WmrgMC3cR5Vn-LBZMYXl58QmPyR9n   (expert 3 quote)
+  attribution3    → PBB5WmrgMC3cR5Vn-LBTZd7Xr7ppmwwWh   (-Expert 3 name)
 
-CRICKET POSTER page 1 (DAGIpsX_Sv8) — quote / stat card with GT player background
-  Page ID prefix : PBBqd6TgqhV3bkkh
-  quote          → PBBqd6TgqhV3bkkh-LBb53Fns7gglqCFH
-  attribution    → PBBqd6TgqhV3bkkh-LBZRbnnxn6s6xdYh
-  Used for: quote (primary), stats (secondary)
+PAGE 2 — Breaking / Big Headline
+  Page ID : PBG35rBlWnprLM4j
+  headline_big    → PBG35rBlWnprLM4j-LBm0ZvhwDQn5s1kY   (large title at top)
+  headline_small  → PBG35rBlWnprLM4j-LBP8wNTd9NdJBDjk   (sub-headline below)
+  body            → PBG35rBlWnprLM4j-LB1KYdTrK564KbK4   (body / context text)
 
-CRICKET POSTER page 5 (DAGIpsX_Sv8) — quote card, alternate layout
-  Page ID prefix : PBhlBT6J3CwdxWTG
-  quote          → PBhlBT6J3CwdxWTG-LBb53Fns7gglqCFH
-  attribution    → PBhlBT6J3CwdxWTG-LBZRbnnxn6s6xdYh
-  Used for: quote (alternate)
+PAGE 3 — News Story v1 (center player)
+  Page ID : PBtT2B1vfkMfR7CT
+  headline        → PBtT2B1vfkMfR7CT-LBg4YQWNT56fqsfH   (main headline)
+  body            → PBtT2B1vfkMfR7CT-LB7CVM8mPcp4KtGx   (body text)
+  attribution     → PBtT2B1vfkMfR7CT-LB3FY6Pt30GvMD4H   (source / attribution)
+
+PAGE 4 — News Story v2 (left-aligned)
+  Page ID : PBnlLf7xX6LsDtPs
+  headline        → PBnlLf7xX6LsDtPs-LB4n7007Kr2QR6wJ   (main headline)
+  body            → PBnlLf7xX6LsDtPs-LBq5lyPsg43Q8XKL   (body text)
+  attribution     → PBnlLf7xX6LsDtPs-LBYj1zSwgMZ62DtP   (source / attribution)
+
+PAGE 5 — News Story v3 (right player)
+  Page ID : PBSDlGlSZgxPXcFf
+  headline        → PBSDlGlSZgxPXcFf-LBKyyjwbH4W2qwRS   (main headline)
+  body            → PBSDlGlSZgxPXcFf-LB805dXZBgZ6KJdt   (body text)
+  attribution     → PBSDlGlSZgxPXcFf-LBQy4DlV8275C1T1   (source / attribution)
+
+PAGE 6 — Fact Check
+  Page ID : PBgHDPvwQ4Y4vYSM
+  headline        → PBgHDPvwQ4Y4vYSM-LB6pqyng0qmF840C   (claim / statement)
+  attribution     → PBgHDPvwQ4Y4vYSM-LBs9xGxmPl9fPKfB   (source)
+  verdict         → PBgHDPvwQ4Y4vYSM-LBzKCyc2YHm9zvF1   (verdict / explanation)
+  fact_label      → PBgHDPvwQ4Y4vYSM-LB1Gnmxmg8rdGWRQ-LBdZ3Zzk1CpV03nG  ("FACT")
+  check_label     → PBgHDPvwQ4Y4vYSM-LB1Gnmxmg8rdGWRQ-LBBX05WFp2P0TzmY  ("check")
+
+PAGE 7 — Two-Quote Story
+  Page ID : PBPyXrrbb9WYJyB0
+  headline        → PBPyXrrbb9WYJyB0-LBMD956SVNPkK5db   (main headline / context)
+  attribution1    → PBPyXrrbb9WYJyB0-LBHMph3CQvtBqxN0   (first person name)
+  quote2          → PBPyXrrbb9WYJyB0-LByG69KN65T4gvs1   (second quote text)
+  attribution2    → PBPyXrrbb9WYJyB0-LBFq5BzkbjvgsmcF   (second person name)
+
+PAGE 8 — Playing XI (player on right)
+  Page ID : PB4SQdqQz8VRS1M6
+  team_A          → PB4SQdqQz8VRS1M6-LBjJ7JvPjdbNyDJJ-LBDhWP60GWFkLlN0
+  vs              → PB4SQdqQz8VRS1M6-LBjJ7JvPjdbNyDJJ-LBnlHz4n0QWLLqR4
+  team_B          → PB4SQdqQz8VRS1M6-LBjJ7JvPjdbNyDJJ-LBtkvLrg7qH271Y6
+  match_context   → PB4SQdqQz8VRS1M6-LB01kP3jxdY2QVp4   (e.g. "RR ബൗളിംഗ് തിരഞ്ഞെടുത്തു")
+  player_1        → PB4SQdqQz8VRS1M6-LBJ7qWXSvPQ6R5VD
+  player_2        → PB4SQdqQz8VRS1M6-LBvJ4FWgpDnDxgQk
+  player_3        → PB4SQdqQz8VRS1M6-LB0Tlj2ZVCTTggPM
+  player_4        → PB4SQdqQz8VRS1M6-LB9Ffmm63kYF1lrl
+  player_5        → PB4SQdqQz8VRS1M6-LB6w69wVWdh0Pc0c
+  player_6        → PB4SQdqQz8VRS1M6-LBMFJcWhT0hjlL96
+  player_7        → PB4SQdqQz8VRS1M6-LBbLH9ZyvpgkSGPT
+  player_8        → PB4SQdqQz8VRS1M6-LBpTWp9D3y9Lmbzz
+  player_9        → PB4SQdqQz8VRS1M6-LBFqMQFCDZz3Zw5B
+  player_10       → PB4SQdqQz8VRS1M6-LB58yZy4FZj7Nc4m
+  player_11       → PB4SQdqQz8VRS1M6-LBcRdMyxsNrXHDKq
+  impact_players  → PB4SQdqQz8VRS1M6-LBmqxFCXd96PVfnq
+
+PAGE 9 — Playing XI (player on center)
+  Page ID : PB92krvXFzZNNtTF
+  team_A          → PB92krvXFzZNNtTF-LBwBbtMjyTlXNzJQ-LBLNgHv91yTV0HNk
+  vs              → PB92krvXFzZNNtTF-LBwBbtMjyTlXNzJQ-LBQX7F28MwqShzmf
+  team_B          → PB92krvXFzZNNtTF-LBwBbtMjyTlXNzJQ-LBJSlSLF3yXdJCxK
+  match_context   → PB92krvXFzZNNtTF-LB2bytHdGZRVrSPM
+  player_1        → PB92krvXFzZNNtTF-LBqbLTvRQrbDC8LQ
+  player_2        → PB92krvXFzZNNtTF-LBQHLkzm5WlqHWQL
+  player_3        → PB92krvXFzZNNtTF-LBzwjb0df5jhklyl
+  player_4        → PB92krvXFzZNNtTF-LBdgnb43MY8dmzQV
+  player_5        → PB92krvXFzZNNtTF-LBZj3rcBBPC2mbrs
+  player_6        → PB92krvXFzZNNtTF-LB8hPJgMt96k58XN
+  player_7        → PB92krvXFzZNNtTF-LBJySsDpmP2hyQhW
+  player_8        → PB92krvXFzZNNtTF-LBBtX3ZKXKZKdzx7
+  player_9        → PB92krvXFzZNNtTF-LBy1Y0nTHJfZSnz9
+  player_10       → PB92krvXFzZNNtTF-LBrW5gpLhHpts35Q
+  player_11       → PB92krvXFzZNNtTF-LBFqX5pM5dP8C1DT
+  impact_players  → PB92krvXFzZNNtTF-LBTBGPDrZ81dXxRH
+
+PAGE 10 — Predicted XI (player on right)
+  Page ID : PBQqY7PgLMt3kblw
+  team_A          → PBQqY7PgLMt3kblw-LBcndFhyG7nGXC6P
+  vs              → PBQqY7PgLMt3kblw-LBJtFkg9WSGBFvP6
+  team_B          → PBQqY7PgLMt3kblw-LBN21d4XN2Sc1P9l
+  player_1        → PBQqY7PgLMt3kblw-LBvm2r3JblC9pSwW
+  player_2        → PBQqY7PgLMt3kblw-LBKQ9cV6CT0TwrrV
+  player_3        → PBQqY7PgLMt3kblw-LBglkzFgHbkc2Tv1
+  player_4        → PBQqY7PgLMt3kblw-LBxqhj1F5X2L37sJ
+  player_5        → PBQqY7PgLMt3kblw-LBGtW95TJVLfgclL
+  player_6        → PBQqY7PgLMt3kblw-LBqgdjPR8SBvXtSf
+  player_7        → PBQqY7PgLMt3kblw-LB1G3NJygSmbjdgg
+  player_8        → PBQqY7PgLMt3kblw-LBCHr155b7c6R1fW
+  player_9        → PBQqY7PgLMt3kblw-LBlq7rsNPW83YtGx
+  player_10       → PBQqY7PgLMt3kblw-LBPMfVmy5dLvB2mZ
+  player_11       → PBQqY7PgLMt3kblw-LB0lqq9jhm4T3yxS
+  impact_players  → PBQqY7PgLMt3kblw-LBJrVfb4ddXR9TRR
+
+PAGE 11 — Predicted XI (player on left)
+  Page ID : PBl4ZnwqNYcGgs97
+  team_A          → PBl4ZnwqNYcGgs97-LBBj31Pns8pZXl7n
+  vs              → PBl4ZnwqNYcGgs97-LB7BWFwhLlybxy8X
+  team_B          → PBl4ZnwqNYcGgs97-LBF16PvQsk4z1M3k
+  player_1        → PBl4ZnwqNYcGgs97-LBPnhNd5NVBv4mVy
+  player_2        → PBl4ZnwqNYcGgs97-LBvQSfQcZkvJ2S9G
+  player_3        → PBl4ZnwqNYcGgs97-LB87CY93DrvXFjSR
+  player_4        → PBl4ZnwqNYcGgs97-LBXDsW1N7KXs7J1V
+  player_5        → PBl4ZnwqNYcGgs97-LBkQNLgkDvm0tYzR
+  player_6        → PBl4ZnwqNYcGgs97-LB6cm22mHnXlnFyR
+  player_7        → PBl4ZnwqNYcGgs97-LB8tKwjr5bZnxQF3
+  player_8        → PBl4ZnwqNYcGgs97-LBBdSyPMfnR39smV
+  player_9        → PBl4ZnwqNYcGgs97-LBVKSxH0VQZDRfWF
+  player_10       → PBl4ZnwqNYcGgs97-LBgzfzJyjcR4ky64
+  player_11       → PBl4ZnwqNYcGgs97-LB46JqJRwx68ZvFY
+  impact_players  → PBl4ZnwqNYcGgs97-LB5VQJ4gBvyKbJfM
+
+PAGE 12 — Poll (3 options + player photos)
+  Page ID : PB5FqGdrnQPmBWkH
+  match_context   → PB5FqGdrnQPmBWkH-LBDQV3ZhV57Mj1PQ   (teams + match info)
+  date_venue      → PB5FqGdrnQPmBWkH-LB2jQfqvK3qmtz3N   (date and venue)
+  question        → PB5FqGdrnQPmBWkH-LBHddFQh6ymlBQmW   (poll question text)
+  option_A_label  → PB5FqGdrnQPmBWkH-LBbH7vtbDsN5KXhY   (letter "A")
+  option_B_label  → PB5FqGdrnQPmBWkH-LBzRY2L7tYzPsmCT   (letter "B")
+  option_C_label  → PB5FqGdrnQPmBWkH-LB9QDwk2wlsCRJv8   (letter "C")
+  player_A_left   → PB5FqGdrnQPmBWkH-LBGJNv4zLnSxCT6m   (option A left player name)
+  player_A_right  → PB5FqGdrnQPmBWkH-LB6Xpq1FxrPlNyrC   (option A right player name)
+  player_B_left   → PB5FqGdrnQPmBWkH-LBKSFsTyWRCXRz6v   (option B left player name)
+  player_B_right  → PB5FqGdrnQPmBWkH-LBckh2z6FNf5596V   (option B right player name)
+  player_C_left   → PB5FqGdrnQPmBWkH-LBvRpTCk5fLWRZrf   (option C left player name)
+  player_C_right  → PB5FqGdrnQPmBWkH-LBZlRmPmVq3tcv1v   (option C right player name)
+
+PAGE 13 — Stats Comparison (head-to-head, 5 categories)
+  Page ID : PBvmcvSKDfZVD7V7
+  headline        → PBvmcvSKDfZVD7V7-LBNL6BW6qRQWqzd2   (big headline / matchup title)
+  player1_avg     → PBvmcvSKDfZVD7V7-LBcZTNPwp85FNh7P   (left player avg text)
+  player2_avg     → PBvmcvSKDfZVD7V7-LB148zkyMx89N2nh   (right player avg text)
+  cat1_label      → PBvmcvSKDfZVD7V7-LBrZvxZxTsxTMS4d   (category 1 — e.g. "50/100")
+  cat2_label      → PBvmcvSKDfZVD7V7-LB4zpRJM1Dndps6G   (category 2 — e.g. "SR")
+  cat3_label      → PBvmcvSKDfZVD7V7-LBjQ4ntgQbVhvN8F   (category 3 — e.g. "Runs")
+  cat4_label      → PBvmcvSKDfZVD7V7-LBCjB9Kg9lQHYv6c   (category 4 — e.g. "Matches")
+  p1_cat1_val     → PBvmcvSKDfZVD7V7-LB7LTdmBDM0g3sWH   (player 1, cat 1 value)
+  p2_cat1_val     → PBvmcvSKDfZVD7V7-LBdqbNZXzRx7gSgr   (player 2, cat 1 value)
+  p1_cat2_val     → PBvmcvSKDfZVD7V7-LBccWtWbx91yYZ0C   (player 1, cat 2 value)
+  p2_cat2_val     → PBvmcvSKDfZVD7V7-LBXDTj2GtRpp5323   (player 2, cat 2 value)
+  p1_cat3_val     → PBvmcvSKDfZVD7V7-LBS4wTyJHlQNnRRt   (player 1, cat 3 value)
+  p2_cat3_val     → PBvmcvSKDfZVD7V7-LBBMdPRJ92vPnHjM   (player 2, cat 3 value)
+  p1_cat4_val     → PBvmcvSKDfZVD7V7-LBWn8BwkfJ8QN9ym   (player 1, cat 4 value)
+  p2_cat4_val     → PBvmcvSKDfZVD7V7-LBryLKynkfT31PsK   (player 2, cat 4 value)
+─────────────────────────────────────────────────────────────────────
 ```
-
-> TODO: Capture element IDs for BREAKING NEWS (DAHJu075GDY), IPL Final (DAHLKKlkP1U),
-> and India Series (DAHJ19q4Aok) in the next live session.
 
 ---
 
 ## Template Routing Table (with Fallbacks)
 
-NEVER scan pages at runtime to find a layout. Always use this table. If copy-design fails, use the fallback immediately.
+NEVER scan pages at runtime to find a layout. Always use this table.
+All posts use: create-design-from-brand-template(EAHLN0zMWG4, page_numbers=[N])
+Universal fallback: page 2 (Big Headline) always works for any text-heavy post.
 
 ```
-EVENT TYPE    PRIMARY DESIGN              FALLBACK
+EVENT TYPE         PRIMARY PAGE              FALLBACK PAGE
 ──────────────────────────────────────────────────────────────────────
-quote         DAGIpsX_Sv8 page 1        → DAGIpsX_Sv8 page 5
-                                         → DAHKI4MTArU (text-heavy)
+breaking news      page 2 (Headline)        → page 3 (News Story v1)
+toss result        page 2 (Headline)        → page 3 (News Story v1)
+milestone (50/100) page 2 (Headline)        → page 3 (News Story v1)
+match result       page 2 (Headline)        → page 3 (News Story v1)
 
-stats         DAGIpsX_Sv8 pages 1–3     → DAHKI4MTArU (stat in title)
-              (look ONLY here first)
+quote (single)     page 3 (News Story v1)  → page 4 (News Story v2)
+                                            → page 5 (News Story v3)
+quote (two voices) page 7 (Two-Quote)      → page 1 (Multi-Expert)
+pundit panel       page 1 (Multi-Expert)   → page 7 (Two-Quote)
 
-breaking      DAHJu075GDY page 1         → DAHKI4MTArU (add "BREAKING:" prefix)
+stats comparison   page 13 (Stats)          → page 3 (News Story v1)
+  (head-to-head)   ← ONLY look here first
 
-toss          DAHKI4MTArU page 1         → DAHLKKlkP1U page 1
+fact check         page 6 (Fact Check)     → page 2 (Headline + VERDICT label)
 
-milestone     DAGIpsX_Sv8 page 6+        → DAHKI4MTArU
-(50/100/wicket)
+playing XI         page 8 (XI right)       → page 9 (XI center)
+predicted XI       page 10 (Pred XI right) → page 11 (Pred XI left)
+poll               page 12 (Poll)          → page 1 (Multi-Expert)
 
-result        DAGIpsX_Sv8 page 6+        → DAHKI4MTArU
-(match end)
-
-carousel      DAGIpsX_Sv8 + DAHKI4MTArU  mix per slide type
+carousel           mix pages per slide type (run all copy calls in parallel)
+  headline slide   → page 2
+  quote slide      → page 3 / 4 / 5
+  stats slide      → page 13
 ```
-
-Universal fallback: If everything else fails → DAHKI4MTArU always works.
 
 ---
 
@@ -265,21 +418,24 @@ When you paste a tweet, article, screenshot, or describe any sports event, I fol
 STEP 1 — Parse what you pasted
   I identify: event_type, player names, team names, key number (score/runs/wickets/balls), headline, sub-headline
 
-STEP 2 — Pick the right design using the routing table (no page scanning)
-  BREAKING news (injury / surprise / transfer) → DAHJu075GDY page 1
-  Toss result / big headline moment            → DAHKI4MTArU page 1
-  Player quote                                 → DAGIpsX_Sv8 page 1 (primary)
-  Stats / head-to-head / pre-match             → DAGIpsX_Sv8 pages 1–3
-  Score milestone (50 / 100 / 5-wicket)        → DAGIpsX_Sv8 page 6+
-  Match result                                 → DAGIpsX_Sv8 page 6+
-  Carousel (multi-slide)                       → mix of above per slide
+STEP 2 — Pick the right page using the routing table (no scanning)
+  BREAKING news / toss / milestone / result    → page 2 (Headline)
+  Player quote (single)                        → page 3 (News Story v1)
+  Two-voice quote / opinion                    → page 7 (Two-Quote)
+  Pundit panel (3 opinions)                    → page 1 (Multi-Expert)
+  Stats head-to-head                           → page 13 (Stats Comparison)
+  Fact check / rumour verdict                  → page 6 (Fact Check)
+  Playing XI                                   → page 8 or 9
+  Predicted XI                                 → page 10 or 11
+  Poll                                         → page 12
+  Carousel (multi-slide)                       → mix pages per slide type
 
-  If the primary design copy fails → use the fallback from the routing table above.
-  Universal fallback: DAHKI4MTArU always works.
+  If create-design-from-brand-template fails → use the fallback from the routing table.
+  Universal fallback: page 2 always works for any text-heavy post.
 
-STEP 3 — Copy just that one page
-  copy-design(design_id, page_numbers=[N])
-  This leaves the original untouched. Every post gets its own clean copy.
+STEP 3 — Create a clean copy from the brand template
+  create-design-from-brand-template(EAHLN0zMWG4, page_numbers=[N])
+  This leaves the original brand template untouched. Every post gets its own copy.
 
 STEP 4 — Edit using pre-catalogued element IDs (no discovery needed)
   start-editing-transaction(new_design_id)

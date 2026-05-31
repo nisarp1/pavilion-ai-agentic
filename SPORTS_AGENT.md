@@ -216,6 +216,15 @@ PAGE 13 — Stats Comparison (head-to-head, 5 categories)
   p2_cat3_val     → PBvmcvSKDfZVD7V7-LBBMdPRJ92vPnHjM   (player 2, cat 3 value)
   p1_cat4_val     → PBvmcvSKDfZVD7V7-LBWn8BwkfJ8QN9ym   (player 1, cat 4 value)
   p2_cat4_val     → PBvmcvSKDfZVD7V7-LBryLKynkfT31PsK   (player 2, cat 4 value)
+PAGE 15 — First Innings Scorecard
+  Page ID : PB90LYBxWGQR58qP
+  match_label     → PB90LYBxWGQR58qP-LBTRm4xy7sX2JvVQ   (top title e.g. "GT vs RCB | IPL 2026 ഫൈനൽ")
+  score           → PB90LYBxWGQR58qP-LBStSMVQ5NdP58jr   (big score e.g. "153/8")
+  top_batter1     → PB90LYBxWGQR58qP-LB6RL0rTMWvcsN4L   (top scorer line 1)
+  top_batter2     → PB90LYBxWGQR58qP-LBB7SfTngpplQh8S   (top scorer line 2)
+  top_bowler      → PB90LYBxWGQR58qP-LBqY1LYx8T7nysTz   (best bowler figures)
+  innings_label   → PB90LYBxWGQR58qP-LBHrhYq0PBj3Nwct   (e.g. "GT ഒന്നാം ഇന്നിങ്‌സ്")
+  chase_text      → PB90LYBxWGQR58qP-LBr5glpcdJhK3ZRl   (target/context e.g. "RCB-ക്ക് വേണ്ടത് 154 റൺസ്!")
 ─────────────────────────────────────────────────────────────────────
 ```
 

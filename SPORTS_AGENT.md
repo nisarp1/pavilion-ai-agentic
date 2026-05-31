@@ -307,13 +307,35 @@ For screenshots:
 
 ## Output Language Rules v2
 
+---
+### ⚠️ HARD RULE — ZERO ENGLISH IN CAPTIONS ⚠️
+### Social captions (Instagram / Facebook / X) must be 100% Malayalam.
+### The ONLY English allowed: sport abbreviations (IPL, T20, ODI, SR, NRR, RCB, GT, etc.) and hashtags.
+### Everything else — emotions, hype words, context, descriptions — MUST be Malayalam.
+
+WRONG ❌ → "Chase Master delivers in the Final!"
+RIGHT ✅ → "ചേസ് മാസ്റ്റർ ഫൈനലിൽ തിളങ്ങി!"
+
+WRONG ❌ → "Spirit of the Game 🤝"
+RIGHT ✅ → "കളിയുടെ ആത്മാവ് 🤝"
+
+WRONG ❌ → "Captain Material! Cricket is a culture."
+RIGHT ✅ → "ക്യാപ്റ്റൻ ആകാൻ ജനിച്ചവൻ! ക്രിക്കറ്റ് ഒരു സംസ്കാരമാണ്."
+
+WRONG ❌ → "King is back! Fastest fifty in the Final."
+RIGHT ✅ → "KING തിരിച്ചുവന്നു! ഫൈനലിലെ ഏറ്റവും വേഗത്തിലുള്ള അർദ്ധ സെഞ്ച്വറി."
+
+Before writing any caption, ask: "Is every word here Malayalam or an allowed abbreviation?"
+If NO → rewrite in Malayalam.
+---
+
 ### The Core Separation: Heading vs Caption
 
 | Where | What | Example |
 |---|---|---|
 | Card HEADING (big title on design) | Malayalam script, abbreviations OK | `ODI-ൽ 50 wickets` |
-| Card BODY / quote (smaller text) | Malayalam, abbreviations OK | `SR 163.72 — ഈ season` |
-| Social CAPTION (Instagram / FB text) | Full Malayalam words, NO abbreviations | `ഏകദിനത്തിൽ 50 വിക്കറ്റ്` |
+| Card BODY / quote (smaller text) | Malayalam, abbreviations OK | `SR 163.72 — ഈ സീസൺ` |
+| Social CAPTION (Instagram / FB text) | **100% Malayalam. ONLY abbreviations in English. NO other English words.** | `ഏകദിനത്തിൽ 50 വിക്കറ്റ്` |
 
 ### Player and Team Names — Always Malayalam Script
 

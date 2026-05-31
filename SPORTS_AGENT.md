@@ -245,7 +245,8 @@ stats comparison   page 13 (Stats)          → page 3 (News Story v1)
 
 fact check         page 6 (Fact Check)     → page 2 (Headline + VERDICT label)
 
-playing XI         page 8 (XI right)       → page 9 (XI center)
+playing XI         page 8 = TEAM 1 XI      + page 9 = TEAM 2 XI  ← always PAIR, run in parallel
+  (never use as fallback — both pages go out together for every match)
 predicted XI       page 10 (Pred XI right) → page 11 (Pred XI left)
 poll               page 12 (Poll)          → page 1 (Multi-Expert)
 
@@ -744,7 +745,7 @@ STEP 2 — Pick the right page using the routing table (no scanning)
   Pundit panel (3 opinions)                    → page 1 (Multi-Expert)
   Stats head-to-head                           → page 13 (Stats Comparison)
   Fact check / rumour verdict                  → page 6 (Fact Check)
-  Playing XI                                   → page 8 or 9
+  Playing XI                                   → page 8 (Team 1) + page 9 (Team 2), parallel
   Predicted XI                                 → page 10 or 11
   Poll                                         → page 12
   Carousel (multi-slide)                       → mix pages per slide type

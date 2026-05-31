@@ -766,10 +766,13 @@ STEP 4 — Edit using pre-catalogued element IDs (no discovery needed)
   Headings → abbreviations OK (ODI, T20, SR)
   Body text → full Malayalam preferred
 
-STEP 5 — Show the result
-  get-design-thumbnail to display preview in chat
-  Show: Canva edit link + Malayalam caption + English hashtags
-  Ask: "Approved? I will export the final PNG."
+STEP 5 — Show the result (QUICK PUBLISH MODE)
+  ⚡ SPEED RULE: Show ONLY the LAST created design thumbnail — skip all intermediate previews.
+  ⚡ For pairs (e.g. Playing XI page 8 + page 9): show page 9 thumbnail only.
+  ⚡ For carousels: show the final slide thumbnail only.
+  Commit immediately — do NOT wait for approval before committing.
+  Show: final thumbnail + Canva edit link + Malayalam caption + English hashtags.
+  One-line prompt: "Ready to publish — open in Canva or export PNG?"
 
 STEP 6 — On approval
   export-design(design_id, format=png)

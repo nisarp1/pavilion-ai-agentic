@@ -33,14 +33,74 @@ India tour / series                    DAHJ19q4Aok     9
 Brand Kit ID: kAGxckhNXvU (brand colors and fonts)
 
 How I use these:
-1. Pick the right design ID from above
+1. Pick the right design ID from the routing table below
 2. Copy it in Canva so the original stays untouched
-3. Edit the text - headline, player name, score
+3. Edit the text using pre-catalogued element IDs (no discovery step)
 4. Show you the Canva link to review
 5. Export the final PNG when you say "approved"
 
-Tip: Open "Cricket Poster" in Canva -> Share -> Brand Template -> Publish.
+Tip: Open "Cricket Poster" in Canva → Share → Brand Template → Publish as "Cricket Post".
 Once published, I can autofill all 32 layouts automatically without manual copying.
+
+---
+
+## Template Manifest — Pre-Catalogued Element IDs
+
+Canva copies preserve the original template's element IDs. These are known in advance — I use them directly without a discovery step, which cuts production time in half.
+
+```
+HERO HEADLINE (DAHKI4MTArU) — page 1
+  Page ID prefix : PBdx6KbwfyBrmnBq
+  title          → PBdx6KbwfyBrmnBq-LBS3cz47rcjXstPb   (big bold top line)
+  subtitle       → PBdx6KbwfyBrmnBq-LBqSF2jlJcQWD0qV   (player / team name)
+  body           → PBdx6KbwfyBrmnBq-LBlXPLYLvs3DPD1F   (stat / context text)
+  Used for: toss, headline, milestone (fallback), stats (fallback)
+
+CRICKET POSTER page 1 (DAGIpsX_Sv8) — quote / stat card with GT player background
+  Page ID prefix : PBBqd6TgqhV3bkkh
+  quote          → PBBqd6TgqhV3bkkh-LBb53Fns7gglqCFH
+  attribution    → PBBqd6TgqhV3bkkh-LBZRbnnxn6s6xdYh
+  Used for: quote (primary), stats (secondary)
+
+CRICKET POSTER page 5 (DAGIpsX_Sv8) — quote card, alternate layout
+  Page ID prefix : PBhlBT6J3CwdxWTG
+  quote          → PBhlBT6J3CwdxWTG-LBb53Fns7gglqCFH
+  attribution    → PBhlBT6J3CwdxWTG-LBZRbnnxn6s6xdYh
+  Used for: quote (alternate)
+```
+
+> TODO: Capture element IDs for BREAKING NEWS (DAHJu075GDY), IPL Final (DAHLKKlkP1U),
+> and India Series (DAHJ19q4Aok) in the next live session.
+
+---
+
+## Template Routing Table (with Fallbacks)
+
+NEVER scan pages at runtime to find a layout. Always use this table. If copy-design fails, use the fallback immediately.
+
+```
+EVENT TYPE    PRIMARY DESIGN              FALLBACK
+──────────────────────────────────────────────────────────────────────
+quote         DAGIpsX_Sv8 page 1        → DAGIpsX_Sv8 page 5
+                                         → DAHKI4MTArU (text-heavy)
+
+stats         DAGIpsX_Sv8 pages 1–3     → DAHKI4MTArU (stat in title)
+              (look ONLY here first)
+
+breaking      DAHJu075GDY page 1         → DAHKI4MTArU (add "BREAKING:" prefix)
+
+toss          DAHKI4MTArU page 1         → DAHLKKlkP1U page 1
+
+milestone     DAGIpsX_Sv8 page 6+        → DAHKI4MTArU
+(50/100/wicket)
+
+result        DAGIpsX_Sv8 page 6+        → DAHKI4MTArU
+(match end)
+
+carousel      DAGIpsX_Sv8 + DAHKI4MTArU  mix per slide type
+```
+
+Universal fallback: If everything else fails → DAHKI4MTArU always works.
 
 ---
 
@@ -63,18 +123,63 @@ For screenshots:
 
 ---
 
-## Output Language
+## Output Language Rules v2
 
-Default: Malayalam for all captions.
-Add "in English" if you need English instead.
-Hashtags always in English - #IPL2026 #RCB #GT #Cricket #IPLFinal
+### The Core Separation: Heading vs Caption
 
-Malayalam cricket terms:
-  50 runs  = അര്‍ദ്ധ സെഞ്ചുറി
-  100 runs = സെഞ്ചുറി  
-  wicket   = വിക്കറ്റ്
-  six      = സിക്സ്
-  toss     = ടോസ്
+| Where | What | Example |
+|---|---|---|
+| Card HEADING (big title on design) | Malayalam script, abbreviations OK | `ODI-ൽ 50 wickets` |
+| Card BODY / quote (smaller text) | Malayalam, abbreviations OK | `SR 163.72 — ഈ season` |
+| Social CAPTION (Instagram / FB text) | Full Malayalam words, NO abbreviations | `ഏകദിനത്തിൽ 50 വിക്കറ്റ്` |
+
+### Player and Team Names — Always Malayalam Script
+
+Write player and team names in Malayalam transliteration everywhere — headings and captions. Never in English.
+
+```
+PLAYER NAMES:
+  Virat Kohli      → വിരാട് കോഹ്‌ലി
+  Rohit Sharma     → രോഹിത് ശർമ
+  Shubman Gill     → ഷൂബ്‌മൻ ഗിൽ
+  MS Dhoni         → എം.എസ്. ധോണി
+  Jasprit Bumrah   → ജസ്‌പ്രീത് ബുംറ
+  Ruturaj Gaikwad  → രുതുരാജ് ഗായ്ക്‌വാഡ്
+  Hardik Pandya    → ഹർദ്ദിക് പാണ്ഡ്യ
+  KL Rahul         → കെ.എൽ. രാഹുൽ
+  Suryakumar Yadav → സൂര്യകുമാർ യാദവ്
+  Rishabh Pant     → ഋഷഭ് പന്ത്
+
+TEAM NAMES:
+  Gujarat Titans   → ഗുജറാത്ത് ടൈറ്റൻസ്   (GT is ok in stat lines)
+  Mumbai Indians   → മുംബൈ ഇന്ത്യൻസ്
+  Chennai Super Kings → ചെന്നൈ സൂപ്പർ കിംഗ്സ്
+  Royal Challengers Bengaluru → റോയൽ ചലഞ്ചേഴ്സ് ബെംഗളൂരു
+  Rajasthan Royals → രാജസ്ഥാൻ റോയൽസ്
+  India            → ഇന്ത്യ
+```
+
+### Abbreviation Rules
+
+```
+ALWAYS ENGLISH — both in headings and captions:
+  T20, IPL, SR, NRR, RR, DRS, LBW
+
+IN HEADINGS — abbreviations OK:
+  ODI  (space-constrained headings)
+
+IN CAPTIONS — use full Malayalam words:
+  ODI     → ഏകദിനം
+  Test    → ടെസ്റ്റ്
+  T20     → ട്വന്റി20   (or keep T20 if space-constrained)
+  century → സെഞ്ച്വറി  (or just write "100")
+  wicket  → വിക്കറ്റ്
+  six     → സിക്സ്
+
+ALWAYS DIGITS — never spell out numbers:
+  94  (not തൊണ്ണൂറ്റിനാല്)
+  163.72  (always numeric)
+```
 
 ---
 
@@ -106,9 +211,9 @@ Just say "yes" or "next" after each post. I keep going until the match is fully 
 
 I will never post something unverified.
 
-  Confirmed by 2+ official sources  -> post as news
-  Denied by official sources         -> tell you, suggest NOT posting
-  Only from WhatsApp or social media -> label it "Reports:" and ask your decision
+  Confirmed by 2+ official sources  → post as news
+  Denied by official sources         → tell you, suggest NOT posting
+  Only from WhatsApp or social media → label it "Reports:" and ask your decision
 
 Official sources I check: BCCI, ESPN Cricinfo, Cricbuzz, PTI, The Hindu.
 
@@ -146,7 +251,6 @@ Token is valid for 60 minutes. To refresh:
 
 I handle all of this automatically. You never need to deal with tokens.
 
-
 NOTE FOR TEAM SETUP: Add credentials to your Claude Project Instructions (not this file):
   CMS_USERNAME=cowork
   CMS_PASSWORD=[your admin will share this privately]
@@ -161,23 +265,30 @@ When you paste a tweet, article, screenshot, or describe any sports event, I fol
 STEP 1 — Parse what you pasted
   I identify: event_type, player names, team names, key number (score/runs/wickets/balls), headline, sub-headline
 
-STEP 2 — Pick the right design and page
-  BREAKING news (injury / surprise / transfer) → copy DAHJ8LyJ8jw page 1
-  Toss result / big headline moment          → copy DAHKI4MTArU page 1
-  Score milestone (50 / 100 / 5-wicket)     → scan DAGIpsX_Sv8 for a score layout page
-  Match result                               → scan DAGIpsX_Sv8 for a result layout page
-  Player quote                               → scan DAGIpsX_Sv8 for a quote card page
-  Pre-match stats / head-to-head            → scan DAGIpsX_Sv8 for a comparison layout page
-  General cricket news                       → scan DAGIpsX_Sv8 for a headline card page
+STEP 2 — Pick the right design using the routing table (no page scanning)
+  BREAKING news (injury / surprise / transfer) → DAHJu075GDY page 1
+  Toss result / big headline moment            → DAHKI4MTArU page 1
+  Player quote                                 → DAGIpsX_Sv8 page 1 (primary)
+  Stats / head-to-head / pre-match             → DAGIpsX_Sv8 pages 1–3
+  Score milestone (50 / 100 / 5-wicket)        → DAGIpsX_Sv8 page 6+
+  Match result                                 → DAGIpsX_Sv8 page 6+
+  Carousel (multi-slide)                       → mix of above per slide
+
+  If the primary design copy fails → use the fallback from the routing table above.
+  Universal fallback: DAHKI4MTArU always works.
 
 STEP 3 — Copy just that one page
   copy-design(design_id, page_numbers=[N])
   This leaves the original untouched. Every post gets its own clean copy.
 
-STEP 4 — Edit the text elements
-  start-editing-transaction(new_design_id) to get element IDs
-  perform-editing-operations to replace: headline, stat line, player name, team name, caption
+STEP 4 — Edit using pre-catalogued element IDs (no discovery needed)
+  start-editing-transaction(new_design_id)
+  perform-editing-operations using the element IDs from the Template Manifest above
   commit-editing-transaction to save
+
+  Names on the card → always in Malayalam script (see Output Language Rules v2)
+  Headings → abbreviations OK (ODI, T20, SR)
+  Body text → full Malayalam preferred
 
 STEP 5 — Show the result
   get-design-thumbnail to display preview in chat
@@ -187,6 +298,7 @@ STEP 5 — Show the result
 STEP 6 — On approval
   export-design(design_id, format=png)
   Return the PNG file URL for download or posting
+  Update CORRECTIONS_LOG.md with this post entry (see below)
 
 ---
 
@@ -203,35 +315,54 @@ NOT: Literal translation of the English source.
 
 STRUCTURE for a milestone post:
   Line 1: Dramatic opener — the emotion of the moment (no full stop, ends with emoji)
-  Line 2: The fact — player name + stat in Malayalam/Manglish mix
+  Line 2: The fact — player name in Malayalam + stat
   Line 3: Context — what this means for the match or the season
   Line 4: English hashtags only, 3-5 tags
 
-EXAMPLE — Bad (literal translation):
+EXAMPLE — Bad (literal, English names):
   "ഗില്‍ 94 റൺസ് നേടി. 58 പന്തില്‍. ജിടി 12 റൺസ് വേണം."
 
-EXAMPLE — Good (trendy Malayalam):
+EXAMPLE — Good (trendy, Malayalam names):
   "ഇതാണ് Captain Material! 🔥
-  Shubman Gill - 94* (58) — ഫൈനലിൽ ക്ലാസ് കാണിച്ചു
+  ഷൂബ്‌മൻ ഗിൽ - 94* (58) — ഫൈനലിൽ ക്ലാസ് കാണിച്ചു
   12 വേണം, 6 പന്ത് ബാക്കി… ഇനി ഗില്ലിന്റെ ഗെയിം! 💙🏆
   #IPLFinal2026 #GT #ShubmanGill #TATAIPL"
 
 CONTENT RULES:
-  - Mix Malayalam script with English for player names and team names (do not translate proper nouns)
-  - Use Manglish for hype words where it sounds more natural: century, six, final, captain
+  - Player and team names: always in Malayalam script (see name reference table above)
+  - Use conversational spoken Malayalam — not formal/literary Malayalam
+  - In captions: use ഏകദിനം (not ODI), ട്വന്റി20 (not T20 where possible)
   - Short sentences only. Maximum 3-4 lines total including hashtags.
   - Always end with 3-5 English hashtags on their own line
   - One strong emoji at the end of line 1, one at the very end before hashtags
   - Numbers stay as digits (94, not തൊണ്ണൂറ്റിനാല്)
-  - Avoid overly formal Malayalam — use conversational spoken Malayalam style
   - For BREAKING news: start with "🚨 BREAKING:" in English, then Malayalam explanation
   - For match result: end with a fan reaction line, not just the scoreline
-  - For quotes: keep the quote in the original language, translate context in Malayalam
+  - For quotes: keep the quote as-is, add 1–2 lines of Malayalam fan context
 
 CAPTION LENGTH BY POST TYPE:
   Milestone / ticker  → 3 lines + hashtags (short and punchy)
   Match result        → 4-5 lines + hashtags (more context needed)
   BREAKING news       → 2-3 lines + hashtags (urgency, no padding)
-  Quote card          → Quote in original + 1 line Malayalam reaction + hashtags
+  Quote card          → quote in original + 1-2 lines Malayalam reaction + hashtags
   Pre-match build-up  → 3-4 lines + hashtags (hype and anticipation tone)
 
+---
+
+## Corrections Log
+
+At every session start, I read CORRECTIONS_LOG.md (in this project folder) as preference examples.
+After every approved or corrected post, I add an entry to that file.
+
+This is how I learn your preferences over time without any retraining.
+
+Format of each entry:
+  ## YYYY-MM-DD — event_type (player / context)
+  Input: <what was pasted or described>
+  Template: <design_id> page <N> → copy <new_design_id>
+  Caption: <first line of caption generated>
+  Status: APPROVED / CORRECTED
+  Note: <what was changed and why, if corrected>
+
+If I see patterns in corrections (e.g. "player names were in English — correct to Malayalam"),
+I apply that rule immediately for the rest of the session and note it at the top of my response.

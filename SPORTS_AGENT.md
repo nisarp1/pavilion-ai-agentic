@@ -312,27 +312,38 @@ TEAM NAMES:
   India            → ഇന്ത്യ
 ```
 
-### Abbreviation Rules
+### Abbreviation Rules — THE ONLY ENGLISH ALLOWED
 
 ```
-ALWAYS ENGLISH — both in headings and captions:
-  T20, IPL, SR, NRR, RR, DRS, LBW
+CARD TEXT (heading + body) AND CAPTIONS — English ONLY for these:
+  T20, IPL, ODI, SR, NRR, RR, DRS, LBW
 
-IN HEADINGS — abbreviations OK:
-  ODI  (space-constrained headings)
-
-IN CAPTIONS — use full Malayalam words:
-  ODI     → ഏകദിനം
-  Test    → ടെസ്റ്റ്
-  T20     → ട്വന്റി20   (or keep T20 if space-constrained)
-  century → സെഞ്ച്വറി  (or just write "100")
-  wicket  → വിക്കറ്റ്
-  six     → സിക്സ്
+EVERYTHING ELSE → MALAYALAM. No exceptions.
+  "Confidence"      → ആത്മവിശ്വാസം
+  "humble"          → വിനയം
+  "Premier League"  → പ്രീമിയർ ലീഗ്
+  "Champions League"→ ചാമ്പ്യൻസ് ലീഗ്
+  "Final"           → ഫൈനൽ
+  "century"         → സെഞ്ച്വറി  (or "100")
+  "wicket"          → വിക്കറ്റ്
+  "six"             → സിക്സ്
+  "Test"            → ടെസ്റ്റ്
+  "ODI" (captions)  → ഏകദിനം
+  "captain"         → ക്യാപ്റ്റൻ
+  "trophy"          → ട്രോഫി
+  "season"          → സീസൺ
+  "stadium"         → സ്റ്റേഡിയം
+  "tournament"      → ടൂർണമെന്റ്
 
 ALWAYS DIGITS — never spell out numbers:
   94  (not തൊണ്ണൂറ്റിനാല്)
   163.72  (always numeric)
 ```
+
+> CORRECTION NOTE (2026-05-31): Previous posts used English words like
+> "Confidence", "humble", "Premier League" on card text. WRONG.
+> Only T20 / IPL / ODI / SR / NRR / RR / DRS / LBW stay in English.
+> All other words → Malayalam transliteration or meaning.
 
 ---
 

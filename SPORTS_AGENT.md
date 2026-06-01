@@ -249,6 +249,80 @@ PAGE 18 — Screenshot Post (headline + stats list)  ← "screenshot post" templ
 
 ---
 
+---
+
+## Carousel Article Template — EAHLWsxnX1E
+
+Brand Template ID: `EAHLWsxnX1E`  ("Carousel Article Post")
+Use for: long-form story carousels (5–7 slides), deep-dive articles, narrative posts.
+Design: 7 pages — Cover → 5 story slides → Closing slide.
+
+### How to use
+1. `create-design-from-brand-template(EAHLWsxnX1E)` — creates all 7 pages
+2. Edit each page using the IDs below
+3. Each page is a scroll-stop with 3–4 text blocks of continuous story
+
+### Page Structure & Element IDs
+
+```
+─────────────────────────────────────────────────────────────────────
+PAGE 1 — Cover / Hook Card
+  Page ID : PBnlLf7xX6LsDtPs   (same as EAHLN0zMWG4 page 4 — shared layout)
+  hook_line  → PBnlLf7xX6LsDtPs-LBb76zrbZFBKHrgx   (small hook text at top, 1 line)
+  headline   → PBnlLf7xX6LsDtPs-LBTMgJQxMK5ppW1T   (BIG bold headline, 2–3 lines)
+  bg_image   → PBnlLf7xX6LsDtPs-LBLk0LZ90L2lhs7z   (editable bottom-half photo)
+
+PAGE 2 — Story Slide 1
+  Page ID : PBSK34rcz1pPDkgb
+  pull_quote → PBSK34rcz1pPDkgb-LBCkbTFs3VT5Z76W   (italic pull quote / question at top)
+  body_1     → PBSK34rcz1pPDkgb-LBD8c8C9YwpVJWnm   (main body paragraph)
+  body_2     → PBSK34rcz1pPDkgb-LBFr98nVYxKwLd6P   (story quote / continuation)
+  body_3     → PBSK34rcz1pPDkgb-LBdmlrtzTCSMSs7G   (closing paragraph for this slide)
+
+PAGE 3 — Story Slide 2
+  Page ID : PBJ8bnZ67p02ppw3
+  pull_quote → PBJ8bnZ67p02ppw3-LBWNMY9ldmvQHN98   (italic pull quote at top)
+  body_1     → PBJ8bnZ67p02ppw3-LB21Y24brFjq2bl5   (main body paragraph)
+  body_2     → PBJ8bnZ67p02ppw3-LBTHP8FZ8FfQdV8W   (story continuation)
+  body_3     → PBJ8bnZ67p02ppw3-LB2dkNSVcrqspBHm   (closing paragraph for this slide)
+
+PAGE 4 — Story Slide 3
+  Page ID : PBZr54k0XzN6hBfb
+  body_1     → PBZr54k0XzN6hBfb-LB6sJr13KnpHGkyb   (opening para, top)
+  body_2     → PBZr54k0XzN6hBfb-LBRbm4GJ1ypdyrl0   (main body)
+  punchline  → PBZr54k0XzN6hBfb-LBQXdS2Pn2DzmySz   (punchy mid-slide callout)
+  body_3     → PBZr54k0XzN6hBfb-LB30gLQhRkfnCBWx   (closing paragraph)
+
+PAGE 5 — Story Slide 4
+  Page ID : PBGRKSc23n19GBHr
+  pull_quote → PBGRKSc23n19GBHr-LBg0GKZMHH1fJq0b   (italic pull quote at top)
+  body_1     → PBGRKSc23n19GBHr-LBkTc51DNSw4H2MG   (main body paragraph)
+  body_2     → PBGRKSc23n19GBHr-LBxSrV8k168qxcXW   (story continuation / closing)
+
+PAGE 6 — Story Slide 5
+  Page ID : PBhvc95hnwsj5JfK
+  body_1     → PBhvc95hnwsj5JfK-LBW1s6XkH1fDGdKY   (opening para, top)
+  body_2     → PBhvc95hnwsj5JfK-LBKwlVVqJRV3RPX0   (main body)
+  body_3     → PBhvc95hnwsj5JfK-LBZsVxRJG7HgXGwc   (closing paragraph)
+
+PAGE 7 — Closing / CTA Slide
+  Page ID : PBlfcslyZjVdb4rd
+  body_1     → PBlfcslyZjVdb4rd-LBLXJd0TJpm0yzLR   (opening lines)
+  body_2     → PBlfcslyZjVdb4rd-LB5npKMy5zyCLS1j   (supporting context)
+  big_quote  → PBlfcslyZjVdb4rd-LB9bjLhybHNtQG8F   (big closing quote / punchline)
+  author     → PBlfcslyZjVdb4rd-LBGKQ17nvgQhpKFx   (writer credit e.g. "സന്ദീപ് ദാസ് എഴുതിയത്")
+─────────────────────────────────────────────────────────────────────
+```
+
+### Writing rules for carousel
+- Each slide = one complete thought. Reader should be able to drop off any slide and still understand.
+- Page 1 hook_line: 1 teaser sentence ending with "..." or "!?" — makes them swipe
+- Pages 2–6 body blocks: 3–4 sentences max per block. White space is good.
+- Page 7 big_quote: The most shareable line of the whole article — make it standalone-worthy.
+- author field: "X എഴുതിയത്" (for bylined stories) or leave blank for news carousels.
+
+---
+
 ## Template Routing Table (with Fallbacks)
 
 NEVER scan pages at runtime to find a layout. Always use this table.

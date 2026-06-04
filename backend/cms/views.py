@@ -2655,6 +2655,227 @@ class FeedRemoveView(APIView):
         return Response({'status': 'deactivated', 'x_handle': x_handle})
 
 
+# ── Cowork (Week 3 — Smart Template Routing) ──────────────────────────────────
+
+TEMPLATE_MANIFEST = {
+    "breaking": {
+        "design_id": "DAG2P9MUfkU",
+        "design_name": "Breaking News Vertical",
+        "page_id": "PBqtsM8zgR12NZ9j",
+        "slots": {
+            "subtext":  "PBqtsM8zgR12NZ9j-LBJljGD7cRjM4xYQ",
+            "headline": "PBqtsM8zgR12NZ9j-LBMWWr1WCfh4vtSR",
+        },
+    },
+    "quote": {
+        "design_id": "DAHKI6029Zg",
+        "design_name": "Player Quote Card",
+        "page_id": "PBPhb9ngRGZPMQlv",
+        "slots": {
+            "headline":    "PBPhb9ngRGZPMQlv-LBMnW1b9TQpy2YDZ",
+            "quote_body":  "PBPhb9ngRGZPMQlv-LBdzGBnYT1p6MWC0",
+            "attribution": "PBPhb9ngRGZPMQlv-LBcRxtf77VvltZv8",
+        },
+    },
+    "fact_check": {
+        "design_id": "DAHKJD8VdOA",
+        "design_name": "Fact Check Split Card",
+        "page_id": "PBJV8qbNl5WRz9Gx",
+        "slots": {
+            "headline":    "PBJV8qbNl5WRz9Gx-LBz3q9Vxj7FQ2YKw",
+            "attribution": "PBJV8qbNl5WRz9Gx-LB7NR8hNRxDWCtLt",
+            "body_right":  "PBJV8qbNl5WRz9Gx-LBMmfZnQV5YxlCfM",
+        },
+    },
+    "general": {
+        "design_id": "DAHKI4MTArU",
+        "design_name": "Hero Headline",
+        "page_id": "PBdx6KbwfyBrmnBq",
+        "slots": {
+            "title":    "PBdx6KbwfyBrmnBq-LBS3cz47rcjXstPb",
+            "subtitle": "PBdx6KbwfyBrmnBq-LBqSF2jlJcQWD0qV",
+            "body":     "PBdx6KbwfyBrmnBq-LBlXPLYLvs3DPD1F",
+        },
+    },
+}
+
+EVENT_TYPE_MAP = {
+    "transfer":  "breaking",
+    "result":    "breaking",
+    "milestone": "breaking",
+    "stats":     "general",
+    "squad":     "general",
+}
+
+_CLASSIFY_PROMPT = """You are a sports content classifier. Analyze this tweet and return JSON only — no markdown, no explanation.
+Tweet: "{tweet}"
+Source: "{source}"
+Return exactly:
+{{
+  "event_type": "breaking|quote|stats|transfer|result|squad|milestone|fact_check|general",
+  "confidence": 0,
+  "headline_ml": "punchy 5-7 word headline in Malayalam script",
+  "subtext_en": "tournament or context e.g. FIFA World Cup 2026",
+  "player_name_ml": "player name in Malayalam script or null",
+  "team_name_ml": "team name in Malayalam script or null",
+  "key_stat": "main number or score or null",
+  "quote_text": "exact quote text if event_type is quote, else null"
+}}
+Rules:
+- breaking: injury, suspension, official announcement, BREAKING, confirmed, done deal
+- quote: player or manager direct speech with quotation marks
+- transfer: signing, contract, loan, fee, here we go
+- fact_check: verification, FAKE, TRUE, FALSE, claim checking
+- stats: numbers, percentages, records, OptaJoe data posts
+- result: match score, won, lost, draw
+- squad: lineup, XI, squad announcement
+- milestone: record, first time, hat-trick
+- general: everything else"""
+
+_CAPTION_PROMPT = """Write a 3-4 line Malayalam social media caption for this sports news.
+Voice: passionate football fan texting friends. Energetic, punchy, NOT a press release.
+Original tweet: {tweet}
+Event type: {event_type}
+Player: {player}
+Team: {team}
+Rules:
+- Malayalam script throughout
+- Player/team names in Malayalam transliteration
+- Numbers stay as digits
+- End with 3-5 English hashtags on the last line
+- Max 4 lines total
+- One strong emoji at end of line 1
+Return only the caption text, nothing else."""
+
+
+class CoworkGenerateView(APIView):
+    """POST /api/cowork/generate/ — classify tweet, route template, draft caption."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        import json as _json
+        import logging as _log
+        logger = _log.getLogger(__name__)
+
+        article_id = request.data.get('article_id')
+        if not article_id:
+            return Response({'error': 'article_id required'}, status=400)
+
+        article = get_object_or_404(Article, id=article_id)
+
+        # Step 2 — classify with Gemini
+        from agents.gemini_client import generate_text as _gemini_text
+        entities = {}
+        event_type = 'general'
+        try:
+            classify_prompt = _CLASSIFY_PROMPT.format(
+                tweet=article.title,
+                source=article.source_handle or '',
+            )
+            raw = _gemini_text(classify_prompt, json_mode=True)
+            cleaned = raw.replace('```json', '').replace('```', '').strip()
+            start, end = cleaned.find('{'), cleaned.rfind('}')
+            if start != -1 and end != -1:
+                entities = _json.loads(cleaned[start:end + 1])
+                event_type = entities.get('event_type', 'general')
+                if event_type not in TEMPLATE_MANIFEST and event_type not in EVENT_TYPE_MAP:
+                    event_type = 'general'
+        except Exception as exc:
+            logger.warning(f'[Cowork] classify failed: {exc}')
+            event_type = 'general'
+
+        # Step 3 — route to template
+        resolved_type = EVENT_TYPE_MAP.get(event_type, event_type)
+        template = TEMPLATE_MANIFEST.get(resolved_type, TEMPLATE_MANIFEST['general'])
+
+        # Step 4 — fill slot values
+        slots = template['slots']
+        slot_values = {}
+        if resolved_type == 'breaking':
+            slot_values[slots['subtext']]  = entities.get('subtext_en') or 'FIFA World Cup 2026'
+            slot_values[slots['headline']] = entities.get('headline_ml') or article.title[:80]
+        elif resolved_type == 'quote':
+            slot_values[slots['headline']]    = entities.get('headline_ml') or article.title[:60]
+            slot_values[slots['quote_body']]  = entities.get('quote_text') or article.title
+            slot_values[slots['attribution']] = entities.get('player_name_ml') or entities.get('team_name_ml') or article.source_handle
+        elif resolved_type == 'fact_check':
+            slot_values[slots['headline']]    = entities.get('headline_ml') or article.title[:80]
+            slot_values[slots['attribution']] = entities.get('player_name_ml') or article.source_handle or ''
+            slot_values[slots['body_right']]  = article.title[:200]
+        else:  # general
+            slot_values[slots['title']]    = entities.get('headline_ml') or article.title[:60]
+            slot_values[slots['subtitle']] = entities.get('player_name_ml') or entities.get('team_name_ml') or ''
+            slot_values[slots['body']]     = entities.get('key_stat') or entities.get('subtext_en') or ''
+
+        # Step 5 — generate Malayalam caption
+        caption_draft = ''
+        try:
+            cap_prompt = _CAPTION_PROMPT.format(
+                tweet=article.title,
+                event_type=event_type,
+                player=entities.get('player_name_ml') or '',
+                team=entities.get('team_name_ml') or '',
+            )
+            caption_draft = _gemini_text(cap_prompt).strip()
+        except Exception as exc:
+            logger.warning(f'[Cowork] caption failed: {exc}')
+            caption_draft = article.title
+
+        # Step 6 — build cowork_prompt string
+        slots_formatted = '\n'.join(f'  {eid}: {val}' for eid, val in slot_values.items())
+        try:
+            fc = article.fact_check
+            fact_check_info = f'FACT CHECK: {fc.verdict} {fc.confidence}%'
+            fact_check_data = {'verdict': fc.verdict, 'confidence': fc.confidence}
+        except Exception:
+            fact_check_info = ''
+            fact_check_data = None
+
+        cowork_prompt = (
+            f"⚡ FIFA WC Post Ready — {event_type.upper()} from {article.source_handle}\n"
+            f"DESIGN: {template['design_name']} ({template['design_id']})\n"
+            f"PAGE_ID: {template['page_id']}\n"
+            f"ACTION: copy-design({template['design_id']}) → start-editing-transaction → fill slots below → commit → rewrite caption\n\n"
+            f"SLOTS TO FILL (element_id: value):\n{slots_formatted}\n\n"
+            f"CAPTION DRAFT — rewrite in energetic Malayalam fan voice, max 4 lines + hashtags:\n{caption_draft}\n"
+            + (f"\n{fact_check_info}" if fact_check_info else '')
+            + "\n\nRULE: Pre-known element IDs above — skip discovery round trip. Execute immediately. Quick Publish Mode."
+        )
+
+        return Response({
+            'article_id': article.id,
+            'event_type': event_type,
+            'confidence': entities.get('confidence', 0),
+            'source_handle': article.source_handle,
+            'tweet_text': article.title,
+            'fact_check': fact_check_data,
+            'template': {
+                'design_id': template['design_id'],
+                'design_name': template['design_name'],
+                'slots': slot_values,
+            },
+            'caption_draft': caption_draft,
+            'cowork_prompt': cowork_prompt,
+        })
+
+
+class CoworkCompleteView(APIView):
+    """PATCH /api/cowork/complete/ — mark article as reviewed after Canva publish."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request):
+        article_id = request.data.get('article_id')
+        if not article_id:
+            return Response({'error': 'article_id required'}, status=400)
+        article = get_object_or_404(Article, id=article_id)
+        article.canva_design_id   = request.data.get('design_id', '')
+        article.canva_export_url  = request.data.get('thumbnail_url', '')
+        article.social_media_caption = request.data.get('caption', article.social_media_caption)
+        article.status = 'review'
+        article.save(update_fields=['canva_design_id', 'canva_export_url', 'social_media_caption', 'status'])
+        return Response({'status': 'saved', 'article_id': article.id})
+
+
 class FeedPollView(APIView):
     """POST /api/feeds/{x_handle}/poll/ — queue a Celery poll for one handle."""
     permission_classes = [permissions.IsAuthenticated]

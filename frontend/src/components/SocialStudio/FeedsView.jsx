@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 
 const POLL_INTERVAL_MS = 60_000
@@ -113,11 +112,142 @@ function TweetModal({ article, onClose }) {
   )
 }
 
+// ── Cowork handoff modal ───────────────────────────────────────────────────────
+function CoworkHandoffModal({ data, onClose }) {
+  const [caption, setCaption] = useState(data.caption_draft || '')
+  const [copied, setCopied] = useState(false)
+  const [marking, setMarking] = useState(false)
+
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [onClose])
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(data.cowork_prompt)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* ignore */ }
+  }
+
+  const handleMarkDone = async () => {
+    setMarking(true)
+    try {
+      await api.patch('cowork/complete/', { article_id: data.article_id, caption })
+      onClose()
+    } catch { /* ignore */ } finally {
+      setMarking(false)
+    }
+  }
+
+  const fc = data.fact_check
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-bold text-sm text-gray-800 truncate">
+              ⚡ {data.event_type?.toUpperCase()} — {data.template?.design_name}
+            </span>
+            {fc && (
+              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${VERDICT_STYLES[fc.verdict] || VERDICT_STYLES.PENDING}`}>
+                {VERDICT_ICONS[fc.verdict]} {fc.confidence}%
+              </span>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors text-lg shrink-0 ml-2"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          <div>
+            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1">Source Tweet</p>
+            <p className="text-sm text-gray-600 line-clamp-3 leading-snug">{data.tweet_text}</p>
+          </div>
+
+          <div>
+            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1">Caption Draft</p>
+            <textarea
+              value={caption}
+              onChange={e => setCaption(e.target.value)}
+              rows={4}
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+            />
+          </div>
+
+          <hr className="border-gray-100" />
+
+          <div>
+            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1">Paste into Claude Cowork</p>
+            <textarea
+              readOnly
+              value={data.cowork_prompt}
+              rows={8}
+              className="w-full text-[11px] font-mono border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-gray-700 resize-none focus:outline-none"
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center gap-2 px-5 py-4 border-t border-gray-100 shrink-0">
+          <button
+            onClick={handleCopy}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              copied ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {copied ? '✅ Copied!' : '📋 Copy Cowork Prompt'}
+          </button>
+          <button
+            onClick={handleMarkDone}
+            disabled={marking}
+            className="ml-auto px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            {marking ? 'Saving…' : 'Mark Done'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 // ── Tweet card ─────────────────────────────────────────────────────────────────
-function TweetCard({ article, onGenerate, onViewPost }) {
+function TweetCard({ article, onViewPost, onCoworkReady }) {
   const [expanded, setExpanded] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState(false)
   const isBreaking = article.urgency === 'breaking'
   const fc = article.fact_check
+
+  const handleGenerate = async () => {
+    setGenerating(true)
+    setGenError(false)
+    try {
+      const r = await api.post('cowork/generate/', { article_id: article.id })
+      onCoworkReady(r.data)
+    } catch {
+      setGenError(true)
+      setTimeout(() => setGenError(false), 3000)
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   return (
     <div
@@ -172,10 +302,15 @@ function TweetCard({ article, onGenerate, onViewPost }) {
       {/* Actions */}
       <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
         <button
-          onClick={() => onGenerate(article)}
-          className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-medium transition-colors"
+          onClick={handleGenerate}
+          disabled={generating}
+          className={`flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full font-medium transition-colors disabled:opacity-60 ${
+            genError
+              ? 'bg-red-50 text-red-500'
+              : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+          }`}
         >
-          ⚡ Generate Post
+          {generating ? '⏳ Generating…' : genError ? '✗ Failed — retry' : '⚡ Generate Post'}
         </button>
         {article.source_url && (
           <button
@@ -201,13 +336,12 @@ function TweetCard({ article, onGenerate, onViewPost }) {
 }
 
 // ── Feed column ────────────────────────────────────────────────────────────────
-function FeedColumn({ handle, onRemove, onViewPost }) {
+function FeedColumn({ handle, onRemove, onViewPost, onCoworkReady }) {
   const [articles, setArticles] = useState([])
   const [loading, setLoading] = useState(true)
   const [polling, setPolling] = useState(false)
   const [error, setError] = useState(null)
   const [live, setLive] = useState(false)
-  const navigate = useNavigate()
   const timerRef = useRef(null)
 
   const fetchArticles = useCallback(async () => {
@@ -247,10 +381,6 @@ function FeedColumn({ handle, onRemove, onViewPost }) {
     } finally {
       setPolling(false)
     }
-  }
-
-  const handleGenerate = (article) => {
-    navigate(`/social-studio?article=${article.id}`)
   }
 
   const stale = handle.last_polled_at &&
@@ -341,7 +471,7 @@ function FeedColumn({ handle, onRemove, onViewPost }) {
         )}
 
         {!loading && articles.map(a => (
-          <TweetCard key={a.id} article={a} onGenerate={handleGenerate} onViewPost={onViewPost} />
+          <TweetCard key={a.id} article={a} onViewPost={onViewPost} onCoworkReady={onCoworkReady} />
         ))}
 
         {/* Stale + has articles: show refresh button at bottom */}
@@ -426,6 +556,7 @@ export default function FeedsView() {
   const [handles, setHandles] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedArticle, setSelectedArticle] = useState(null)
+  const [coworkData, setCoworkData] = useState(null)
 
   const fetchHandles = async () => {
     try {
@@ -493,6 +624,7 @@ export default function FeedsView() {
             handle={h}
             onRemove={handleRemove}
             onViewPost={setSelectedArticle}
+            onCoworkReady={setCoworkData}
           />
         ))}
 
@@ -511,6 +643,9 @@ export default function FeedsView() {
 
       {selectedArticle && (
         <TweetModal article={selectedArticle} onClose={() => setSelectedArticle(null)} />
+      )}
+      {coworkData && (
+        <CoworkHandoffModal data={coworkData} onClose={() => setCoworkData(null)} />
       )}
     </div>
   )

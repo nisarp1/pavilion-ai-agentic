@@ -18,6 +18,8 @@ from .views import (
     FeedAddHandleView,
     FeedRemoveView,
     FeedPollView,
+    CoworkGenerateView,
+    CoworkCompleteView,
 )
 
 router = DefaultRouter()
@@ -39,5 +41,8 @@ urlpatterns = [
     path('feeds/<str:x_handle>/articles/', FeedArticlesView.as_view(), name='feeds-articles'),
     path('feeds/<str:x_handle>/remove/', FeedRemoveView.as_view(), name='feeds-remove'),
     path('feeds/<str:x_handle>/poll/', FeedPollView.as_view(), name='feeds-poll'),
+    # Cowork (Week 3)
+    path('cowork/generate/', CoworkGenerateView.as_view(), name='cowork-generate'),
+    path('cowork/complete/', CoworkCompleteView.as_view(), name='cowork-complete'),
 ]
 

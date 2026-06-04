@@ -453,6 +453,10 @@ class Article(models.Model):
     # Celery task tracking
     celery_task_id = models.CharField(max_length=255, blank=True, default='', help_text="Celery task ID for the active background task")
 
+    # Cowork / Canva handoff fields
+    canva_design_id = models.CharField(max_length=100, blank=True, default='')
+    canva_export_url = models.URLField(max_length=1000, blank=True, default='')
+
     # Social monitoring fields
     urgency = models.CharField(
         max_length=20,

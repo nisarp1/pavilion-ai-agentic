@@ -1110,3 +1110,93 @@ MATCH CONTEXT:
   Captain               → ക്യാപ്റ്റൻ
   All-rounder           → ഓൾ റൗണ്ടർ
 ```
+
+---
+
+## ✍️ ADVANCED CAPTION WRITING SKILL
+### Based on: @pavilionendofficial · @reportersports · @FreeKickworld
+
+This section contains the full editorial intelligence extracted from the top Malayalam sports pages.
+Apply this whenever generating any social media caption, card headline, or post text.
+
+---
+
+### THE THREE VOICE MODES
+
+Every post belongs to one of three voice modes. Pick based on context:
+
+**MODE 1 — PAVILION END VOICE** (literary, dramatic, metaphorical)
+Use for: milestones, player features, tributes, match analysis, quote cards
+Tone: Like a passionate sports writer who loves the game and the language
+Character: poetic verbs, cultural metaphors, colon-separated drama
+Example feel: "കാലത്തെ തോൽപ്പിക്കുന്ന ഇതിഹാസം" / "ഇതാണ് Captain Material!"
+
+**MODE 2 — FREEKICK VOICE** (street passion, fan energy, local heat)
+Use for: breaking transfers, match reactions, goal moments, controversial moments
+Tone: WhatsApp group at 2am after a big goal. Raw, real, no filter
+Character: short punchy lines, exclamation stacking, fan solidarity language
+Example feel: "ഇത് വിശ്വസിക്കാൻ പറ്റുന്നില്ല! 🔥" / "ഇവൻ ഒറ്റയ്ക്ക് ജയിപ്പിച്ചു!"
+
+**MODE 3 — REPORTER VOICE** (authority, breaking news urgency)
+Use for: squad announcements, official confirmations, injury news, transfers confirmed
+Tone: TV news ticker meets social media. Fast. Factual. Urgent.
+Character: lead with the fact, one reaction line, no padding
+Example feel: "ഔദ്യോഗികം: [player] [team]-ലേക്ക്. കരാർ ഒപ്പിട്ടു. ✅"
+
+---
+
+### HEADLINE ARCHITECTURE (Pavilion End Formula)
+
+Pattern 1 — The Drama Colon:
+"മെസ്സി മാജിക്: ഏഴ് പേരെ വെട്ടിച്ച് അത്ഭുത ഗോൾ"
+"ബുംറ ഇടിമിന്നൽ: 5 വിക്കറ്റുമായി തീ പാറിച്ചു"
+
+Pattern 2 — The Question Hook:
+"കോഹ്‌ലിയുടെ ഭാവി എന്ത്? വമ്പൻ പ്രഖ്യാപനവുമായി BCCI"
+
+Pattern 3 — The Achievement Superlative:
+"19 വർഷത്തെ IPL യാത്ര: ഒരു legend-ന്റെ സ്വപ്ന ഫൈനൽ"
+
+Pattern 4 — The Contrarian Twist:
+"48 രാജ്യം, 1248 കളിക്കാർ — പക്ഷേ നമ്മളിപ്പോഴും കൈയ്യടിക്കാർ"
+
+---
+
+### POWER VOCABULARY BANK
+
+DRAMATIC VERBS:
+കുതിച്ചു, തകർത്തു, തീ പാറിച്ചു, വെട്ടിച്ചു, ഞെട്ടിച്ചു, ആഴ്ത്തി, കൊയ്തു, ഉറഞ്ഞുനിന്നു, പൊളിച്ചടക്കി
+
+EMOTIONAL OPENERS:
+"ഇതാണ് [X]! 🔥", "ഒടുവിൽ! 🏆", "ആരും കരുതിയില്ല...", "ചരിത്രം ഇന്ന് മാറി!", "കാത്തിരിപ്പ് അവസാനിച്ചു", "ഇത് വിശ്വസിക്കാൻ പറ്റുന്നില്ല"
+
+POETIC METAPHORS:
+"കാലത്തെ തോൽപ്പിക്കുന്ന" (ageless/defying time), "മിന്നായം പോലെ" (like lightning), "ഇതിഹാസം" (legend), "പടക്കുതിര" (explosive talent)
+
+INTENSITY WORDS:
+ഒടുവിൽ, നിർണ്ണായകം, അത്ഭുതം, ക്ലാസ്, ഞെട്ടൽ, ദുരന്തം, ആർത്തനാദം
+
+---
+
+### CAPTION TEMPLATES BY POST TYPE
+
+TYPE 1 — TRANSFER / SIGNING (Reporter Voice):
+🚨 Here we go — ഉറപ്പായി! ✅
+[Player ML] [team ML]-ലേക്ക്. കരാർ ഒപ്പിട്ടു.
+ഫുട്ബോൾ ലോകം ഞെട്ടി!
+#TransferNews #[PlayerName] #[Club]
+
+TYPE 2 — GOAL / MATCH MOMENT (FreeKick Voice):
+ഇത് ഗോൾ അല്ല, മാന്ത്രികം! 🪄
+[Player ML] — [minute]' — [type of goal]
+ഈ ടൂർണ്ണമെന്റ് ഇവന്റേതാണ്!
+#[PlayerName] #[Competition] #Goal
+
+TYPE 3 — MILESTONE / RECORD (Pavilion End Voice):
+കാലത്തെ തോൽപ്പിക്കുന്ന ഇതിഹാസം! 👑
+[Player ML] — [stat] — [competition]
+[X] ആദ്യമായി ഇത് ചെയ്ത [nationality]. ചരിത്രം.
+ഈ യാത്ര അവസാനിക്കുന്നേ ഇല്ല 🔥
+#[PlayerName] #[Record] #[Competition]
+
+TYPE 4 — BREAKING NEWS / INJURY (Report

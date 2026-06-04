@@ -1776,6 +1776,17 @@ def _fetch_tweets_for_handle(handle):
 
 
 @shared_task
+def poll_single_handle(x_handle):
+    """Manually trigger a poll for a single SocialMediaHandle by x_handle string."""
+    from cms.models import SocialMediaHandle
+    try:
+        handle = SocialMediaHandle.objects.get(x_handle__iexact=x_handle, is_active=True)
+        _fetch_tweets_for_handle(handle)
+    except SocialMediaHandle.DoesNotExist:
+        logger.warning(f"poll_single_handle: @{x_handle} not found or inactive")
+
+
+@shared_task
 def poll_social_handles():
     """Poll active SocialMediaHandle records for new tweets according to their tier."""
     from cms.models import SocialMediaHandle

@@ -64,7 +64,8 @@ const navSections = [
   {
     label: 'SOCIAL STUDIO',
     items: [
-      { path: '/social-studio', label: 'Social Studio', icon: FiZap, matchStart: true },
+      { path: '/social-studio', label: 'Social Studio', icon: FiZap, matchStart: true, excludeStart: '/feeds' },
+      { path: '/feeds', label: 'Feeds', icon: FiRss, matchStart: true },
     ],
   },
   {

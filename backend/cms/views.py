@@ -2510,3 +2510,162 @@ class SocialStudioSaveEditsView(APIView):
         article.save(update_fields=update_fields)
 
         return Response({'status': 'saved', 'corrections': len(corrections)})
+
+
+# ── Feeds (Social Handle Monitor) ─────────────────────────────────────────────
+
+def _time_ago(dt):
+    """Return human-readable relative time string."""
+    if not dt:
+        return 'Unknown'
+    now = timezone.now()
+    diff = now - dt
+    seconds = int(diff.total_seconds())
+    if seconds < 60:
+        return f'{seconds}s ago'
+    minutes = seconds // 60
+    if minutes < 60:
+        return f'{minutes} min ago'
+    hours = minutes // 60
+    if hours < 24:
+        return f'{hours} hr{"s" if hours > 1 else ""} ago'
+    days = hours // 24
+    if days < 30:
+        return f'{days} day{"s" if days > 1 else ""} ago'
+    return dt.strftime('%b %d')
+
+
+def _serialize_handle(handle, include_counts=True):
+    data = {
+        'id': handle.id,
+        'name': handle.name,
+        'x_handle': handle.x_handle,
+        'credibility_tier': handle.credibility_tier,
+        'category': handle.category,
+        'is_active': handle.is_active,
+        'last_polled_at': handle.last_polled_at,
+        'last_polled_ago': _time_ago(handle.last_polled_at),
+    }
+    if include_counts:
+        from .models import Article
+        qs = Article.objects.filter(source_handle=f"@{handle.x_handle}")
+        latest = qs.order_by('-created_at').first()
+        data['article_count'] = qs.count()
+        data['latest_article_at'] = latest.created_at if latest else None
+    else:
+        data['article_count'] = 0
+        data['latest_article_at'] = None
+    return data
+
+
+class FeedsListView(APIView):
+    """GET /api/feeds/ — list active handles; POST to add a new one."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import SocialMediaHandle
+        handles = SocialMediaHandle.objects.filter(is_active=True).order_by('credibility_tier', 'name')
+        return Response({'handles': [_serialize_handle(h) for h in handles]})
+
+    def post(self, request):
+        from .models import SocialMediaHandle
+        x_handle = request.data.get('x_handle', '').strip().lstrip('@')
+        name = request.data.get('name', '').strip() or x_handle
+        tier = int(request.data.get('credibility_tier', 2))
+        category = request.data.get('category', 'journalist')
+        if not x_handle:
+            return Response({'error': 'x_handle is required'}, status=400)
+        handle, created = SocialMediaHandle.objects.get_or_create(
+            x_handle=x_handle,
+            defaults={'name': name, 'credibility_tier': tier, 'category': category},
+        )
+        if not created:
+            handle.is_active = True
+            if name and name != x_handle:
+                handle.name = name
+            handle.save(update_fields=['is_active', 'name'])
+        return Response(_serialize_handle(handle, include_counts=False), status=201 if created else 200)
+
+
+class FeedArticlesView(APIView):
+    """GET /api/feeds/{x_handle}/articles/?limit=20"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, x_handle):
+        from .models import Article
+        limit = min(int(request.query_params.get('limit', 20)), 100)
+        articles = (
+            Article.objects
+            .filter(source_handle__iexact=f"@{x_handle}")
+            .select_related('fact_check')
+            .order_by('-created_at')[:limit]
+        )
+        result = []
+        for a in articles:
+            fc = None
+            try:
+                fc_obj = a.fact_check
+                fc = {
+                    'verdict': fc_obj.verdict,
+                    'confidence': fc_obj.confidence,
+                    'reasoning': fc_obj.gemini_reasoning,
+                }
+            except Exception:
+                pass
+            result.append({
+                'id': a.id,
+                'title': a.title,
+                'source_url': a.source_url,
+                'traction_score': a.traction_score,
+                'urgency': a.urgency,
+                'created_at': a.created_at,
+                'time_ago': _time_ago(a.created_at),
+                'fact_check': fc,
+            })
+        return Response({'handle': x_handle, 'articles': result})
+
+
+class FeedAddHandleView(APIView):
+    """POST /api/feeds/add/ — create or reactivate a handle."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from .models import SocialMediaHandle
+        x_handle = request.data.get('x_handle', '').strip().lstrip('@')
+        name = request.data.get('name', '').strip() or x_handle
+        tier = int(request.data.get('credibility_tier', 2))
+        category = request.data.get('category', 'journalist')
+        if not x_handle:
+            return Response({'error': 'x_handle is required'}, status=400)
+        handle, created = SocialMediaHandle.objects.get_or_create(
+            x_handle=x_handle,
+            defaults={'name': name, 'credibility_tier': tier, 'category': category},
+        )
+        if not created:
+            handle.is_active = True
+            handle.save(update_fields=['is_active'])
+        return Response(_serialize_handle(handle, include_counts=False), status=201 if created else 200)
+
+
+class FeedRemoveView(APIView):
+    """POST /api/feeds/{x_handle}/remove/ — soft-delete (set is_active=False)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, x_handle):
+        from .models import SocialMediaHandle
+        handle = get_object_or_404(SocialMediaHandle, x_handle__iexact=x_handle)
+        handle.is_active = False
+        handle.save(update_fields=['is_active'])
+        return Response({'status': 'deactivated', 'x_handle': x_handle})
+
+
+class FeedPollView(APIView):
+    """POST /api/feeds/{x_handle}/poll/ — queue a Celery poll for one handle."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, x_handle):
+        from .models import SocialMediaHandle
+        from workers.tasks import poll_single_handle
+        handle = get_object_or_404(SocialMediaHandle, x_handle__iexact=x_handle, is_active=True)
+        poll_single_handle.delay(handle.x_handle)
+        return Response({'status': 'queued', 'x_handle': handle.x_handle})

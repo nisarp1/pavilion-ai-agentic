@@ -26,6 +26,7 @@ const TenantSettings = lazy(() => import('./components/Settings/TenantSettings')
 const OnboardingWizard = lazy(() => import('./components/Onboarding/OnboardingWizard'))
 const VideoStudio = lazy(() => import('./components/VideoStudio/VideoStudio'))
 const SocialPostGenerator = lazy(() => import('./components/SocialStudio/SocialPostGenerator'))
+const FeedsView = lazy(() => import('./components/SocialStudio/FeedsView'))
 
 function App() {
   const { isAuthenticated } = useSelector((state) => state.auth)
@@ -85,6 +86,7 @@ function App() {
             <Route path="settings" element={<TenantSettings />} />
             <Route path="video-studio" element={<VideoStudio />} />
             <Route path="social-studio" element={<SocialPostGenerator />} />
+            <Route path="feeds" element={<FeedsView />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

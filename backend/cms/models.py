@@ -452,6 +452,15 @@ class Article(models.Model):
 
     # Celery task tracking
     celery_task_id = models.CharField(max_length=255, blank=True, default='', help_text="Celery task ID for the active background task")
+
+    # Social monitoring fields
+    urgency = models.CharField(
+        max_length=20,
+        choices=[('breaking', 'Breaking'), ('standard', 'Standard'), ('low', 'Low Priority')],
+        default='standard',
+    )
+    traction_score = models.IntegerField(default=0)
+    source_handle = models.CharField(max_length=100, blank=True)
     
     class Meta:
         ordering = ['-created_at']
@@ -677,3 +686,46 @@ class SocialPostFeedback(models.Model):
 
     def __str__(self):
         return f"Feedback for {self.article} ({len(self.corrections or [])} corrections)"
+
+
+class SocialMediaHandle(models.Model):
+    TIER_CHOICES = [(1, 'Tier 1 - Top Sources'), (2, 'Tier 2 - Journalists'), (3, 'Tier 3 - Aggregators')]
+    CATEGORY_CHOICES = [
+        ('official', 'Official Account'),
+        ('journalist', 'Journalist'),
+        ('stats', 'Stats/Data'),
+        ('federation', 'Federation'),
+        ('aggregator', 'Aggregator'),
+    ]
+    name = models.CharField(max_length=200)
+    x_handle = models.CharField(max_length=100, unique=True)
+    credibility_tier = models.IntegerField(choices=TIER_CHOICES, default=2)
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default='journalist')
+    is_active = models.BooleanField(default=True)
+    last_polled_at = models.DateTimeField(null=True, blank=True)
+    last_tweet_id = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['credibility_tier', 'name']
+
+    def __str__(self):
+        return f"@{self.x_handle} (Tier {self.credibility_tier})"
+
+
+class FactCheck(models.Model):
+    VERDICT_CHOICES = [
+        ('CONFIRMED', 'Confirmed by multiple sources'),
+        ('UNCONFIRMED', 'Single source or unverified'),
+        ('CONTRADICTED', 'Contradicted — do not post'),
+        ('PENDING', 'Check in progress'),
+    ]
+    article = models.OneToOneField('Article', on_delete=models.CASCADE, related_name='fact_check')
+    verdict = models.CharField(max_length=20, choices=VERDICT_CHOICES, default='PENDING')
+    confidence = models.IntegerField(default=0)
+    sources = models.JSONField(default=list)
+    gemini_reasoning = models.TextField(blank=True)
+    checked_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.article} — {self.verdict} ({self.confidence}%)"

@@ -1684,6 +1684,119 @@ def task_generate_sports_video(self, article_id, format="portrait", script_conte
         return {"error": str(e)}
 
 
+@shared_task(bind=True, max_retries=2)
+def fact_check_article_task(self, article_id):
+    """Fact-check a tweet-sourced article using Gemini and save a FactCheck record."""
+    try:
+        from cms.models import Article, FactCheck
+        from agents.fact_check_agent import fact_check_tweet
+        from django.utils import timezone
+
+        article = Article.objects.get(id=article_id)
+        result = fact_check_tweet(article)
+
+        fc, _ = FactCheck.objects.get_or_create(article=article)
+        fc.verdict = result['verdict']
+        fc.confidence = result['confidence']
+        fc.gemini_reasoning = result.get('reasoning', '')
+        fc.sources = result.get('sources_mentioned', [])
+        fc.checked_at = timezone.now()
+        fc.save()
+
+        if article.traction_score > 500:
+            article.urgency = 'breaking'
+            article.save(update_fields=['urgency'])
+
+        logger.info(f"Fact-check complete for article {article_id}: {result['verdict']} ({result['confidence']}%)")
+        return result
+
+    except Exception as exc:
+        logger.error(f"fact_check_article_task failed for article {article_id}: {exc}", exc_info=True)
+        raise self.retry(exc=exc, countdown=30)
+
+
+def _fetch_tweets_for_handle(handle):
+    """Fetch recent tweets for a SocialMediaHandle and create Article records."""
+    import os
+    api_key = getattr(settings, 'SOCIALDATA_API_KEY', '') or os.environ.get('SOCIALDATA_API_KEY', '')
+    if not api_key:
+        logger.warning(f"SOCIALDATA_API_KEY not set — skipping @{handle.x_handle}")
+        return
+
+    url = f"https://api.socialdata.tools/twitter/user/{handle.x_handle}/tweets"
+    try:
+        import requests as _requests
+        from cms.models import Article
+        from django.utils import timezone
+
+        headers = {'Authorization': f'Bearer {api_key}', 'Accept': 'application/json'}
+        resp = _requests.get(url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        tweets = resp.json().get('tweets', [])
+
+        for tweet in tweets:
+            text = tweet.get('full_text') or tweet.get('text', '')
+            if text.startswith('RT @'):
+                continue
+
+            tweet_id = str(tweet.get('id_str') or tweet.get('id', ''))
+            tweet_url = f"https://twitter.com/{handle.x_handle}/status/{tweet_id}" if tweet_id else ''
+
+            if tweet_url and Article.objects.filter(source_url=tweet_url).exists():
+                continue
+
+            retweet_count = tweet.get('retweet_count', 0) or 0
+            like_count = tweet.get('favorite_count', 0) or 0
+            reply_count = tweet.get('reply_count', 0) or 0
+            traction_score = (retweet_count * 3) + like_count + reply_count
+
+            urgency = 'breaking' if traction_score > 500 else 'standard'
+
+            article = Article.objects.create(
+                title=text[:255],
+                status='fetched',
+                source_url=tweet_url,
+                source_feed=f"@{handle.x_handle}",
+                source_handle=f"@{handle.x_handle}",
+                traction_score=traction_score,
+                urgency=urgency,
+            )
+
+            fact_check_article_task.delay(article.id)
+            logger.info(f"Created article {article.id} from @{handle.x_handle} tweet (traction={traction_score})")
+
+            if tweet_id and (not handle.last_tweet_id or tweet_id > handle.last_tweet_id):
+                handle.last_tweet_id = tweet_id
+
+        handle.last_polled_at = timezone.now()
+        handle.save(update_fields=['last_polled_at', 'last_tweet_id'])
+
+    except Exception as exc:
+        logger.error(f"_fetch_tweets_for_handle failed for @{handle.x_handle}: {exc}", exc_info=True)
+
+
+@shared_task
+def poll_social_handles():
+    """Poll active SocialMediaHandle records for new tweets according to their tier."""
+    from cms.models import SocialMediaHandle
+    from django.utils import timezone
+    from datetime import timedelta
+
+    handles = SocialMediaHandle.objects.filter(is_active=True)
+    now = timezone.now()
+
+    for handle in handles:
+        tier = handle.credibility_tier
+        last = handle.last_polled_at
+
+        if tier == 2 and last and (now - last) < timedelta(minutes=10):
+            continue
+        if tier == 3 and last and (now - last) < timedelta(minutes=20):
+            continue
+
+        _fetch_tweets_for_handle(handle)
+
+
 @shared_task
 def run_agentic_trends_celery():
     """Celery beat task: refresh the agentic trends cache every 5 minutes."""

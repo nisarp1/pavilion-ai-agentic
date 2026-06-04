@@ -2,7 +2,7 @@
 Django admin configuration for CMS.
 """
 from django.contrib import admin
-from .models import Article, Category, Media, WebStory, WebStorySlide, PosterTemplate
+from .models import Article, Category, Media, WebStory, WebStorySlide, PosterTemplate, SocialMediaHandle, FactCheck
 
 @admin.register(PosterTemplate)
 class PosterTemplateAdmin(admin.ModelAdmin):
@@ -153,6 +153,21 @@ class WebStorySlideAdmin(admin.ModelAdmin):
     search_fields = ['story__title', 'caption']
     ordering = ['story', 'order']
 
+
+
+@admin.register(SocialMediaHandle)
+class SocialMediaHandleAdmin(admin.ModelAdmin):
+    list_display = ['name', 'x_handle', 'credibility_tier', 'category', 'is_active', 'last_polled_at']
+    list_filter = ['credibility_tier', 'category', 'is_active']
+    search_fields = ['name', 'x_handle']
+    list_editable = ['is_active']
+
+
+@admin.register(FactCheck)
+class FactCheckAdmin(admin.ModelAdmin):
+    list_display = ['article', 'verdict', 'confidence', 'checked_at']
+    list_filter = ['verdict']
+    readonly_fields = ['checked_at', 'gemini_reasoning', 'sources']
 
 
 from .models_canva import CanvaTemplate

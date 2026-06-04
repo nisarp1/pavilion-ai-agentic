@@ -328,6 +328,10 @@ CELERY_BEAT_SCHEDULE = {
     },
     # fetch-trends-sports, enhance-with-google-trends, refresh-agentic-trends
     # removed from schedule — ON-DEMAND only via Refresh button in UI
+    'poll-social-handles': {
+        'task': 'workers.tasks.poll_social_handles',
+        'schedule': timedelta(minutes=5),
+    },
 }
 # Django cache backend
 # Upstash free tier is single-DB, so broker and cache share the same URL —

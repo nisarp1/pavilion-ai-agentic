@@ -16,7 +16,7 @@ import hashlib
 import uuid
 from PIL import Image
 from io import BytesIO
-from django.db.models import Q
+from django.db.models import Q, F
 from django.utils import timezone
 from django.http import HttpResponse, HttpResponseBadRequest, Http404
 from django.conf import settings
@@ -2520,18 +2520,14 @@ def _time_ago(dt):
         return 'Unknown'
     now = timezone.now()
     diff = now - dt
-    seconds = int(diff.total_seconds())
-    if seconds < 60:
-        return f'{seconds}s ago'
-    minutes = seconds // 60
-    if minutes < 60:
-        return f'{minutes} min ago'
-    hours = minutes // 60
-    if hours < 24:
-        return f'{hours} hr{"s" if hours > 1 else ""} ago'
-    days = hours // 24
-    if days < 30:
-        return f'{days} day{"s" if days > 1 else ""} ago'
+    if diff.seconds < 60 and diff.days == 0:
+        return 'just now'
+    if diff.days == 0 and diff.seconds < 3600:
+        return f'{diff.seconds // 60} min ago'
+    if diff.days < 1:
+        return f'{diff.seconds // 3600} hr ago'
+    if diff.days < 7:
+        return f'{diff.days} days ago'
     return dt.strftime('%b %d')
 
 
@@ -2598,7 +2594,7 @@ class FeedArticlesView(APIView):
             Article.objects
             .filter(source_handle__iexact=f"@{x_handle}")
             .select_related('fact_check')
-            .order_by('-created_at')[:limit]
+            .order_by(F('published_at').desc(nulls_last=True))[:limit]
         )
         result = []
         for a in articles:
@@ -2619,7 +2615,7 @@ class FeedArticlesView(APIView):
                 'traction_score': a.traction_score,
                 'urgency': a.urgency,
                 'created_at': a.created_at,
-                'time_ago': _time_ago(a.created_at),
+                'time_ago': _time_ago(a.published_at or a.created_at),
                 'fact_check': fc,
             })
         return Response({'handle': x_handle, 'articles': result})

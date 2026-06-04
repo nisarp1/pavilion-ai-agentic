@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 
@@ -48,8 +49,72 @@ function isLive(lastPolledAt) {
   return Date.now() - new Date(lastPolledAt).getTime() < LIVE_THRESHOLD_MS
 }
 
+// ── Tweet embed modal ──────────────────────────────────────────────────────────
+function TweetModal({ article, onClose }) {
+  const embedRef = useRef(null)
+
+  // Close on Escape key
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  // Load Twitter widget script and render embed
+  useEffect(() => {
+    if (!embedRef.current) return
+
+    const render = () => {
+      if (window.twttr?.widgets) {
+        window.twttr.widgets.load(embedRef.current)
+      }
+    }
+
+    if (window.twttr?.widgets) {
+      render()
+    } else {
+      const existing = document.querySelector('script[src="https://platform.twitter.com/widgets.js"]')
+      if (existing) {
+        existing.addEventListener('load', render)
+      } else {
+        const script = document.createElement('script')
+        script.src = 'https://platform.twitter.com/widgets.js'
+        script.async = true
+        script.onload = render
+        document.body.appendChild(script)
+      }
+    }
+  }, [article.source_url])
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 p-6 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors text-lg leading-none"
+          aria-label="Close"
+        >
+          ×
+        </button>
+        <div ref={embedRef} className="flex justify-center">
+          <blockquote className="twitter-tweet" data-theme="light">
+            <a href={article.source_url}>{article.source_url}</a>
+          </blockquote>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 // ── Tweet card ─────────────────────────────────────────────────────────────────
-function TweetCard({ article, onGenerate }) {
+function TweetCard({ article, onGenerate, onViewPost }) {
   const [expanded, setExpanded] = useState(false)
   const isBreaking = article.urgency === 'breaking'
   const fc = article.fact_check
@@ -113,6 +178,14 @@ function TweetCard({ article, onGenerate }) {
           ⚡ Generate Post
         </button>
         {article.source_url && (
+          <button
+            onClick={() => onViewPost(article)}
+            className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full border border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-colors"
+          >
+            👁 View Post
+          </button>
+        )}
+        {article.source_url && (
           <a
             href={article.source_url}
             target="_blank"
@@ -128,7 +201,7 @@ function TweetCard({ article, onGenerate }) {
 }
 
 // ── Feed column ────────────────────────────────────────────────────────────────
-function FeedColumn({ handle, onRemove }) {
+function FeedColumn({ handle, onRemove, onViewPost }) {
   const [articles, setArticles] = useState([])
   const [loading, setLoading] = useState(true)
   const [polling, setPolling] = useState(false)
@@ -268,7 +341,7 @@ function FeedColumn({ handle, onRemove }) {
         )}
 
         {!loading && articles.map(a => (
-          <TweetCard key={a.id} article={a} onGenerate={handleGenerate} />
+          <TweetCard key={a.id} article={a} onGenerate={handleGenerate} onViewPost={onViewPost} />
         ))}
 
         {/* Stale + has articles: show refresh button at bottom */}
@@ -352,6 +425,7 @@ function AddFeedColumn({ onAdd }) {
 export default function FeedsView() {
   const [handles, setHandles] = useState([])
   const [loading, setLoading] = useState(true)
+  const [selectedArticle, setSelectedArticle] = useState(null)
 
   const fetchHandles = async () => {
     try {
@@ -418,6 +492,7 @@ export default function FeedsView() {
             key={h.x_handle}
             handle={h}
             onRemove={handleRemove}
+            onViewPost={setSelectedArticle}
           />
         ))}
 
@@ -433,6 +508,10 @@ export default function FeedsView() {
 
         <AddFeedColumn onAdd={handleAdd} />
       </div>
+
+      {selectedArticle && (
+        <TweetModal article={selectedArticle} onClose={() => setSelectedArticle(null)} />
+      )}
     </div>
   )
 }

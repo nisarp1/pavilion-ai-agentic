@@ -1716,58 +1716,65 @@ def fact_check_article_task(self, article_id):
 
 
 def _fetch_tweets_for_handle(handle):
-    """Fetch recent tweets for a SocialMediaHandle and create Article records."""
-    import os
-    api_key = getattr(settings, 'SOCIALDATA_API_KEY', '') or os.environ.get('SOCIALDATA_API_KEY', '')
-    if not api_key:
-        logger.warning(f"SOCIALDATA_API_KEY not set — skipping @{handle.x_handle}")
-        return
+    """Fetch recent tweets via RSSHub and create Article records."""
+    import xml.etree.ElementTree as ET
+    import requests as _requests
+    from django.utils import timezone
+    from email.utils import parsedate_to_datetime
+    from cms.models import Article
 
-    url = f"https://api.socialdata.tools/twitter/user/{handle.x_handle}/tweets"
+    rss_url = f"http://rsshub:1200/twitter/user/{handle.x_handle}"
     try:
-        import requests as _requests
-        from cms.models import Article
-        from django.utils import timezone
-
-        headers = {'Authorization': f'Bearer {api_key}', 'Accept': 'application/json'}
-        resp = _requests.get(url, headers=headers, timeout=15)
+        resp = _requests.get(rss_url, timeout=15)
         resp.raise_for_status()
-        tweets = resp.json().get('tweets', [])
+        root = ET.fromstring(resp.content)
+        channel = root.find('channel')
+        if channel is None:
+            logger.warning(f"No <channel> in RSS for @{handle.x_handle}")
+            return
 
-        for tweet in tweets:
-            text = tweet.get('full_text') or tweet.get('text', '')
-            if text.startswith('RT @'):
+        latest_guid = handle.last_tweet_id or ''
+
+        for item in channel.findall('item'):
+            raw_title = (item.findtext('title') or '').strip()
+            # Strip HTML tags from title
+            tweet_text = re.sub(r'<[^>]+>', '', raw_title).strip()
+
+            if tweet_text.startswith('RT '):
                 continue
 
-            tweet_id = str(tweet.get('id_str') or tweet.get('id', ''))
-            tweet_url = f"https://twitter.com/{handle.x_handle}/status/{tweet_id}" if tweet_id else ''
+            link = (item.findtext('link') or '').strip()
+            guid = (item.findtext('guid') or link).strip()
 
-            if tweet_url and Article.objects.filter(source_url=tweet_url).exists():
+            if link and Article.objects.filter(source_url=link).exists():
                 continue
 
-            retweet_count = tweet.get('retweet_count', 0) or 0
-            like_count = tweet.get('favorite_count', 0) or 0
-            reply_count = tweet.get('reply_count', 0) or 0
-            traction_score = (retweet_count * 3) + like_count + reply_count
+            pub_date_str = item.findtext('pubDate') or ''
+            try:
+                pub_dt = parsedate_to_datetime(pub_date_str) if pub_date_str else None
+            except Exception:
+                pub_dt = None
 
-            urgency = 'breaking' if traction_score > 500 else 'standard'
+            urgency = 'breaking' if handle.credibility_tier == 1 else 'standard'
 
             article = Article.objects.create(
-                title=text[:255],
+                title=tweet_text[:255],
                 status='fetched',
-                source_url=tweet_url,
+                source_url=link,
                 source_feed=f"@{handle.x_handle}",
                 source_handle=f"@{handle.x_handle}",
-                traction_score=traction_score,
+                traction_score=0,
                 urgency=urgency,
+                published_at=pub_dt,
             )
 
             fact_check_article_task.delay(article.id)
-            logger.info(f"Created article {article.id} from @{handle.x_handle} tweet (traction={traction_score})")
+            logger.info(f"Created article {article.id} from @{handle.x_handle} via RSSHub")
 
-            if tweet_id and (not handle.last_tweet_id or tweet_id > handle.last_tweet_id):
-                handle.last_tweet_id = tweet_id
+            if guid and (not latest_guid or guid > latest_guid):
+                latest_guid = guid
 
+        handle.last_tweet_id = latest_guid
         handle.last_polled_at = timezone.now()
         handle.save(update_fields=['last_polled_at', 'last_tweet_id'])
 

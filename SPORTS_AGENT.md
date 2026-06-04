@@ -1199,4 +1199,84 @@ TYPE 3 — MILESTONE / RECORD (Pavilion End Voice):
 ഈ യാത്ര അവസാനിക്കുന്നേ ഇല്ല 🔥
 #[PlayerName] #[Record] #[Competition]
 
-TYPE 4 — BREAKING NEWS / INJURY (Report
+TYPE 4 — BREAKING NEWS / INJURY (Reporter Voice):
+🚨 ഞെട്ടൽ വാർത്ത!
+[Player ML] ഇൻജുറി — [competition]-ൽ നിന്ന് പുറത്ത്.
+[Team ML] ഇനി [consequence] നേരിടണം.
+#[PlayerName] #[Competition] #Injury
+
+TYPE 5 — QUOTE CARD (Pavilion End Voice):
+[Player ML]-ന്റെ വാക്കുകൾ ഇന്ന് ഹൃദയം തൊട്ടു 💙
+"[Quote in Malayalam]"
+ഇതാണ് champion-ന്റെ mentality!
+#[PlayerName] #[Competition]
+
+TYPE 6 — MATCH RESULT (Mixed Voice):
+[Team ML] ജയിച്ചു! [Margin] 🏆
+[Player ML] — [stat] — ഇന്നത്തെ hero
+[Fan reaction line]
+#[Team] #[Competition] #MatchResult
+
+TYPE 7 — STATS POST (Pavilion End Voice):
+[Number]-ൽ ഒരു കളിക്കാരൻ ഇത് ചെയ്തിരുന്നില്ല — ഇന്ന് [Player ML] ചെയ്തു! 📊
+[Comparison or historical context]
+ഈ season ഇവർക്ക് തന്നെ!
+#[PlayerName] #Stats #[Competition]
+
+---
+
+### THE EMOTIONAL ARC
+
+Line 1: HOOK — emotion before fact (grab heart first)
+Line 2: FACT — player ML + what happened + number
+Line 3: CONTEXT — why this matters historically or for fans
+Line 4: HASHTAGS — English only, 3-5 tags, own line
+
+The test: Read only Line 1. Does it make you want to read more?
+If NO → rewrite Line 1.
+
+---
+
+### WHAT MAKES PAVILION END DIFFERENT
+
+1. They make numbers feel human — "50 ഗോൾ — ഒരു generation-ന്റെ ആദ്യ love letter to football 💙"
+2. Cultural metaphors over sports clichés — "കാലത്തെ തോൽപ്പിക്കുന്ന ഇതിഹാസം" not "played out of his skin"
+3. Write for the fan who already knows — skip background, jump to emotion
+4. Take a side — Malayalam sports pages celebrate, mourn, criticise. Never neutral.
+5. End with us, not them — last line = reader's emotion, not player's achievement
+
+---
+
+### FREEKICK SPECIAL TECHNIQUES
+
+The Solidarity Line: "ഞങ്ങൾ ഈ team-ന്റെ കൂടെ ഉണ്ട്"
+The Disbelief Open: "ഇത് സംഭവിച്ചോ? 😱"
+The Local Pride Angle: "ഒരു ഇന്ത്യക്കാരൻ, ഒരു മലയാളി — ഇത് ചരിത്രം!"
+The Anti-Pundit Voice: "എല്ലാരും തെറ്റ് പറഞ്ഞു — [player] ഉത്തരം കൊടുത്തു! 🔥"
+
+---
+
+### QUALITY CHECKLIST
+
+☐ Line 1 grabs emotion before fact
+☐ All player/team names in Malayalam script
+☐ Numbers as digits (94, not തൊണ്ണൂറ്റിനാല്)
+☐ Conversational Malayalam, not formal/literary
+☐ ODI → ഏകദിനം in captions; IPL/WC/SR stay in English
+☐ Max 4 lines before hashtags
+☐ Hashtags on own last line, English only, 3-5 tags
+☐ At least one emotionally placed emoji
+☐ Caption ends with fan emotion, not player achievement
+☐ Would you share this in your WhatsApp group? YES → approve. NO → rewrite.
+
+---
+
+### CAPTION ANTI-PATTERNS — Never Do These
+
+❌ Starting with player name: "Mbappe scored..." → Start with emotion
+❌ Listing stats without feeling: "94 runs, 58 balls" → Make numbers feel big
+❌ Ending with scoreline: "Final: 2-1" → End with fan reaction
+❌ "ഇന്ന്" opener (overused) → Use the action first
+❌ More than 5 hashtags
+❌ Hashtags mid-caption
+❌ English words where Malayalam exists: "amazing" → "അത്ഭുതം"

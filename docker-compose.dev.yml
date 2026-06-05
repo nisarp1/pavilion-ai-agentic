@@ -74,6 +74,9 @@ services:
       AWS_REGION: us-east-1
       GEMINI_API_KEY: "${GEMINI_API_KEY}"
       SECRET_KEY: "${SECRET_KEY}"
+      SOCIALDATA_API_KEY: "${SOCIALDATA_API_KEY}"
+      TWITTER_AUTH_TOKEN: "${TWITTER_AUTH_TOKEN}"
+      RSSHUB_URL: "${RSSHUB_URL}"
       ENVIRONMENT: development
       DEBUG: 'true'
     volumes:
@@ -101,6 +104,7 @@ services:
       REDIS_CACHE_URL: redis://redis:6379/1
       GEMINI_API_KEY: "${GEMINI_API_KEY}"
       SECRET_KEY: "${SECRET_KEY}"
+      SOCIALDATA_API_KEY: "${SOCIALDATA_API_KEY}"
       ENVIRONMENT: development
       DEBUG: 'true'
     volumes:

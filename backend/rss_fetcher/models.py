@@ -37,10 +37,16 @@ class StyleGuide(models.Model):
 class RSSFeed(models.Model):
     """Model for RSS feed sources."""
     
+    SPORT_CHOICES = [
+        ('football', 'Football'),
+        ('cricket', 'Cricket'),
+        ('general', 'General'),
+    ]
     name = models.CharField(max_length=255)
     url = models.URLField(unique=True)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='rss_feeds', null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    sport = models.CharField(max_length=50, choices=SPORT_CHOICES, default='football')
     last_fetched_at = models.DateTimeField(null=True, blank=True)
     fetch_interval = models.IntegerField(
         default=60,

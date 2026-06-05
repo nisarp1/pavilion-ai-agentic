@@ -379,44 +379,71 @@ For screenshots:
 
 ---
 
-## Output Language Rules v2
+## Malayalam Content Writing System v3
+
+### Research basis
+Studied: Manorama Sports, Webdunia Cricket Malayalam, Cricket Zone Kerala (Instagram),
+Troll Cricket Malayalam (256K followers), ESPN social media strategy, Kerala media headline patterns.
 
 ---
-### ⚠️ HARD RULE — ZERO ENGLISH IN CAPTIONS ⚠️
-### Social captions (Instagram / Facebook / X) must be 100% Malayalam.
-### The ONLY English allowed: sport abbreviations (IPL, T20, ODI, SR, NRR, RCB, GT, etc.) and hashtags.
-### Everything else — emotions, hype words, context, descriptions — MUST be Malayalam.
 
-WRONG ❌ → "Chase Master delivers in the Final!"
-RIGHT ✅ → "ചേസ് മാസ്റ്റർ ഫൈനലിൽ തിളങ്ങി!"
+### THE DOUBLE-CHECK MODEL (mandatory for every post)
 
-WRONG ❌ → "Spirit of the Game 🤝"
-RIGHT ✅ → "കളിയുടെ ആത്മാവ് 🤝"
+PASS 1 — CMS generates first draft (context + facts)
+PASS 2 — Cowork rewrites in fan voice using rules below
+PASS 3 — Show rewrite to editor BEFORE committing. Wait for "yes" or correction.
+Never commit to Canva without editor approval on caption.
 
-WRONG ❌ → "Captain Material! Cricket is a culture."
-RIGHT ✅ → "ക്യാപ്റ്റൻ ആകാൻ ജനിച്ചവൻ! ക്രിക്കറ്റ് ഒരു സംസ്കാരമാണ്."
-
-WRONG ❌ → "King is back! Fastest fifty in the Final."
-RIGHT ✅ → "KING തിരിച്ചുവന്നു! ഫൈനലിലെ ഏറ്റവും വേഗത്തിലുള്ള അർദ്ധ സെഞ്ച്വറി."
-
-Before writing any caption, ask: "Is every word here Malayalam or an allowed abbreviation?"
-If NO → rewrite in Malayalam.
 ---
 
-### The Core Separation: Heading vs Caption
+### CARD CONTENT RULES (what goes on the design)
 
-| Where | What | Example |
-|---|---|---|
-| Card HEADING (big title on design) | Malayalam script, abbreviations OK | `ODI-ൽ 50 wickets` |
-| Card BODY / quote (smaller text) | Malayalam, abbreviations OK | `SR 163.72 — ഈ സീസൺ` |
-| Social CAPTION (Instagram / FB text) | **100% Malayalam. ONLY abbreviations in English. NO other English words.** | `ഏകദിനത്തിൽ 50 വിക്കറ്റ്` |
+HEADING (big bold text on card):
+- Malayalam script always
+- Stat-first drama: "59 ഓവറിൽ 16 വിക്കറ്റ്!" not "16 wickets fell in 59 overs"
+- Abbreviations OK: T20, IPL, ODI, SR
+- Max 6-8 words. Punchy. No full sentences.
+- Use exclamation for milestones/breaking: "സെഞ്ചുറി! 🔥"
 
-### Player and Team Names — Always Malayalam Script
+SUBTEXT (smaller card text):
+- Context line: player + team + match stage
+- Stats in digits always: 94*(58) not spelled out
+- Mix Malayalam + English for stats: "94* (58 balls) — IPL Final"
 
-Write player and team names in Malayalam transliteration everywhere — headings and captions. Never in English.
+---
 
-```
-CRICKET PLAYERS:
+### CAPTION RULES (Instagram/Facebook post text)
+
+STRUCTURE (4 lines max + hashtags):
+Line 1: EMOTIONAL HOOK — the feeling, not the fact. End with 1 emoji.
+Line 2: THE FACT — player name (Malayalam) + stat/event in Malayalam
+Line 3: CONTEXT/CONSEQUENCE — what does this mean? Why does it matter?
+Line 4: CALL TO ACTION or HYPE — question, challenge, or rallying cry
+Last line: 3-5 English hashtags only
+
+TONE RULES (studied from top Kerala sports pages):
+- Fan-to-fan voice. Like texting your cricket group chat.
+- NOT: "Kerala cricketer announces retirement from international cricket"
+- YES: "അയ്യോ! നമ്മുടെ ഭരത് ചേട്ടൻ പോകുന്നോ?! 😭"
+- Use "നമ്മൾ", "നമ്മുടെ" (our) — inclusive fan language
+- Manglish OK for hype words: "century", "final", "record", "comeback"
+- Dramatic openers from Manorama style: "അവിശ്വസനീയം!", "ഇതാ!", "ഒടുവിൽ!"
+- Rhetorical questions create engagement: "ഇനി ആർക്കാണ് തടുക്കാൻ കഴിയുക?"
+- Numbers ALWAYS digits: 94, 163.72, 18 (never spelled out)
+
+EMOTION MAPPING by event type:
+- Milestone (50/100/wicket): Pride + excitement → "അടിപൊളി! 🔥"
+- Retirement: Nostalgia + gratitude → "അയ്യോ 😭... പക്ഷേ എന്ത് journey!"
+- Transfer/signing: Excitement + speculation → "കച്ചവടം കനക്കുന്നു! 👀"
+- Loss: Honest pain + resilience → "വിശ്വസിക്കാൻ പറ്റുന്നില്ല 💔"
+- Win: Pure hype → "ഇതാണ് ക്രിക്കറ്റ്! 🏆🔥"
+- Breaking/unconfirmed: Cautious excitement → "റിപ്പോർട്ട്: ... ✅ confirm ആയിട്ടില്ല"
+
+---
+
+### PLAYER & TEAM NAME REFERENCE (always use Malayalam script)
+
+Cricket:
   Virat Kohli      → വിരാട് കോഹ്‌ലി
   Rohit Sharma     → രോഹിത് ശർമ
   Shubman Gill     → ഷൂബ്‌മൻ ഗിൽ
@@ -425,359 +452,79 @@ CRICKET PLAYERS:
   Ruturaj Gaikwad  → രുതുരാജ് ഗായ്ക്‌വാഡ്
   Hardik Pandya    → ഹർദ്ദിക് പാണ്ഡ്യ
   KL Rahul         → കെ.എൽ. രാഹുൽ
-  Suryakumar Yadav → സൂര്യകുമാർ യാദവ്
-  Rishabh Pant     → ഋഷഭ് പന്ത്
+  KS Bharat        → കെ.എസ്. ഭരത്
+  Sanju Samson     → സഞ്ജു സാംസൺ
+  Kuldeep Yadav    → കുൽദീപ് യാദവ്
+  Ravindra Jadeja  → രവീന്ദ്ര ജഡേജ
 
-CRICKET TEAMS:
-  Gujarat Titans              → ഗുജറാത്ത് ടൈറ്റൻസ്   (GT ok in stat lines)
-  Mumbai Indians              → മുംബൈ ഇന്ത്യൻസ്
-  Chennai Super Kings         → ചെന്നൈ സൂപ്പർ കിംഗ്സ്
-  Royal Challengers Bengaluru → റോയൽ ചലഞ്ചേഴ്സ് ബെംഗളൂരു
-  Rajasthan Royals            → രാജസ്ഥാൻ റോയൽസ്
-  India                       → ഇന്ത്യ
+Football:
+  Kylian Mbappe    → കിലിയൻ എംബാപ്പേ
+  Erling Haaland   → എർലിംഗ് ഹാലൻഡ്
+  Vinicius Jr      → വിനീഷ്യസ് ജൂനിയർ
+  Lamine Yamal     → ലാമിൻ യാമൽ
+  Fabrizio Romano  → ഫബ്രിസിയോ റൊമാനോ (source credit)
 
-FOOTBALL PLAYERS — Official Malayalam Reference Table
-  (Source: Training data sheet. Always use these exact spellings.)
+Teams:
+  Gujarat Titans   → ഗുജറാത്ത് ടൈറ്റൻസ്
+  Mumbai Indians   → മുംബൈ ഇന്ത്യൻസ്
+  CSK              → ചെന്നൈ സൂപ്പർ കിംഗ്സ്
+  RCB              → റോയൽ ചലഞ്ചേഴ്സ് ബെംഗളൂരു
+  Liverpool        → ലിവർപൂൾ
+  Real Madrid      → റയൽ മാഡ്രിഡ്
+  Barcelona        → ബാഴ്സലോണ
+  Manchester City  → മാഞ്ചസ്റ്റർ സിറ്റി
 
-  Lionel Messi           → ലയണൽ മെസ്സി
-  Cristiano Ronaldo      → ക്രിസ്റ്റ്യാനോ റൊണാൾഡോ
-  Pelé                   → പെലെ
-  Diego Maradona         → ഡീഗോ മറഡോണ
-  Johan Cruyff           → യൊഹാൻ ക്രൈഫ്
-  Zinedine Zidane        → സിനദീൻ സിദാൻ
-  Ronaldo Nazário        → റൊണാൾഡോ നസാരിയോ
-  Ronaldinho             → റൊണാൾഡീഞ്ഞോ
-  Michel Platini         → മിഷേൽ പ്ലാറ്റിനി
-  Alfredo Di Stéfano     → ആൽഫ്രെഡോ ഡി സ്റ്റെഫാനോ
-  Ferenc Puskás          → ഫെറൻക് പുസ്കാസ്
-  Franz Beckenbauer      → ഫ്രാൻസ് ബെക്കൻബവർ
-  George Best            → ജോർജ്ജ് ബെസ്റ്റ്
-  Marco van Basten       → മാർക്കോ വാൻ ബാസ്റ്റൺ
-  Paolo Maldini          → പൗലോ മാൾഡീനി
-  Xavi Hernandez         → സാവി ഹെർണാണ്ടസ്
-  Andrés Iniesta         → ആന്ദ്രേസ് ഇനിയേസ്റ്റ
-  Thierry Henry          → തിയറി ഒൻറി
-  Roberto Baggio         → റോബർട്ടോ ബാജിയോ
-  Garrincha              → ഗരിഞ്ച
-  Eusebio                → യൂസേബിയോ
-  Lev Yashin             → ലെവ് യാഷിൻ
-  Zico                   → സീക്കോ
-  Romário                → റൊമാരിയോ
-  Lothar Matthäus        → ലോതർ മത്തേയൂസ്
-  Ruud Gullit            → റൂഡ് ഗുള്ളിറ്റ്
-  Bobby Charlton         → ബോബി ചാൾട്ടൺ
-  Franco Baresi          → ഫ്രാങ്കോ ബറേസി
-  Gerd Müller            → ഗെർഡ് മുള്ളർ
-  Gianluigi Buffon       → ജിയാൻലൂജി ബഫൺ
-  Iker Casillas          → ഇക്കർ കസിയസ്
-  Manuel Neuer           → മാനുവൽ ന്യൂയർ
-  Peter Schmeichel       → പീറ്റർ ഷ്മൈക്കൽ
-  Oliver Kahn            → ഒലിവർ കാൻ
-  Dino Zoff              → ഡിനോ സോഫ്
-  Cafu                   → കഫു
-  Roberto Carlos         → റോബർട്ടോ കാർലോസ്
-  Philipp Lahm           → ഫിലിപ്പ് ലാം
-  Javier Zanetti         → ഹാവിയർ സാനെറ്റി
-  Dani Alves             → ഡാനി ആൽവസ്
-  Carlos Alberto         → കാർലോസ് ആൽബർട്ടോ
-  Fabio Cannavaro        → ഫാബിയോ കന്നവാരോ
-  Alessandro Nesta       → അലസ്സാൻഡ്രോ നെസ്റ്റ
-  Sergio Ramos           → സെർജിയോ റാമോസ്
-  Carles Puyol           → കാർലെസ് പുയോൾ
-  John Terry             → ജോൺ ടെറി
-  Rio Ferdinand          → റിയോ ഫെർഡിനാൻഡ്
-  Nemanja Vidić          → നെമാൻജ വിഡിച്ച്
-  Virgil van Dijk        → വിർജിൽ വാൻ ഡൈക്ക്
-  Ashley Cole            → ആഷ്‌ലി കോൾ
-  Andrea Pirlo           → ആൻഡ്രിയ പിർലോ
-  Roy Keane              → റോയ് കീൻ
-  Patrick Vieira         → പാട്രിക് വിയേര
-  Claude Makélélé        → ക്ലോഡ് മക്കലേലെ
-  Sergio Busquets        → സെർജിയോ ബുസ്ക്വെറ്റ്സ്
-  N'Golo Kanté           → എൻഗോളോ കാന്റെ
-  Xabi Alonso            → സാബി അലോൺസോ
-  Paul Scholes           → പോൾ സ്കോൾസ്
-  Steven Gerrard         → സ്റ്റീവൻ ജെറാർഡ്
-  Frank Lampard          → ഫ്രാങ്ക് ലാംപാർഡ്
-  Luka Modrić            → ലൂക്കാ മോഡ്രിച്ച്
-  Kevin De Bruyne        → കെവിൻ ഡി ബ്രൂയ്ൻ
-  Toni Kroos             → ടോണി ക്രൂസ്
-  Ryan Giggs             → റയാൻ ഗിഗ്സ്
-  Luís Figo              → ലൂയിസ് ഫിഗോ
-  Rivaldo                → റിവാൾഡോ
-  Kaká                   → കക്ക
-  Francesco Totti        → ഫ്രാൻസെസ്കോ ടോട്ടി
-  Alessandro Del Piero   → അലസ്സാൻഡ്രോ ഡെൽ പിയേറോ
-  Wayne Rooney           → വെയ്ൻ റൂണി
-  Dennis Bergkamp        → ഡെന്നിസ് ബെർഗ്കാംപ്
-  Eric Cantona           → എറിക് കാന്റോണ
-  Hristo Stoichkov       → ഹ്രിസ്റ്റോ സ്റ്റോയിച്ച്കോവ്
-  George Weah            → ജോർജ്ജ് വിയ
-  Andriy Shevchenko      → ആൻഡ്രി ഷെവ്ചെങ്കോ
-  Gabriel Batistuta      → ഗബ്രിയേൽ ബാറ്റിസ്റ്റ്യൂട്ട
-  Alan Shearer           → അലൻ ഷിയറർ
-  Gary Lineker           → ഗാരി ലിനേക്കർ
-  Raúl                   → റൗൾ
-  David Villa            → ഡേവിഡ് വിയ്യ
-  Fernando Torres        → ഫെർണാണ്ടോ ടോറസ്
-  Samuel Eto'o           → സാമുവൽ എറ്റോ
-  Didier Drogba          → ദിദിയർ ദ്രോഗ്ബ
-  Zlatan Ibrahimović     → സ്ലാറ്റൻ ഇബ്രാഹിമോവിച്ച്
-  Robert Lewandowski     → റോബർട്ട് ലെവൻഡോവ്സ്കി
-  Karim Benzema          → കരീം ബെൻസെമ
-  Luis Suárez            → ലൂയിസ് സുവാരസ്
-  Neymar                 → നെയ്മർ
-  Kylian Mbappé          → കിലിയൻ എംബാപ്പെ
-  Erling Haaland         → എർലിംഗ് ഹാലൻഡ്
-  Mohamed Salah          → മുഹമ്മദ് സലാ
-  Sadio Mané             → സാദിയോ മാനെ
-  Eden Hazard            → ഏദൻ ഹസാർഡ്
-  Gareth Bale            → ഗാരെത് ബെയ്ൽ
-  Antoine Griezmann      → അന്റോയിൻ ഗ്രീസ്മാൻ
-  Harry Kane             → ഹാരി കെയ്ൻ
-  Son Heung-min          → സൺ ഹ്യൂങ്-മിൻ
-  Angel Di Maria         → എയ്ഞ്ചൽ ഡി മരിയ
-  Thomas Müller          → തോമസ് മുള്ളർ
-  Arjen Robben           → ആര്യൻ റോബൻ
-  Franck Ribéry          → ഫ്രാങ്ക് റിബറി
-  Wesley Sneijder        → വെസ്ലി സ്നൈഡർ
-  Robin van Persie       → റോബിൻ വാൻ പേഴ്സി
-  Ruud van Nistelrooy    → റൂഡ് വാൻ നിസ്റ്റൽറൂയ്
-  Hidetoshi Nakata       → ഹിഡെതോഷി നകാറ്റ
-  Park Ji-sung           → പാർക്ക് ജി-സങ്
-  Ali Daei               → അലി ദായി
-  Tim Cahill             → ടിം കാഹിൽ
-  Clint Dempsey          → ക്ലിന്റ് ഡെംപ്സി
-  Landon Donovan         → ലാൻഡൻ ഡോണവൻ
-  Christian Pulisic      → ക്രിസ്റ്റ്യൻ പുലിസിച്ച്
-  Rafael Márquez         → റാഫേൽ മാർക്വേസ്
-  Javier Hernández       → ഹാവിയർ ഹെർണാണ്ടസ്
-  Keylor Navas           → കെയ്‌ലർ നവാസ്
-  Carlos Valderrama      → കാർലോസ് വാൾഡെറാമ
-  Radamel Falcao         → റഡാമൽ ഫാൽക്കാവോ
-  James Rodríguez        → ഹാമിസ് റോഡ്രിഗസ്
-  Alexis Sánchez         → അലക്സിസ് സാഞ്ചസ്
-  Sergio Agüero          → സെർജിയോ അഗ്യൂറോ
-  Carlos Tevez           → കാർലോസ് ടെവസ്
-  Gonzalo Higuaín        → ഗോൺസാലോ ഹിഗ്വെയ്ൻ
-  Paulo Dybala           → പൗലോ ഡിബാല
-  Thiago Silva           → തിയാഗോ സിൽവ
-  Casemiro               → കാസെമിറോ
-  Alisson Becker         → ആലിസൺ ബെക്കർ
-  Vinícius Júnior        → വിനീഷ്യസ് ജൂനിയർ
-  Rodrygo                → റോഡ്രിഗോ
-  Raphinha               → റാഫീഞ്ഞ
-  Richarlison            → റിച്ചാർലിസൺ
-  Gabriel Magalhaes      → ഗബ്രിയേൽ മഗൽഹൈസ്
-  Diego Godín            → ഡീഗോ ഗോഡിൻ
-  Edinson Cavani         → എഡിൻസൺ കവാനി
-  Juan Román Riquelme    → യുവാൻ റോമൻ റിക്വൽമെ
-  Javier Mascherano      → ഹാവിയർ മഷറാനോ
+Full player name tables: see Football/Cricket Terms Reference sections below.
 
-CRICKET PLAYERS — Full Reference Table
-  (Source: Training data sheet. Always use these exact spellings.)
+---
 
-  — INDIA —
-  Sachin Tendulkar     → സച്ചിൻ ടെണ്ടുൽക്കർ
-  Virat Kohli          → വിരാട് കോഹ്‌ലി
-  MS Dhoni             → എം.എസ്. ധോണി
-  Rohit Sharma         → രോഹിത് ശർമ
-  Sourav Ganguly       → സൗരവ് ഗാംഗുലി
-  Rahul Dravid         → രാഹുൽ ദ്രാവിഡ്
-  Anil Kumble          → അനിൽ കുംബ്ലെ
-  VVS Laxman           → വി.വി.എസ്. ലക്ഷ്മൺ
-  Kapil Dev            → കപിൽ ദേവ്
-  Shubman Gill         → ഷൂബ്‌മൻ ഗിൽ
-  Jasprit Bumrah       → ജസ്‌പ്രീത് ബുംറ
-  KL Rahul             → കെ.എൽ. രാഹുൽ
-  Hardik Pandya        → ഹർദ്ദിക് പാണ്ഡ്യ
-  Suryakumar Yadav     → സൂര്യകുമാർ യാദവ്
-  Rishabh Pant         → ഋഷഭ് പന്ത്
-  Ruturaj Gaikwad      → രുതുരാജ് ഗായ്ക്‌വാഡ്
-  Ravindra Jadeja      → രവീന്ദ്ര ജഡേജ
-  Ravichandran Ashwin  → രവിചന്ദ്രൻ അശ്വിൻ
-  Yuvraj Singh         → യുവരാജ് സിങ്
-  Mohammad Shami       → മുഹമ്മദ് ഷാമി
-  Kuldeep Yadav        → കുൽദീപ് യാദവ്
-  Axar Patel           → അക്ഷർ പട്ടേൽ
-  Shreyas Iyer         → ശ്രേയസ് അയ്യർ
-  Ishan Kishan         → ഈശാൻ കിഷൻ
-  Mohammed Siraj       → മുഹമ്മദ് സിറാജ്
-  Virender Sehwag      → വീരേന്ദർ സേവാഗ്
-  Harbhajan Singh      → ഹർഭജൻ സിങ്
-  Yusuf Pathan         → യൂസഫ് പഠാൻ
-  Irfan Pathan         → ഇർഫാൻ പഠാൻ
-  Zaheer Khan          → സഹീർ ഖാൻ
+### ABBREVIATION RULES
 
-  — AUSTRALIA —
-  Don Bradman          → ഡോൺ ബ്രാഡ്മാൻ
-  Ricky Ponting        → റിക്കി പൊന്റിംഗ്
-  Steve Waugh          → സ്റ്റീവ് വ
-  Shane Warne          → ഷെയ്ൻ വോൺ
-  Glenn McGrath        → ഗ്ലെൻ മക്‌ഗ്രാ
-  Adam Gilchrist       → ആഡം ഗിൽക്രിസ്റ്റ്
-  David Warner         → ഡേവിഡ് വാർണർ
-  Steve Smith          → സ്റ്റീവ് സ്മിത്ത്
-  Pat Cummins          → പാറ്റ് കമ്മിൻസ്
-  Mitchell Starc       → മിച്ചൽ സ്റ്റാർക്ക്
+ALWAYS ENGLISH (card + caption):
+  T20, IPL, SR, NRR, RR, DRS, LBW, FIFA, UEFA, EPL
 
-  — ENGLAND —
-  Joe Root             → ജോ റൂട്ട്
-  James Anderson       → ജെയിംസ് ആൻഡേഴ്സൺ
-  Stuart Broad         → സ്റ്റുവർട്ട് ബ്രോഡ്
-  Kevin Pietersen      → കെവിൻ പീറ്റേഴ്സൺ
-  Andrew Flintoff      → ആൻഡ്രൂ ഫ്ലിന്റോഫ്
-  Ben Stokes           → ബെൻ സ്റ്റോക്സ്
-  Jonny Bairstow       → ജോണി ബെയ്‌ർസ്‌റ്റോ
-  Jos Buttler          → ജോസ് ബട്‌ലർ
+IN CAPTIONS → Use Malayalam word:
+  ODI      → ഏകദിനം
+  Test     → ടെസ്റ്റ്
+  century  → സെഞ്ച്വറി (or "100")
+  wicket   → വിക്കറ്റ്
+  transfer → കൈമാറ്റം (or keep "transfer" — Manglish OK)
+  goal     → ഗോൾ
+  match    → മത്സരം
 
-  — SOUTH AFRICA —
-  AB de Villiers       → എ.ബി. ഡി വിലിയേഴ്സ്
-  Graeme Smith         → ഗ്രഹാം സ്മിത്ത്
-  Jacques Kallis       → ഷാൾ കലിസ്
-  Dale Steyn           → ഡെയ്ൽ സ്റ്റെയ്ൻ
-  Kagiso Rabada        → കഗിസോ റബഡ
+---
 
-  — NEW ZEALAND —
-  Martin Crowe         → മാർട്ടിൻ ക്രോ
-  Ross Taylor          → റോസ് ടെയ്‌ലർ
-  Brendon McCullum     → ബ്രെൻഡൻ മക്കുള്ളം
-  Kane Williamson      → കെയ്ൻ വില്യംസൺ
-  Trent Boult          → ട്രെന്റ് ബൗൾട്ട്
+### ESPN UNIQUE ANGLE RULE (from research)
 
-  — WEST INDIES —
-  Brian Lara           → ബ്രയൻ ലാറ
-  Viv Richards         → വിവ് റിച്ചാർഡ്സ്
-  Clive Lloyd          → ക്ലൈവ് ലോയ്ഡ്
-  Curtly Ambrose       → കർട്ടലി ആംബ്രോസ്
-  Chris Gayle          → ക്രിസ് ഗെയ്ൽ
-  Dwayne Bravo         → ദ്വെയ്ൻ ബ്രാവോ
+Don't just report the fact. Find the ANGLE.
+BAD:  "Rohit Sharma scores 50 in IPL Final"
+GOOD: "50 കൊണ്ട് Final-ൽ ആധിപത്യം! രോഹിത്തിനെ ആർക്കും തടുക്കാൻ കഴിഞ്ഞില്ല 🔥"
 
-  — PAKISTAN —
-  Imran Khan           → ഇംറാൻ ഖാൻ
-  Wasim Akram          → വസീം അക്‌റം
-  Inzamam-ul-Haq      → ഇൻസമാം-ഉൾ-ഹഖ്
-  Shahid Afridi        → ഷഹീദ് അഫ്രീദി
-  Babar Azam           → ബബർ ആസം
-  Shaheen Afridi       → ഷഹീൻ അഫ്രീദി
+Add ONE unexpected/emotional hook per post:
+- Historic context: "2003-ന് ശേഷം ആദ്യമായി..."
+- Personal angle: "ഇന്ന് അദ്ദേഹത്തിന്റെ അമ്മയുടെ ജന്മദിനം..."
+- Fan perspective: "ഈ moment-നായി 18 വർഷം കാത്തിരുന്നു..."
 
-  — SRI LANKA —
-  Kumar Sangakkara     → കുമാർ സംഗക്കാര
-  Mahela Jayawardene   → മഹേല ജയവർദ്ദേനെ
-  Muttiah Muralitharan → മുത്തയ്യ മുരളീതരൻ
-  Arjuna Ranatunga     → അർജുന റണതൂംഗ
-  Lasith Malinga       → ലസിത് മലിംഗ
+---
 
-  — BANGLADESH —
-  Shakib Al Hasan      → ഷക്കിബ് അൽ ഹസൻ
-  Tamim Iqbal          → തമീം ഇക്ബൽ
-  Mushfiqur Rahim      → മുഷ്ഫിഖുർ റഹിം
+### QUALITY CHECKLIST (run before showing editor)
 
-  — AFGHANISTAN —
-  Rashid Khan          → റഷീദ് ഖാൻ
-  Mohammad Nabi        → മുഹമ്മദ് നബി
+Before showing caption for approval, verify:
+[ ] All player names in Malayalam script (not English)
+[ ] Numbers are digits (94, not spell-out)
+[ ] Line 1 is emotional hook, not a news headline
+[ ] Captions use "നമ്മൾ/നമ്മുടെ" fan-inclusive language
+[ ] No "announced", "stated", "expressed" — these are news-report words
+[ ] Hashtags are English only, last line, 3-5 max
+[ ] Unconfirmed news labeled: "റിപ്പോർട്ട്:" prefix
+[ ] Caption max 4 lines + hashtag line
 
-RULE FOR UNKNOWN PLAYERS:
-  1. Check this table first — if found, use exact spelling
-  2. If NOT in table → transliterate phonetically using existing patterns
-  3. Add "[unverified]" note → confirm with editor before next post
-  4. DO NOT delay production waiting for confirmation — post with best phonetic
-     transliteration and flag it
-```
+---
 
-### Social Media Terms — CHECK THIS FIRST (Before Writing Any Caption)
-
-These are the slang and viral terms that make our content relatable and human.
-Before writing a caption, check if any of these terms fit the moment.
-Priority: use the MALAYALAM TERM wherever possible over generic English descriptions.
-
-```
-HYPE / VIRAL TERMS (for big moments — use these aggressively):
-  തൂക്കി          → Thookki — nailed it, delivered perfectly with confidence
-  അടിപൊളി         → Adipoli — absolutely fantastic, mind-blowing, super cool
-  തകർപ്പൻ         → Thakarppan — shattered expectations, impressively dominant
-  തകർത്തടിച്ചു    → Thakartthadichchu — absolutely dominated, crushed it
-  കൊലവിളിയുമായി  → Kolaviliyumayi — arriving with full hype and intensity
-  വമ്പൻ            → Vampan — massive, legendary, on a whole different level
-  ഹൈപ്പ്           → Hype — overwhelming buzz and excitement
-  ക്ലാസ്           → Class — pure class, elegance, effortless superiority
-  കട്ടക്ക്         → Kattakk — solid, sturdy, top-tier quality
-  ബഹളം             → Bahalaam — viral buzz and commotion something creates
-  ബോംബ്            → Bomb — explosive impact, bombshell moment
-  ആളൊരു            → Aaloru — "what a person!" used in awe/admiration
-  തിരിച്ചുവരവ്     → Thirichhuvarav — comeback, triumphant return
-  ഫൈറ്റ്           → Fight/Phait — the spirit of going hard, standing your ground
-  ഫ്ലോ             → Flow — in the zone, effortlessly smooth performance
-  ഫുൾ ഫോം          → Full Form — giving maximum energy, 100% commitment
-  ലെവൽ അപ്         → Level Up — levelled up, improved skill, noticeable glow-up
-  മൈൻഡ് ബ്ലോ       → Mind Blow — genuinely shocking or awe-inspiring
-  സൂപ്പർ ഹിറ്റ്    → Super Hit — massive success, cultural talking point
-  ചുട്ടമറുപടി     → Chuttamarupadi — scorching clap-back, savage response
-  തള്ളൽ            → Thallal — dramatic flexing, over-the-top showing off
-
-POWER WORDS (for stats and descriptions):
-  പൊളി             → Poli — awesome, excellent
-  കിടു             → Kidu — superb, great
-  മാസ്             → Mass — stylish and powerful
-  ഉയിർ             → Uyir — life/soul, beloved (for fan's hero)
-  കട്ട             → Katta — strong, hardcore
-  വൈബ്             → Vibe — feeling or atmosphere
-  സംഭവം           → Sambhavam — something big or special
-  ഗ്യാങ്           → Gang — squad, crew
-  പവർ              → Power — energy or impact
-
-SPORTS-SPECIFIC SLANG:
-  ഗോട്ട്           → GOAT — greatest of all time
-  ഫിനിഷർ           → Finisher — one who ends the game (Dhoni-style)
-  ക്ലീൻ സ്വീപ്പ്   → Clean Sweep — winning all matches
-  ഹാട്രിക്         → Hat-trick — three consecutive wins/wickets/goals
-  ചാമ്പ്യൻ         → Champion — winner
-  ഐക്കോണിക്        → Iconic — famous, legendary
-
-SOCIAL MEDIA PLATFORM TERMS:
-  വൈറൽ             → Viral — popular online
-  ട്രെൻഡിങ്        → Trending — currently popular
-  മീം മെറ്റീരിയൽ   → Meme Material — something funny to make memes
-  ഫോളോവേഴ്സ്        → Followers — fans
-  ലൈക്ക്           → Like — appreciation on a post
-  ഷെയർ             → Share — distributing content
-  സ്റ്റോറി          → Story — Instagram story
-  റീൽസ്            → Reels — short videos
-```
-
-### Abbreviation Rules — THE ONLY ENGLISH ALLOWED
-
-```
-CARD TEXT (heading + body) AND CAPTIONS — English ONLY for these:
-  T20, IPL, ODI, SR, NRR, RR, DRS, LBW
-
-EVERYTHING ELSE → MALAYALAM. No exceptions.
-  "Confidence"      → ആത്മവിശ്വാസം
-  "humble"          → വിനയം
-  "Premier League"  → പ്രീമിയർ ലീഗ്
-  "Champions League"→ ചാമ്പ്യൻസ് ലീഗ്
-  "Final"           → ഫൈനൽ
-  "century"         → സെഞ്ച്വറി  (or "100")
-  "wicket"          → വിക്കറ്റ്
-  "six"             → സിക്സ്
-  "Test"            → ടെസ്റ്റ്
-  "ODI" (captions)  → ഏകദിനം
-  "captain"         → ക്യാപ്റ്റൻ
-  "trophy"          → ട്രോഫി
-  "season"          → സീസൺ
-  "stadium"         → സ്റ്റേഡിയം
-  "tournament"      → ടൂർണമെന്റ്
-
-ALWAYS DIGITS — never spell out numbers:
-  94  (not തൊണ്ണൂറ്റിനാല്)
-  163.72  (always numeric)
-```
-
-> CORRECTION NOTE (2026-05-31): Previous posts used English words like
-> "Confidence", "humble", "Premier League" on card text. WRONG.
-> Only T20 / IPL / ODI / SR / NRR / RR / DRS / LBW stay in English.
-> All other words → Malayalam transliteration or meaning.
-
+### CORRECTIONS LOG
+Read CORRECTIONS_LOG.md at every session start.
+After each approved or corrected post, append one entry to CORRECTIONS_LOG.md.
+Format: Date — event type — what was generated — what was corrected — rule learned.
 ---
 
 ## Match Day Workflow
@@ -886,7 +633,7 @@ STEP 4 — Edit using pre-catalogued element IDs (no discovery needed)
   perform-editing-operations using the element IDs from the Template Manifest above
   commit-editing-transaction to save
 
-  Names on the card → always in Malayalam script (see Output Language Rules v2)
+  Names on the card → always in Malayalam script (see Malayalam Content Writing System v3)
   Headings → abbreviations OK (ODI, T20, SR)
   Body text → full Malayalam preferred
 
@@ -902,53 +649,6 @@ STEP 6 — On approval
   export-design(design_id, format=png)
   Return the PNG file URL for download or posting
   Update CORRECTIONS_LOG.md with this post entry (see below)
-
----
-
-## Malayalam Caption Style Rules
-
-I do NOT translate the source content word-for-word.
-I rewrite the caption from scratch in a trendy, social-media-native Malayalam voice.
-
-TONE: Energetic, punchy, fan-to-fan.
-      Like a passionate cricket fan texting their WhatsApp group.
-NOT: News reporter style.
-NOT: Press release style.
-NOT: Literal translation of the English source.
-
-STRUCTURE for a milestone post:
-  Line 1: Dramatic opener — the emotion of the moment (no full stop, ends with emoji)
-  Line 2: The fact — player name in Malayalam + stat
-  Line 3: Context — what this means for the match or the season
-  Line 4: English hashtags only, 3-5 tags
-
-EXAMPLE — Bad (literal, English names):
-  "ഗില്‍ 94 റൺസ് നേടി. 58 പന്തില്‍. ജിടി 12 റൺസ് വേണം."
-
-EXAMPLE — Good (trendy, Malayalam names):
-  "ഇതാണ് Captain Material! 🔥
-  ഷൂബ്‌മൻ ഗിൽ - 94* (58) — ഫൈനലിൽ ക്ലാസ് കാണിച്ചു
-  12 വേണം, 6 പന്ത് ബാക്കി… ഇനി ഗില്ലിന്റെ ഗെയിം! 💙🏆
-  #IPLFinal2026 #GT #ShubmanGill #TATAIPL"
-
-CONTENT RULES:
-  - Player and team names: always in Malayalam script (see name reference table above)
-  - Use conversational spoken Malayalam — not formal/literary Malayalam
-  - In captions: use ഏകദിനം (not ODI), ട്വന്റി20 (not T20 where possible)
-  - Short sentences only. Maximum 3-4 lines total including hashtags.
-  - Always end with 3-5 English hashtags on their own line
-  - One strong emoji at the end of line 1, one at the very end before hashtags
-  - Numbers stay as digits (94, not തൊണ്ണൂറ്റിനാല്)
-  - For BREAKING news: start with "🚨 BREAKING:" in English, then Malayalam explanation
-  - For match result: end with a fan reaction line, not just the scoreline
-  - For quotes: keep the quote as-is, add 1–2 lines of Malayalam fan context
-
-CAPTION LENGTH BY POST TYPE:
-  Milestone / ticker  → 3 lines + hashtags (short and punchy)
-  Match result        → 4-5 lines + hashtags (more context needed)
-  BREAKING news       → 2-3 lines + hashtags (urgency, no padding)
-  Quote card          → quote in original + 1-2 lines Malayalam reaction + hashtags
-  Pre-match build-up  → 3-4 lines + hashtags (hype and anticipation tone)
 
 ---
 

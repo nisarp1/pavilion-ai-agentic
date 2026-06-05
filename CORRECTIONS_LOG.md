@@ -42,3 +42,23 @@ multiple tool calls) to save production time.
 
 PREFERENCE LEARNED: For quote cards, use DAGIpsX_Sv8 page 1 as primary (GT player
 background works well). Page 5 is alternate layout.
+
+---
+
+## 2026-06-05 — breaking (കെ.എസ്. ഭരത് / India Test retirement)
+Input: KS Bharat retirement from international cricket — confirmed via BCCI/ESPNcricinfo
+Fact-check: CONFIRMED 95% (Tier 1 source @BCCI)
+Template: EAHLN0zMWG4 page 2 (Breaking/Big Headline) — Page ID PBG35rBlWnprLM4j
+Caption draft: "അയ്യോ! നമ്മുടെ ഭരത് ചേട്ടൻ പോകുന്നോ?! 😭 കെ.എസ്. ഭരത് അന്താരാഷ്ട്ര ക്രിക്കറ്റിൽ നിന്ന് വിരമിക്കുന്നു. ആ കൈകളിൽ നിന്ന് ഒരു Test hundred-ന് കൂടി കാത്തിരുന്നു... ✨ ഭരത് ചേട്ടന് ആദരം! 🙏 #KSBharat #IndianCricket #TestCricket"
+Status: PENDING EDITOR REVIEW
+Note: Used "നമ്മുടെ" (our) fan-inclusive language per v3 tone rules. Retirement = nostalgia+gratitude emotion mapping.
+
+---
+
+## 2026-06-05 — general (BCCI / India fielding session)
+Input: BCCI tweet about #TeamIndia fielding session ahead of #INDvAFG Test
+Fact-check: CONFIRMED 95% (Source: @BCCI, Tier 1)
+Template: EAHLN0zMWG4 page 3 (News Story v1) — Page ID PBtT2B1vfkMfR7CT
+Caption draft: "ടെസ്റ്റ് ഫൈറ്റ് മോഡ് ON! 🏏🔥 ഇന്ത്യ ടീം #INDvAFG-ന് വേണ്ടി ഫീൽഡിംഗ് ട്രെയിനിംഗ് ആരംഭിച്ചു. ഈ ടീം Ready ആണ്! 💪 #TeamIndia #Afghanistan #TestCricket"
+Status: PENDING EDITOR REVIEW
+Note: General team update — used Reporter Voice (Mode 3) per v3 three-voice model. Short, factual, urgent.

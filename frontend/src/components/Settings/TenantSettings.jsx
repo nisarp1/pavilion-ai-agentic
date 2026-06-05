@@ -68,8 +68,21 @@ export default function TenantSettings() {
     }
   }
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text).then(() => showSuccess('Copied to clipboard'))
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    showSuccess('Copied to clipboard')
   }
 
   if (loading) {

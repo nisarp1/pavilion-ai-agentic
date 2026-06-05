@@ -464,6 +464,9 @@ class Article(models.Model):
         default='standard',
     )
     traction_score = models.IntegerField(default=0)
+    retweet_count  = models.IntegerField(default=0)
+    favorite_count = models.IntegerField(default=0)
+    reply_count    = models.IntegerField(default=0)
     source_handle = models.CharField(max_length=100, blank=True)
     
     class Meta:
@@ -701,10 +704,16 @@ class SocialMediaHandle(models.Model):
         ('federation', 'Federation'),
         ('aggregator', 'Aggregator'),
     ]
+    SPORT_CHOICES = [
+        ('football', 'Football'),
+        ('cricket', 'Cricket'),
+        ('general', 'General'),
+    ]
     name = models.CharField(max_length=200)
     x_handle = models.CharField(max_length=100, unique=True)
     credibility_tier = models.IntegerField(choices=TIER_CHOICES, default=2)
     category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default='journalist')
+    sport = models.CharField(max_length=50, choices=SPORT_CHOICES, default='football')
     is_active = models.BooleanField(default=True)
     last_polled_at = models.DateTimeField(null=True, blank=True)
     last_tweet_id = models.CharField(max_length=100, blank=True)

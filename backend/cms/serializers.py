@@ -113,6 +113,7 @@ class ArticleSerializer(serializers.ModelSerializer):
             'meta_title', 'meta_description',
             'og_title', 'og_description', 'og_image', 'og_image_url',
             'source_url', 'source_feed', 'trend_data',
+            'urgency', 'traction_score',
             'newsroomx_dna', 'newsroomx_status', 'newsroomx_video_url', 'newsroomx_error',
             # ── Reel pipeline fields ──────────────────────────────────────────
             'video_production_plan',

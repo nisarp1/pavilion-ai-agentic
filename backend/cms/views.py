@@ -2560,8 +2560,11 @@ class FeedsListView(APIView):
 
     def get(self, request):
         from .models import SocialMediaHandle
-        handles = SocialMediaHandle.objects.filter(is_active=True).order_by('credibility_tier', 'name')
-        return Response({'handles': [_serialize_handle(h) for h in handles]})
+        qs = SocialMediaHandle.objects.filter(is_active=True).order_by('credibility_tier', 'name')
+        category = request.query_params.get('category', '').strip().lower()
+        if category in ('football', 'cricket', 'general'):
+            qs = qs.filter(sport=category)
+        return Response({'handles': [_serialize_handle(h) for h in qs]})
 
     def post(self, request):
         from .models import SocialMediaHandle
@@ -2719,7 +2722,8 @@ Return exactly:
   "player_name_ml": "player name in Malayalam script or null",
   "team_name_ml": "team name in Malayalam script or null",
   "key_stat": "main number or score or null",
-  "quote_text": "exact quote text if event_type is quote, else null"
+  "quote_text": "exact quote text if event_type is quote, else null",
+  "quote_text_ml": "if event_type is quote, translate the exact quote to natural Malayalam script. Preserve the meaning exactly. If event_type is not quote, return null"
 }}
 Rules:
 - breaking: injury, suspension, official announcement, BREAKING, confirmed, done deal
@@ -2796,7 +2800,7 @@ class CoworkGenerateView(APIView):
             slot_values[slots['headline']] = entities.get('headline_ml') or article.title[:80]
         elif resolved_type == 'quote':
             slot_values[slots['headline']]    = entities.get('headline_ml') or article.title[:60]
-            slot_values[slots['quote_body']]  = entities.get('quote_text') or article.title
+            slot_values[slots['quote_body']]  = entities.get('quote_text_ml') or entities.get('quote_text') or article.title
             slot_values[slots['attribution']] = entities.get('player_name_ml') or entities.get('team_name_ml') or article.source_handle
         elif resolved_type == 'fact_check':
             slot_values[slots['headline']]    = entities.get('headline_ml') or article.title[:80]
@@ -2876,6 +2880,74 @@ class CoworkCompleteView(APIView):
         return Response({'status': 'saved', 'article_id': article.id})
 
 
+class BreakingQueueView(APIView):
+    """GET /api/breaking-queue/ — fetched articles sorted by traction, with sport filter."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import SocialMediaHandle
+        from django.db.models import OuterRef, Subquery
+
+        sport_filter = request.query_params.get('sport', '').lower()
+
+        qs = (
+            Article.objects
+            .filter(status='fetched')
+            .select_related('fact_check')
+            .order_by('-traction_score', '-created_at')
+        )
+
+        if sport_filter in ('football', 'cricket'):
+            handles_in_sport = SocialMediaHandle.objects.filter(
+                sport=sport_filter
+            ).values_list('x_handle', flat=True)
+            # source_handle stored as "@Handle" — match case-insensitively
+            qs = qs.filter(
+                source_handle__in=[f'@{h}' for h in handles_in_sport]
+            )
+
+        qs = qs[:50]
+
+        result = []
+        for a in qs:
+            fc = None
+            try:
+                fc_obj = a.fact_check
+                fc = {'verdict': fc_obj.verdict, 'confidence': fc_obj.confidence}
+            except Exception:
+                pass
+            result.append({
+                'id': a.id,
+                'title': a.title,
+                'source_feed': a.source_feed,
+                'source_handle': a.source_handle,
+                'source_url': a.source_url,
+                'traction_score': a.traction_score,
+                'retweet_count': a.retweet_count,
+                'favorite_count': a.favorite_count,
+                'reply_count': a.reply_count,
+                'urgency': a.urgency,
+                'created_at': a.created_at,
+                'time_ago': _time_ago(a.published_at or a.created_at),
+                'fact_check': fc,
+            })
+        return Response({'count': len(result), 'results': result})
+
+
+class BreakingQueueUrgencyView(APIView):
+    """PATCH /api/breaking-queue/<pk>/urgency/ — toggle urgency on a polled article."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, pk):
+        article = get_object_or_404(Article, id=pk)
+        urgency = request.data.get('urgency')
+        if urgency not in ('breaking', 'standard', 'low'):
+            return Response({'error': 'urgency must be breaking, standard, or low'}, status=400)
+        article.urgency = urgency
+        article.save(update_fields=['urgency'])
+        return Response({'id': article.id, 'urgency': article.urgency})
+
+
 class FeedPollView(APIView):
     """POST /api/feeds/{x_handle}/poll/ — queue a Celery poll for one handle."""
     permission_classes = [permissions.IsAuthenticated]
@@ -2886,3 +2958,25 @@ class FeedPollView(APIView):
         handle = get_object_or_404(SocialMediaHandle, x_handle__iexact=x_handle, is_active=True)
         poll_single_handle.delay(handle.x_handle)
         return Response({'status': 'queued', 'x_handle': handle.x_handle})
+
+
+class FeedsRefreshView(APIView):
+    """POST /api/feeds/refresh/ — trigger poll_social_handles + fetch_rss_feeds immediately."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from workers.tasks import poll_social_handles
+        from rss_fetcher.tasks import fetch_rss_feeds
+        poll_social_handles.delay()
+        fetch_rss_feeds.delay()
+        return Response({'status': 'queued'})
+
+
+class TwitterHealthCheckView(APIView):
+    """POST /api/system/check-twitter-health/ — manually trigger the Twitter auth health check."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from workers.tasks import check_twitter_auth_health
+        task = check_twitter_auth_health.delay()
+        return Response({'status': 'queued', 'task_id': task.id})

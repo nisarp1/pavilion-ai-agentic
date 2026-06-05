@@ -332,6 +332,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'workers.tasks.poll_social_handles',
         'schedule': timedelta(minutes=5),
     },
+    'check-twitter-auth-health': {
+        'task': 'workers.tasks.check_twitter_auth_health',
+        'schedule': timedelta(hours=24),
+    },
 }
 # Django cache backend
 # Upstash free tier is single-DB, so broker and cache share the same URL —

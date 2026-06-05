@@ -27,6 +27,9 @@ const OnboardingWizard = lazy(() => import('./components/Onboarding/OnboardingWi
 const VideoStudio = lazy(() => import('./components/VideoStudio/VideoStudio'))
 const SocialPostGenerator = lazy(() => import('./components/SocialStudio/SocialPostGenerator'))
 const FeedsView = lazy(() => import('./components/SocialStudio/FeedsView'))
+const FootballFeedsView = lazy(() => import('./components/SocialStudio/FootballFeedsView'))
+const CricketFeedsView = lazy(() => import('./components/SocialStudio/CricketFeedsView'))
+const BreakingQueue = lazy(() => import('./components/SocialStudio/BreakingQueue'))
 
 function App() {
   const { isAuthenticated } = useSelector((state) => state.auth)
@@ -87,6 +90,9 @@ function App() {
             <Route path="video-studio" element={<VideoStudio />} />
             <Route path="social-studio" element={<SocialPostGenerator />} />
             <Route path="feeds" element={<FeedsView />} />
+            <Route path="football-feeds" element={<FootballFeedsView />} />
+            <Route path="cricket-feeds" element={<CricketFeedsView />} />
+            <Route path="traction-queue" element={<BreakingQueue />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

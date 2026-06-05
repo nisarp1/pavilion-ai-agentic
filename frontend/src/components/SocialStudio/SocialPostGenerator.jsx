@@ -963,7 +963,12 @@ export default function SocialPostGenerator() {
                   <p className="text-xs font-semibold text-blue-800 mb-1">CSV ready — valid 7 days</p>
                   <div className="flex items-center gap-2">
                     <input readOnly value={csvLink.url} className="flex-1 text-xs text-blue-700 bg-white border border-blue-200 rounded px-2 py-1 truncate" />
-                    <button onClick={() => navigator.clipboard.writeText(csvLink.url).then(() => alert("Link copied!"))} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded font-medium whitespace-nowrap">Copy Link</button>
+                    <button onClick={async () => {
+                      try { await navigator.clipboard.writeText(csvLink.url) } catch {
+                        const ta = document.createElement('textarea'); ta.value = csvLink.url; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
+                      }
+                      alert('✅ Link copied!')
+                    }} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded font-medium whitespace-nowrap">Copy Link</button>
                     <a href={csvLink.url} download={csvLink.filename} className="text-xs bg-white hover:bg-gray-50 text-blue-700 border border-blue-300 px-3 py-1.5 rounded font-medium whitespace-nowrap">Download</a>
                   </div>
                 </div>
@@ -1004,12 +1009,23 @@ function CopyLinkButton({ articleId }) {
   const [copied, setCopied] = useState(false)
   if (!articleId) return null
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     const url = `${window.location.origin}/social-studio?article=${articleId}`
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
+    try {
+      await navigator.clipboard.writeText(url)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = url
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
@@ -1047,11 +1063,22 @@ function SocialCaptionCard({ caption, onChange }) {
   const [copied, setCopied]   = useState(false)
   const [editing, setEditing] = useState(false)
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(caption).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(caption)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = caption
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (

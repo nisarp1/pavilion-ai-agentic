@@ -64,8 +64,11 @@ const navSections = [
   {
     label: 'SOCIAL STUDIO',
     items: [
-      { path: '/social-studio', label: 'Social Studio', icon: FiZap, matchStart: true, excludeStart: '/feeds' },
-      { path: '/feeds', label: 'Feeds', icon: FiRss, matchStart: true },
+      { path: '/social-studio', label: 'Social Studio', icon: FiZap, matchStart: true, excludeStart: '/feeds', excludeStart2: '/traction-queue' },
+      { path: '/traction-queue', label: '⚡ Traction Queue', icon: FiZap, matchStart: true },
+      { path: '/feeds', label: 'All Feeds', icon: FiRss, exact: true },
+      { path: '/football-feeds', label: '⚽ Football Feeds', icon: FiRss, matchStart: true },
+      { path: '/cricket-feeds', label: '🏏 Cricket Feeds', icon: FiRss, matchStart: true },
     ],
   },
   {
@@ -144,6 +147,7 @@ function Dashboard() {
     if (item.matchStart) {
       const itemBase = item.path.split('?')[0]
       if (item.excludeStart && location.pathname.startsWith(item.excludeStart)) return false
+      if (item.excludeStart2 && location.pathname.startsWith(item.excludeStart2)) return false
       return location.pathname === itemBase || location.pathname.startsWith(`${itemBase}/`)
     }
 

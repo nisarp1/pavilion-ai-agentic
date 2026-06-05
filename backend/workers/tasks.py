@@ -1716,14 +1716,106 @@ def fact_check_article_task(self, article_id):
 
 
 def _fetch_tweets_for_handle(handle):
-    """Fetch recent tweets via RSSHub and create Article records."""
+    """Fetch recent tweets via SocialData API (primary) or RSSHub (fallback)."""
     import xml.etree.ElementTree as ET
     import requests as _requests
     from django.utils import timezone
     from email.utils import parsedate_to_datetime
     from cms.models import Article
 
-    rss_url = f"http://rsshub:1200/twitter/user/{handle.x_handle}"
+    try:
+        from dateutil import parser as dateutil_parser
+    except ImportError:
+        dateutil_parser = None
+
+    socialdata_key = os.environ.get('SOCIALDATA_API_KEY', '')
+
+    # ── Primary: SocialData API ───────────────────────────────────────────────
+    if socialdata_key:
+        try:
+            search_url = (
+                f"https://api.socialdata.tools/twitter/search"
+                f"?query=from:{handle.x_handle}&type=Latest"
+            )
+            resp = _requests.get(
+                search_url,
+                headers={'Authorization': f'Bearer {socialdata_key}', 'Accept': 'application/json'},
+                timeout=20,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            tweets = data.get('tweets', [])
+
+            latest_guid = handle.last_tweet_id or ''
+            created = 0
+
+            for tweet in tweets:
+                tweet_id = str(tweet.get('id_str', '') or tweet.get('id', '') or '')
+                # Skip retweets (retweeted_status present means it's an RT)
+                if tweet.get('retweeted_status'):
+                    continue
+                full_text = (tweet.get('full_text') or tweet.get('text') or '').strip()
+                full_text = re.sub(r'<[^>]+>', '', full_text).strip()
+                if not full_text or full_text.startswith('RT '):
+                    continue
+
+                source_url = f"https://x.com/{handle.x_handle}/status/{tweet_id}"
+                if Article.objects.filter(source_url=source_url).exists():
+                    continue
+
+                retweet_count  = int(tweet.get('retweet_count', 0) or 0)
+                favorite_count = int(tweet.get('favorite_count', 0) or 0)
+                reply_count    = int(tweet.get('reply_count', 0) or 0)
+                traction = (retweet_count * 3) + favorite_count + reply_count
+
+                created_at_str = tweet.get('tweet_created_at') or tweet.get('created_at') or ''
+                try:
+                    pub_dt = dateutil_parser.parse(created_at_str) if (created_at_str and dateutil_parser) else None
+                except Exception:
+                    pub_dt = None
+
+                urgency = 'breaking' if handle.credibility_tier == 1 else 'standard'
+
+                article = Article.objects.create(
+                    title=full_text[:255],
+                    status='fetched',
+                    source_url=source_url,
+                    source_feed=f"@{handle.x_handle}",
+                    source_handle=f"@{handle.x_handle}",
+                    traction_score=traction,
+                    retweet_count=retweet_count,
+                    favorite_count=favorite_count,
+                    reply_count=reply_count,
+                    urgency=urgency,
+                    published_at=pub_dt,
+                )
+                fact_check_article_task.delay(article.id)
+                created += 1
+                logger.info(
+                    f"Created article {article.id} from @{handle.x_handle} "
+                    f"via SocialData (traction={traction})"
+                )
+
+                if tweet_id and (not latest_guid or tweet_id > latest_guid):
+                    latest_guid = tweet_id
+
+            handle.last_tweet_id = latest_guid
+            handle.last_polled_at = timezone.now()
+            handle.save(update_fields=['last_polled_at', 'last_tweet_id'])
+            logger.info(
+                f"SocialData poll complete for @{handle.x_handle}: "
+                f"{created} new, {len(tweets)} total returned"
+            )
+            return
+
+        except Exception as exc:
+            logger.warning(
+                f"SocialData API failed for @{handle.x_handle}, falling back to RSSHub: {exc}"
+            )
+
+    # ── Fallback: RSSHub XML ──────────────────────────────────────────────────
+    rsshub_url = os.environ.get('RSSHUB_URL', 'http://rsshub:1200')
+    rss_url = f"{rsshub_url}/twitter/user/{handle.x_handle}"
     try:
         resp = _requests.get(rss_url, timeout=15)
         resp.raise_for_status()
@@ -1737,7 +1829,6 @@ def _fetch_tweets_for_handle(handle):
 
         for item in channel.findall('item'):
             raw_title = (item.findtext('title') or '').strip()
-            # Strip HTML tags from title
             tweet_text = re.sub(r'<[^>]+>', '', raw_title).strip()
 
             if tweet_text.startswith('RT '):
@@ -1767,9 +1858,8 @@ def _fetch_tweets_for_handle(handle):
                 urgency=urgency,
                 published_at=pub_dt,
             )
-
             fact_check_article_task.delay(article.id)
-            logger.info(f"Created article {article.id} from @{handle.x_handle} via RSSHub")
+            logger.info(f"Created article {article.id} from @{handle.x_handle} via RSSHub (fallback)")
 
             if guid and (not latest_guid or guid > latest_guid):
                 latest_guid = guid
@@ -1858,3 +1948,78 @@ def task_recreate_reel_agentic(self, reference_url, video_format="reel", include
     except Exception as e:
         logger.error(f"Error in Video Production Pipeline: {str(e)}", exc_info=True)
         return {"status": "error", "error": str(e)}
+
+
+@shared_task(name='workers.tasks.check_twitter_auth_health')
+def check_twitter_auth_health():
+    """
+    Daily health check: verifies the Twitter auth token is still valid by
+    fetching @BBCSport from RSSHub and checking the most recent pubDate.
+    Sends an email alert (once per 72 h) if the token is stale or broken.
+    """
+    import xml.etree.ElementTree as ET
+    import requests as _requests
+    from datetime import datetime, timezone as tz, timedelta
+    from email.utils import parsedate_to_datetime
+    from django.core.cache import cache
+    from django.core.mail import send_mail
+
+    RSSHUB_URL = os.environ.get('RSSHUB_URL', 'http://rsshub:1200')
+    CHECK_URL = f"{RSSHUB_URL}/twitter/user/BBCSport"
+    ALERT_CACHE_KEY = 'twitter_token_alert_sent'
+    ALERT_EMAIL = 'nisar@milieumedia.in'
+    STALE_DAYS = 7
+
+    def _send_alert(reason):
+        if cache.get(ALERT_CACHE_KEY):
+            return
+        subject = '⚠️ PavilionEnd: Twitter auth token needs refresh'
+        body = (
+            f"The Twitter/X auth token used by RSSHub appears to be stale or expired.\n\n"
+            f"Reason: {reason}\n\n"
+            f"To fix:\n"
+            f"1. Log into X (twitter.com) in your browser\n"
+            f"2. Open DevTools → Application → Cookies → twitter.com\n"
+            f"3. Copy the value of the 'auth_token' cookie\n"
+            f"4. Update TWITTER_AUTH_TOKEN in ~/pavilion-ai-agentic-dev/.env\n"
+            f"5. Restart RSSHub: docker restart pavilion-rsshub\n\n"
+            f"This alert will not repeat for 72 hours."
+        )
+        try:
+            send_mail(subject, body, None, [ALERT_EMAIL], fail_silently=True)
+            logger.warning(f"Twitter auth token alert sent: {reason}")
+        except Exception as e:
+            logger.error(f"Failed to send Twitter auth health alert email: {e}")
+        cache.set(ALERT_CACHE_KEY, True, timeout=72 * 3600)
+
+    try:
+        resp = _requests.get(CHECK_URL, timeout=15)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+        channel = root.find('channel')
+        items = channel.findall('item') if channel is not None else []
+
+        if not items:
+            _send_alert('RSSHub returned an empty feed for @BBCSport (0 items).')
+            return {'status': 'stale', 'reason': 'empty_feed'}
+
+        pub_date_str = items[0].findtext('pubDate', '')
+        if not pub_date_str:
+            _send_alert('Most recent @BBCSport item has no pubDate.')
+            return {'status': 'stale', 'reason': 'no_pubdate'}
+
+        pub_dt = parsedate_to_datetime(pub_date_str)
+        age_days = (datetime.now(tz.utc) - pub_dt).days
+        if age_days > STALE_DAYS:
+            _send_alert(
+                f'Most recent @BBCSport tweet is {age_days} days old '
+                f'(pubDate: {pub_date_str}). Token may be expired.'
+            )
+            return {'status': 'stale', 'reason': f'oldest_tweet_{age_days}_days'}
+
+        logger.info("Twitter auth token health check passed")
+        return {'status': 'healthy', 'latest_tweet_age_days': age_days}
+
+    except Exception as e:
+        _send_alert(f'RSSHub request failed: {e}')
+        return {'status': 'error', 'error': str(e)}

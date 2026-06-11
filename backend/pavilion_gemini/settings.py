@@ -34,20 +34,22 @@ ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=_default_allowed_hosts)
 
 # Application definition
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
     # Third-party apps
+    'channels',
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'django_extensions',
-    
+
     # Local apps
     'tenants',
     'cms',
@@ -330,13 +332,28 @@ CELERY_BEAT_SCHEDULE = {
     # removed from schedule — ON-DEMAND only via Refresh button in UI
     'poll-social-handles': {
         'task': 'workers.tasks.poll_social_handles',
-        'schedule': timedelta(minutes=5),
+        'schedule': timedelta(minutes=180),
+        'options': {'queue': 'pavilion_docker_social'},
     },
     'check-twitter-auth-health': {
         'task': 'workers.tasks.check_twitter_auth_health',
         'schedule': timedelta(hours=24),
     },
+    'check-socialdata-spend': {
+        'task': 'workers.tasks.check_socialdata_spend',
+        'schedule': timedelta(hours=24),
+    },
 }
+
+ASGI_APPLICATION = 'pavilion_gemini.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {'hosts': [('redis', 6379)], 'socket_timeout': None, 'socket_connect_timeout': 5},
+    }
+}
+
 # Django cache backend
 # Upstash free tier is single-DB, so broker and cache share the same URL —
 # key prefixes prevent collisions. On Memorystore, REDIS_CACHE_URL uses DB 1.

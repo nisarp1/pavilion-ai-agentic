@@ -11,6 +11,9 @@ dj-database-url==3.0.1
 # Server
 gunicorn>=21.0.0
 whitenoise>=6.0.0
+daphne==4.0.0
+channels==4.0.0
+channels-redis==4.1.0
 
 # Database
 psycopg[binary]>=3.1.0

@@ -2536,6 +2536,7 @@ def _serialize_handle(handle, include_counts=True):
         'id': handle.id,
         'name': handle.name,
         'x_handle': handle.x_handle,
+        'platform': getattr(handle, 'platform', 'twitter'),
         'credibility_tier': handle.credibility_tier,
         'category': handle.category,
         'is_active': handle.is_active,
@@ -2562,8 +2563,10 @@ class FeedsListView(APIView):
         from .models import SocialMediaHandle
         qs = SocialMediaHandle.objects.filter(is_active=True).order_by('credibility_tier', 'name')
         category = request.query_params.get('category', '').strip().lower()
-        if category in ('football', 'cricket', 'general'):
-            qs = qs.filter(sport=category)
+        if category == 'instagram':
+            qs = qs.filter(platform='instagram')
+        elif category in ('football', 'cricket', 'general'):
+            qs = qs.filter(sport=category, platform='twitter')
         return Response({'handles': [_serialize_handle(h) for h in qs]})
 
     def post(self, request):
@@ -2593,9 +2596,14 @@ class FeedArticlesView(APIView):
     def get(self, request, x_handle):
         from .models import Article
         limit = min(int(request.query_params.get('limit', 20)), 100)
+        platform = request.query_params.get('platform', 'twitter').strip().lower()
+        qs = Article.objects.filter(source_handle__iexact=f"@{x_handle}")
+        if platform == 'instagram':
+            qs = qs.filter(source_url__icontains='instagram.com')
+        else:
+            qs = qs.exclude(source_url__icontains='instagram.com')
         articles = (
-            Article.objects
-            .filter(source_handle__iexact=f"@{x_handle}")
+            qs
             .select_related('fact_check')
             .order_by(F('published_at').desc(nulls_last=True))[:limit]
         )
@@ -2886,27 +2894,59 @@ class BreakingQueueView(APIView):
 
     def get(self, request):
         from .models import SocialMediaHandle
-        from django.db.models import OuterRef, Subquery
+        from django.utils import timezone
+        from datetime import timedelta
 
-        sport_filter = request.query_params.get('sport', '').lower()
+        tab = request.query_params.get('tab', '').lower()
+        now = timezone.now()
+        last_24h = now - timedelta(hours=24)
+        last_3h = now - timedelta(hours=3)
 
-        qs = (
-            Article.objects
-            .filter(status='fetched')
-            .select_related('fact_check')
-            .order_by('-traction_score', '-created_at')
-        )
+        base_qs = Article.objects.filter(status='fetched').select_related('fact_check')
 
-        if sport_filter in ('football', 'cricket'):
-            handles_in_sport = SocialMediaHandle.objects.filter(
-                sport=sport_filter
-            ).values_list('x_handle', flat=True)
-            # source_handle stored as "@Handle" — match case-insensitively
-            qs = qs.filter(
-                source_handle__in=[f'@{h}' for h in handles_in_sport]
+        def _breaking_qs():
+            tier1_handles = list(
+                SocialMediaHandle.objects.filter(credibility_tier=1)
+                .values_list('x_handle', flat=True)
             )
+            return base_qs.filter(
+                source_handle__in=[f'@{h}' for h in tier1_handles],
+                title__icontains='breaking',
+            ).order_by('-published_at')
 
+        def _hot_qs():
+            return base_qs.filter(
+                published_at__gte=last_3h,
+                traction_score__gt=100,
+            ).order_by('-traction_score')
+
+        def _trending_qs():
+            return base_qs.filter(
+                published_at__gte=last_24h,
+            ).order_by('-traction_score')
+
+        def _sport_qs(sport):
+            handles = list(
+                SocialMediaHandle.objects.filter(sport=sport)
+                .values_list('x_handle', flat=True)
+            )
+            return base_qs.filter(
+                source_handle__in=[f'@{h}' for h in handles],
+                published_at__gte=last_24h,
+            ).order_by('-traction_score')
+
+        tab_map = {
+            'breaking': _breaking_qs,
+            'hot':      _hot_qs,
+            'trending': _trending_qs,
+            'football': lambda: _sport_qs('football'),
+            'cricket':  lambda: _sport_qs('cricket'),
+        }
+
+        qs = tab_map[tab]() if tab in tab_map else _trending_qs()
         qs = qs[:50]
+
+        tab_counts = {name: fn().count() for name, fn in tab_map.items()}
 
         result = []
         for a in qs:
@@ -2931,7 +2971,7 @@ class BreakingQueueView(APIView):
                 'time_ago': _time_ago(a.published_at or a.created_at),
                 'fact_check': fc,
             })
-        return Response({'count': len(result), 'results': result})
+        return Response({'count': len(result), 'results': result, 'tab_counts': tab_counts})
 
 
 class BreakingQueueUrgencyView(APIView):
@@ -2980,3 +3020,19 @@ class TwitterHealthCheckView(APIView):
         from workers.tasks import check_twitter_auth_health
         task = check_twitter_auth_health.delay()
         return Response({'status': 'queued', 'task_id': task.id})
+
+
+class SystemStatusView(APIView):
+    permission_classes = []
+    def get(self, request):
+        import redis, os
+        try:
+            r = redis.from_url(os.environ.get('REDIS_URL', 'redis://redis:6379/0'))
+            low_balance = r.get('socialdata_low_balance')
+            frozen_since = r.get('socialdata_frozen_since')
+            return Response({
+                'traction_frozen': bool(low_balance),
+                'frozen_since': frozen_since.decode() if frozen_since else None,
+            })
+        except Exception:
+            return Response({'traction_frozen': False, 'frozen_since': None})

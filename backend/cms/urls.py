@@ -24,6 +24,7 @@ from .views import (
     CoworkCompleteView,
     BreakingQueueView,
     BreakingQueueUrgencyView,
+    SystemStatusView,
 )
 
 router = DefaultRouter()
@@ -54,5 +55,7 @@ urlpatterns = [
     # Breaking Queue
     path('breaking-queue/', BreakingQueueView.as_view(), name='breaking-queue'),
     path('breaking-queue/<int:pk>/urgency/', BreakingQueueUrgencyView.as_view(), name='breaking-queue-urgency'),
+    # System status
+    path('system-status/', SystemStatusView.as_view(), name='system-status'),
 ]
 

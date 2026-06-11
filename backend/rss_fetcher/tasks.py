@@ -188,11 +188,17 @@ def fetch_single_rss_feed(feed_url, category='reliable_sources', trend_data=None
             
             articles_created += 1
             logger.debug(f"Created article: {article.title}")
-            
+
+            try:
+                from cms.broadcast import broadcast_new_article
+                broadcast_new_article(article)
+            except Exception:
+                pass
+
         except Exception as e:
             logger.error(f"Error creating article from entry: {str(e)}")
             continue
-    
+
     return {'articles_created': articles_created}
 
 

@@ -533,6 +533,28 @@ def generate_social_post_task(self, article_id: int, options: dict = None):
         except Exception as _fb_exc:
             logger.warning('[SocialTask] Could not load feedback examples: %s', _fb_exc)
 
+        # ── Inject approved corrections from CORRECTIONS_LOG.md ──────────────
+        import re as _re
+        try:
+            _log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'CORRECTIONS_LOG.md')
+            with open(_log_path, 'r', encoding='utf-8') as _f:
+                _log_text = _f.read()
+            _entries = [e for e in _log_text.split('## ') if 'Status: APPROVED ✅' in e]
+            _approved = []
+            for _entry in _entries[-5:]:
+                _match = _re.search(r'Caption generated:\s*(.+?)(?:\n|$)', _entry)
+                if _match:
+                    _approved.append(_match.group(1).strip())
+            if _approved:
+                feedback_examples = _approved + feedback_examples
+                feedback_examples = feedback_examples[:8]
+                _log('corrections_log', f"Injected {len(_approved)} approved captions from CORRECTIONS_LOG.md")
+        except FileNotFoundError:
+            _log('corrections_log', 'CORRECTIONS_LOG.md not found — skipping')
+        except Exception as _e:
+            _log('corrections_log', f'CORRECTIONS_LOG.md read error: {_e} — skipping')
+        # ─────────────────────────────────────────────────────────────────────
+
         # Detect quote posts — exempt quote slots from word-limit truncation
         is_quote = (
             content_type_hint == 'quote_card'

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../services/api'
+import useNewsFeed from '../../hooks/useNewsFeed'
 
 const POLL_MS = 90_000
 
@@ -37,11 +38,19 @@ function tractionTooltip(article) {
 }
 
 const TABS = [
-  { id: 'all',      label: 'All' },
-  { id: 'trending', label: '📈 Trending' },
+  { id: 'breaking', label: '🔴 Breaking' },
+  { id: 'hot',      label: '🟠 Hot' },
+  { id: 'trending', label: '🟡 Trending' },
   { id: 'football', label: '⚽ Football' },
   { id: 'cricket',  label: '🏏 Cricket' },
+  { id: 'all',      label: 'All' },
 ]
+
+const TAB_BORDER = {
+  breaking: 'border-l-4 border-l-red-500',
+  hot:      'border-l-4 border-l-orange-400',
+  trending: 'border-l-4 border-l-yellow-400',
+}
 
 // ── DNA Packet Modal ──────────────────────────────────────────────────────────
 function CoworkModal({ data, onClose }) {
@@ -145,7 +154,15 @@ function CoworkModal({ data, onClose }) {
 }
 
 // ── Article Card ──────────────────────────────────────────────────────────────
-function ArticleCard({ article, onGenerate, generating, onToggleBreaking }) {
+function ArticleCard({ article, onGenerate, generating, onToggleBreaking, activeTab }) {
+  const [showEmbed, setShowEmbed] = useState(false)
+
+  useEffect(() => {
+    if (showEmbed) {
+      window.twttr?.widgets?.load()
+    }
+  }, [showEmbed])
+
   const fc = article.fact_check
   const verdictStyle = VERDICT_STYLES[fc?.verdict] || VERDICT_STYLES.PENDING
   const verdictIcon  = VERDICT_ICONS[fc?.verdict]  || '⏳'
@@ -155,11 +172,28 @@ function ArticleCard({ article, onGenerate, generating, onToggleBreaking }) {
                      || (article.favorite_count || 0) > 0
                      || (article.reply_count || 0) > 0
 
+  const ageMs = Date.now() - new Date(article.created_at).getTime()
+  const isBreakingContent = article.title?.toLowerCase().includes('breaking') && article.urgency === 'breaking'
+  const isHotContent = (article.traction_score || 0) > 100 && ageMs < 3 * 60 * 60 * 1000
+
+  const tabBorder = TAB_BORDER[activeTab] || ''
+
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow px-5 py-4 flex gap-4">
+    <div className={`bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow px-5 py-4 flex gap-4 ${tabBorder} ${article.isNew ? 'ring-2 ring-green-400 animate-pulse' : ''}`}>
       {/* Left */}
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-center gap-2 mb-2">
+          {/* Auto-detected content pill */}
+          {isBreakingContent ? (
+            <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
+              🔴 BREAKING
+            </span>
+          ) : isHotContent ? (
+            <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
+              🟠 HOT
+            </span>
+          ) : null}
+
           {/* Fact-check badge */}
           {fc ? (
             <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border ${verdictStyle}`}>
@@ -256,10 +290,23 @@ function ArticleCard({ article, onGenerate, generating, onToggleBreaking }) {
             </>
           )}
         </div>
+
+        {/* Twitter embed */}
+        {showEmbed && (
+          <div className="mt-3 border-t pt-3">
+            <blockquote
+              className="twitter-tweet"
+              data-conversation="none"
+              data-cards="hidden"
+            >
+              <a href={article.source_url}></a>
+            </blockquote>
+          </div>
+        )}
       </div>
 
-      {/* Right: Generate button */}
-      <div className="flex-shrink-0 flex items-center">
+      {/* Right: buttons */}
+      <div className="flex-shrink-0 flex flex-col items-end gap-2">
         <button
           onClick={() => onGenerate(article)}
           disabled={generating === article.id}
@@ -277,6 +324,14 @@ function ArticleCard({ article, onGenerate, generating, onToggleBreaking }) {
             <>⚡ Generate Post</>
           )}
         </button>
+        {article.source_url && (
+          <button
+            onClick={() => setShowEmbed(v => !v)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-sky-600 border border-sky-200 hover:bg-sky-50 transition-colors"
+          >
+            🐦 {showEmbed ? 'Hide' : 'Live'}
+          </button>
+        )}
       </div>
     </div>
   )
@@ -284,24 +339,47 @@ function ArticleCard({ article, onGenerate, generating, onToggleBreaking }) {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function BreakingQueue() {
-  const [articles, setArticles]     = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState(null)
-  const [activeTab, setActiveTab]   = useState('all')
-  const [generating, setGenerating] = useState(null)
-  const [coworkData, setCoworkData] = useState(null)
+  const [articles, setArticles]         = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [error, setError]               = useState(null)
+  const [activeTab, setActiveTab]       = useState('all')
+  const [tabCounts, setTabCounts]       = useState({})
+  const [generating, setGenerating]     = useState(null)
+  const [coworkData, setCoworkData]     = useState(null)
+  const [systemStatus, setSystemStatus] = useState(null)
+
+  const handleNewArticle = useCallback((article) => {
+    setArticles(prev => {
+      if (prev.find(a => a.id === article.id)) return prev
+      return [{ ...article, isNew: true }, ...prev.slice(0, 49)]
+    })
+    setTimeout(() => {
+      setArticles(prev => prev.map(a => a.id === article.id ? { ...a, isNew: false } : a))
+    }, 5000)
+  }, [])
+  useNewsFeed(handleNewArticle)
+
+  // Load Twitter embed script once
+  useEffect(() => {
+    if (!window.twttr) {
+      const script = document.createElement('script')
+      script.src = 'https://platform.twitter.com/widgets.js'
+      script.async = true
+      document.body.appendChild(script)
+    }
+  }, [])
+
+  // Fetch system status on mount
+  useEffect(() => {
+    api.get('/system-status/').then(res => setSystemStatus(res.data)).catch(() => {})
+  }, [])
 
   const fetchQueue = useCallback(async (tab) => {
     try {
-      const params = {}
-      if (tab === 'football') params.sport = 'football'
-      if (tab === 'cricket')  params.sport = 'cricket'
+      const params = tab !== 'all' ? { tab } : {}
       const res = await api.get('/breaking-queue/', { params })
-      let results = res.data.results || []
-      if (tab === 'trending') {
-        results = results.filter(a => (a.traction_score || 0) > 1000)
-      }
-      setArticles(results)
+      setArticles(res.data.results || [])
+      setTabCounts(res.data.tab_counts || {})
       setError(null)
     } catch {
       setError('Failed to load breaking queue.')
@@ -366,25 +444,41 @@ export default function BreakingQueue() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 mt-4">
-          {TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-orange-500 text-white shadow-sm'
-                  : 'text-gray-500 hover:bg-gray-100'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-1 mt-4">
+          {TABS.map(tab => {
+            const count = tabCounts[tab.id]
+            const active = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  active
+                    ? 'bg-orange-500 text-white shadow-sm'
+                    : 'text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                {tab.label}
+                {count != null && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                    active ? 'bg-white/30 text-white' : 'bg-gray-200 text-gray-600'
+                  }`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
+        {systemStatus?.traction_frozen && (
+          <div className="bg-amber-50 border border-amber-300 text-amber-800 px-4 py-2 text-sm rounded mb-3 flex items-center gap-2">
+            ⚠️ <strong>Traction scores frozen</strong> since {systemStatus.frozen_since} — SocialData balance low. Embedded tweets show live counts.
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center justify-center h-40 text-gray-400">
             Loading…
@@ -406,6 +500,7 @@ export default function BreakingQueue() {
                 onGenerate={handleGenerate}
                 generating={generating}
                 onToggleBreaking={handleToggleBreaking}
+                activeTab={activeTab}
               />
             ))}
           </div>

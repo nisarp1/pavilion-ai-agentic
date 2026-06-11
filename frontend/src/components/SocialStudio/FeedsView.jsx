@@ -1,692 +1,268 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createPortal } from 'react-dom'
-import api from '../../services/api'
 
-const POLL_INTERVAL_MS = 60_000
-const LIVE_THRESHOLD_MS = 2 * 60 * 1000 // 2 minutes
+const STORAGE_KEY = 'pavilion_x_lists'
 
-const TIER_COLORS = {
-  1: 'border-blue-500 text-blue-600 bg-blue-50',
-  2: 'border-amber-500 text-amber-600 bg-amber-50',
-  3: 'border-gray-400 text-gray-500 bg-gray-50',
+function loadLists() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+  } catch {
+    return []
+  }
 }
 
-const TIER_HEADER = {
-  1: '#3B82F6',
-  2: '#F59E0B',
-  3: '#9CA3AF',
+function saveLists(lists) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(lists))
 }
 
-const VERDICT_STYLES = {
-  CONFIRMED:    'bg-green-100 text-green-700',
-  UNCONFIRMED:  'bg-yellow-100 text-yellow-700',
-  CONTRADICTED: 'bg-red-100 text-red-700',
-  PENDING:      'bg-gray-100 text-gray-500',
-}
-
-const VERDICT_ICONS = {
-  CONFIRMED:    '✅',
-  UNCONFIRMED:  '⚠️',
-  CONTRADICTED: '❌',
-  PENDING:      '⏳',
-}
-
-function timeAgo(isoStr) {
-  if (!isoStr) return ''
-  const diff = Date.now() - new Date(isoStr).getTime()
-  const s = Math.floor(diff / 1000)
-  if (s < 60) return `${s}s ago`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m} min ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h} hr ago`
-  return `${Math.floor(h / 24)} days ago`
-}
-
-function isLive(lastPolledAt) {
-  if (!lastPolledAt) return false
-  return Date.now() - new Date(lastPolledAt).getTime() < LIVE_THRESHOLD_MS
-}
-
-// ── Tweet embed modal ──────────────────────────────────────────────────────────
-function TweetModal({ article, onClose }) {
-  const embedRef = useRef(null)
-
-  // Close on Escape key
-  useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [onClose])
-
-  // Load Twitter widget script and render embed
-  useEffect(() => {
-    if (!embedRef.current) return
-
-    const render = () => {
-      if (window.twttr?.widgets) {
-        window.twttr.widgets.load(embedRef.current)
-      }
-    }
-
-    if (window.twttr?.widgets) {
-      render()
-    } else {
-      const existing = document.querySelector('script[src="https://platform.twitter.com/widgets.js"]')
-      if (existing) {
-        existing.addEventListener('load', render)
-      } else {
-        const script = document.createElement('script')
-        script.src = 'https://platform.twitter.com/widgets.js'
-        script.async = true
-        script.onload = render
-        document.body.appendChild(script)
-      }
-    }
-  }, [article.source_url])
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
+function XLogo({ size = 14, className = '' }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 1200 1227"
+      fill="currentColor"
+      className={className}
+      aria-hidden="true"
     >
-      <div
-        className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 p-6 max-h-[90vh] overflow-y-auto"
-        onClick={e => e.stopPropagation()}
-      >
+      <path d="M714.163 519.284L1160.89 0H1055.03L667.137 450.887L357.328 0H0L468.492 681.821L0 1226.37H105.866L515.491 750.218L842.672 1226.37H1200L714.163 519.284ZM569.165 687.828L521.697 619.934L144.011 79.6944H306.615L611.412 515.685L658.88 583.579L1055.08 1150.3H892.476L569.165 687.828Z" />
+    </svg>
+  )
+}
+
+function ColumnSkeleton() {
+  return (
+    <div className="p-3 space-y-3">
+      {[120, 90, 140, 100].map((h, i) => (
+        <div
+          key={i}
+          className="rounded-lg bg-gray-800 animate-pulse"
+          style={{ height: h }}
+        />
+      ))}
+    </div>
+  )
+}
+
+function ListColumn({ list, onRemove }) {
+  const containerRef = useRef(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  // Clear skeleton on "rendered" event; 8 s fallback checks if iframe was injected
+  useEffect(() => {
+    const onRendered = () => setLoading(false)
+    window.twttr?.ready?.(() => {
+      window.twttr.events.bind('rendered', onRendered)
+    })
+    const timer = setTimeout(() => {
+      if (containerRef.current?.querySelector('a.twitter-timeline')) {
+        setError('X could not load this list. Check that it is a public list.')
+      }
+      setLoading(false)
+    }, 8000)
+    return () => {
+      clearTimeout(timer)
+      window.twttr?.events?.unbind('rendered', onRendered)
+    }
+  }, [list.id])
+
+  // Delay load by one rAF so flex layout has settled before X measures container
+  useEffect(() => {
+    if (!containerRef.current) return
+    requestAnimationFrame(() => {
+      if (window.twttr?.widgets) {
+        window.twttr.widgets.load(containerRef.current)
+      } else {
+        window.twttr = window.twttr || {}
+        window.twttr._e = window.twttr._e || []
+        window.twttr._e.push(() => window.twttr.widgets.load(containerRef.current))
+      }
+    })
+  }, [list.id])
+
+  return (
+    <div className="flex-none w-[340px] flex flex-col border-r border-gray-800 bg-gray-950 overflow-hidden">
+      {/* Column header */}
+      <div className="shrink-0 flex items-center justify-between px-3 py-2.5 bg-gray-900 border-b border-gray-800">
+        <div className="flex items-center gap-2 min-w-0">
+          <XLogo size={13} className="text-white shrink-0" />
+          <span className="font-semibold text-sm text-white truncate">{list.label}</span>
+        </div>
         <button
-          onClick={onClose}
-          className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors text-lg leading-none"
-          aria-label="Close"
+          onClick={() => onRemove(list.id)}
+          className="text-gray-500 hover:text-red-400 transition-colors text-xl leading-none shrink-0 ml-2"
+          title={`Remove ${list.label}`}
+          aria-label={`Remove ${list.label}`}
         >
           ×
         </button>
-        <div ref={embedRef} className="flex justify-center">
-          <blockquote className="twitter-tweet" data-theme="light">
-            <a href={article.source_url}>{article.source_url}</a>
-          </blockquote>
-        </div>
       </div>
-    </div>,
-    document.body
-  )
-}
 
-// ── Cowork handoff modal ───────────────────────────────────────────────────────
-function CoworkHandoffModal({ data, onClose }) {
-  const [caption, setCaption] = useState(data.caption_draft || '')
-  const [copied, setCopied] = useState(false)
-  const [marking, setMarking] = useState(false)
-
-  useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', h)
-    return () => document.removeEventListener('keydown', h)
-  }, [onClose])
-
-  const handleCopy = async () => {
-    const text = data.cowork_prompt || ''
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.style.position = 'fixed'
-      ta.style.opacity = '0'
-      document.body.appendChild(ta)
-      ta.focus()
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-    }
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const handleMarkDone = async () => {
-    setMarking(true)
-    try {
-      await api.patch('cowork/complete/', { article_id: data.article_id, caption })
-      onClose()
-    } catch { /* ignore */ } finally {
-      setMarking(false)
-    }
-  }
-
-  const fc = data.fact_check
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
-    >
+      {/* Tweet stream */}
+      {error && (
+        <div className="p-4 text-sm text-red-400">{error}</div>
+      )}
       <div
-        className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col"
-        onClick={e => e.stopPropagation()}
+        ref={containerRef}
+        style={{ minHeight: '400px', height: '100%' }}
+        className="flex-1 overflow-y-auto overflow-x-hidden relative"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="font-bold text-sm text-gray-800 truncate">
-              ⚡ {data.event_type?.toUpperCase()} — {data.template?.design_name}
-            </span>
-            {fc && (
-              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${VERDICT_STYLES[fc.verdict] || VERDICT_STYLES.PENDING}`}>
-                {VERDICT_ICONS[fc.verdict]} {fc.confidence}%
-              </span>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors text-lg shrink-0 ml-2"
-          >
-            ×
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          <div>
-            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1">Source Tweet</p>
-            <p className="text-sm text-gray-600 line-clamp-3 leading-snug">{data.tweet_text}</p>
-          </div>
-
-          <div>
-            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1">Caption Draft</p>
-            <textarea
-              value={caption}
-              onChange={e => setCaption(e.target.value)}
-              rows={4}
-              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
-            />
-          </div>
-
-          <hr className="border-gray-100" />
-
-          <div>
-            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1">Paste into Claude Cowork</p>
-            <textarea
-              readOnly
-              value={data.cowork_prompt}
-              rows={8}
-              className="w-full text-[11px] font-mono border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-gray-700 resize-none focus:outline-none"
-            />
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center gap-2 px-5 py-4 border-t border-gray-100 shrink-0">
-          <button
-            onClick={handleCopy}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              copied ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {copied ? '✅ Copied!' : '📋 Copy Cowork Prompt'}
-          </button>
-          <button
-            onClick={handleMarkDone}
-            disabled={marking}
-            className="ml-auto px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-          >
-            {marking ? 'Saving…' : 'Mark Done'}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
-}
-
-// ── Tweet card ─────────────────────────────────────────────────────────────────
-function TweetCard({ article, onViewPost, onCoworkReady }) {
-  const [expanded, setExpanded] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [genError, setGenError] = useState(false)
-  const isBreaking = article.urgency === 'breaking'
-  const fc = article.fact_check
-
-  const handleGenerate = async () => {
-    setGenerating(true)
-    setGenError(false)
-    try {
-      const r = await api.post('cowork/generate/', { article_id: article.id })
-      onCoworkReady(r.data)
-    } catch {
-      setGenError(true)
-      setTimeout(() => setGenError(false), 3000)
-    } finally {
-      setGenerating(false)
-    }
-  }
-
-  return (
-    <div
-      className={`bg-white rounded border border-gray-200 p-3 mb-2 hover:border-gray-300 transition-colors ${
-        isBreaking ? 'border-l-[3px] border-l-red-500' : ''
-      }`}
-    >
-      {/* Tweet text */}
-      <p
-        className={`text-sm text-gray-800 leading-snug mb-2 ${
-          expanded ? '' : 'line-clamp-3'
-        }`}
-      >
-        {article.title}
-      </p>
-      {article.title && article.title.length > 160 && (
-        <button
-          onClick={() => setExpanded(v => !v)}
-          className="text-[11px] text-blue-500 hover:text-blue-700 mb-2"
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </button>
-      )}
-
-      {/* Fact-check badge */}
-      {fc && (
-        <div className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full mb-2 ${VERDICT_STYLES[fc.verdict] || VERDICT_STYLES.PENDING}`}>
-          <span>{VERDICT_ICONS[fc.verdict] || '⏳'}</span>
-          <span>{fc.verdict}</span>
-          {fc.confidence > 0 && <span className="opacity-70">{fc.confidence}%</span>}
-        </div>
-      )}
-      {!fc && (
-        <div className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-400 mb-2">
-          ⏳ Checking…
-        </div>
-      )}
-
-      {/* Traction + time */}
-      <div className="flex items-center justify-between text-[11px] text-gray-400 mt-1">
-        <span>
-          {article.traction_score > 500 && <span className="mr-1">🔥</span>}
-          {article.traction_score > 0 && (
-            <span>{article.traction_score >= 1000
-              ? `${(article.traction_score / 1000).toFixed(1)}K`
-              : article.traction_score} pts</span>
-          )}
-        </span>
-        <span>🕐 {article.time_ago || timeAgo(article.created_at)}</span>
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-gray-100">
-        <button
-          onClick={handleGenerate}
-          disabled={generating}
-          className={`flex items-center gap-1 text-[11px] px-2.5 py-1 rounded border font-medium transition-colors disabled:opacity-60 ${
-            genError
-              ? 'border-red-200 text-red-500 hover:border-red-300'
-              : 'border-gray-200 text-gray-600 hover:border-indigo-300 hover:text-indigo-600'
-          }`}
-        >
-          {generating ? '⏳ Generating…' : genError ? '✗ Retry' : '⚡ Generate Post'}
-        </button>
-        {article.source_url && (
-          <button
-            onClick={() => onViewPost(article)}
-            className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded border border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-800 transition-colors"
-          >
-            👁 View Post
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── Feed column ────────────────────────────────────────────────────────────────
-function FeedColumn({ handle, onRemove, onViewPost, onCoworkReady }) {
-  const [articles, setArticles] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [polling, setPolling] = useState(false)
-  const [error, setError] = useState(null)
-  const [live, setLive] = useState(false)
-  const timerRef = useRef(null)
-
-  const fetchArticles = useCallback(async () => {
-    try {
-      const r = await api.get(`feeds/${handle.x_handle}/articles/?limit=30`)
-      setArticles(r.data.articles || [])
-      setError(null)
-    } catch {
-      setError('Failed to load')
-    } finally {
-      setLoading(false)
-    }
-  }, [handle.x_handle])
-
-  useEffect(() => {
-    fetchArticles()
-    timerRef.current = setInterval(fetchArticles, POLL_INTERVAL_MS)
-    return () => clearInterval(timerRef.current)
-  }, [fetchArticles])
-
-  // Update live indicator every 30s
-  useEffect(() => {
-    const tick = () => setLive(isLive(handle.last_polled_at))
-    tick()
-    const t = setInterval(tick, 30_000)
-    return () => clearInterval(t)
-  }, [handle.last_polled_at])
-
-  const handlePoll = async () => {
-    setPolling(true)
-    try {
-      await api.post(`feeds/${handle.x_handle}/poll/`)
-      await new Promise(r => setTimeout(r, 1500))
-      await fetchArticles()
-    } catch {
-      // ignore
-    } finally {
-      setPolling(false)
-    }
-  }
-
-  const stale = handle.last_polled_at &&
-    (Date.now() - new Date(handle.last_polled_at).getTime()) > 30 * 60 * 1000
-
-  const tierColor = TIER_HEADER[handle.credibility_tier] || TIER_HEADER[3]
-
-  return (
-    <div className="flex-none w-72 flex flex-col border-r border-gray-200 bg-gray-50 overflow-hidden">
-      {/* Column header */}
-      <div
-        className="shrink-0 px-3 py-2.5 bg-white border-b border-gray-200"
-        style={{ borderTop: `3px solid ${tierColor}` }}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="font-semibold text-sm text-gray-800 truncate">@{handle.x_handle}</span>
-            {live && (
-              <span className="flex items-center gap-0.5 text-[10px] text-green-600 font-medium shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                Live
-              </span>
-            )}
-          </div>
-          <button
-            onClick={() => onRemove(handle.x_handle)}
-            className="text-gray-300 hover:text-red-400 transition-colors text-sm shrink-0 ml-1"
-            title="Remove feed"
-          >
-            ×
-          </button>
-        </div>
-        <div className="text-[11px] text-gray-400 mt-0.5">
-          {handle.name} · Tier {handle.credibility_tier}
-        </div>
-        {handle.last_polled_at && (
-          <div className="text-[10px] text-gray-300 mt-0.5">
-            Polled {handle.last_polled_ago || timeAgo(handle.last_polled_at)}
-          </div>
-        )}
-      </div>
-
-      {/* Article list */}
-      <div className="flex-1 overflow-y-auto p-2">
         {loading && (
-          <div className="flex items-center justify-center py-8">
-            <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <div className="absolute inset-0 bg-gray-950 z-10 pointer-events-none">
+            <ColumnSkeleton />
           </div>
         )}
-
-        {!loading && error && (
-          <p className="text-xs text-red-400 text-center py-4">{error}</p>
-        )}
-
-        {!loading && !error && articles.length === 0 && (
-          <div className="text-center py-8 px-3">
-            {!handle.last_polled_at ? (
-              <>
-                <p className="text-xs text-gray-400 mb-3">Waiting for tweets…</p>
-                <p className="text-[11px] text-gray-300">Celery polls every 5 min</p>
-                <div className="flex justify-center mt-3">
-                  <div className="flex gap-1">
-                    {[0, 0.15, 0.3].map((d, i) => (
-                      <div
-                        key={i}
-                        className="w-1 h-1 rounded-full bg-gray-300 animate-bounce"
-                        style={{ animationDelay: `${d}s` }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </>
-            ) : stale ? (
-              <>
-                <p className="text-xs text-gray-400 mb-3">No recent activity</p>
-                <button
-                  onClick={handlePoll}
-                  disabled={polling}
-                  className="text-[11px] px-3 py-1.5 rounded-full border border-gray-300 text-gray-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors disabled:opacity-50"
-                >
-                  {polling ? 'Checking…' : '↻ Refresh now'}
-                </button>
-              </>
-            ) : (
-              <p className="text-xs text-gray-400 py-4">No tweets yet · check back soon</p>
-            )}
-          </div>
-        )}
-
-        {!loading && articles.map(a => (
-          <TweetCard key={a.id} article={a} onViewPost={onViewPost} onCoworkReady={onCoworkReady} />
-        ))}
-
-        {/* Stale + has articles: show refresh button at bottom */}
-        {!loading && articles.length > 0 && stale && (
-          <div className="pt-1 pb-2 text-center">
-            <button
-              onClick={handlePoll}
-              disabled={polling}
-              className="text-[11px] px-3 py-1 rounded-full border border-gray-200 text-gray-400 hover:border-indigo-300 hover:text-indigo-500 transition-colors disabled:opacity-50"
-            >
-              {polling ? 'Checking…' : '↻ Force refresh'}
-            </button>
-          </div>
-        )}
+        <a
+          className="twitter-timeline"
+          data-tweet-limit="20"
+          data-chrome="noheader nofooter noborders"
+          data-theme="light"
+          data-height="800"
+          data-aria-polite="assertive"
+          href={`https://twitter.com/i/lists/${list.id}`}
+        >Tweets from list</a>
       </div>
     </div>
   )
 }
 
-// ── Add Feed column ────────────────────────────────────────────────────────────
-function AddFeedColumn({ onAdd }) {
-  const [input, setInput] = useState('')
-  const [adding, setAdding] = useState(false)
+function AddListPanel({ onAdd }) {
+  const [url, setUrl] = useState('')
+  const [label, setLabel] = useState('')
   const [err, setErr] = useState('')
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault()
-    const clean = input.trim().replace(/^@/, '')
-    if (!clean) return
-    setAdding(true)
     setErr('')
-    try {
-      const r = await api.post('feeds/add/', { x_handle: clean, name: clean })
-      onAdd(r.data)
-      setInput('')
-    } catch (ex) {
-      setErr(ex.response?.data?.error || 'Failed to add feed')
-    } finally {
-      setAdding(false)
+    const match = url.trim().match(/lists\/(\d+)/)
+    if (!match) {
+      setErr('Paste a valid X List URL (must contain /lists/<id>)')
+      return
     }
+    const id = match[1]
+    const name = label.trim() || `List …${id.slice(-6)}`
+    onAdd({ id, label: name, addedAt: new Date().toISOString() })
+    setUrl('')
+    setLabel('')
   }
 
   return (
-    <div className="flex-none w-64 flex flex-col border-r border-gray-200 bg-white overflow-hidden">
-      <div
-        className="shrink-0 px-3 py-2.5 bg-white border-b border-gray-200"
-        style={{ borderTop: '3px solid #E5E7EB' }}
-      >
-        <span className="text-sm font-semibold text-gray-500">+ Add Feed</span>
+    <div className="flex-none w-72 flex flex-col border-r border-gray-800 bg-gray-900 overflow-hidden">
+      <div className="shrink-0 px-3 py-2.5 bg-gray-900 border-b border-gray-800">
+        <span className="text-sm font-semibold text-gray-300">+ Add List</span>
       </div>
       <div className="p-4 flex flex-col gap-3">
-        <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Enter X handle…"
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-transparent"
-            disabled={adding}
-          />
-          {err && <p className="text-xs text-red-500">{err}</p>}
+        <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
+          <div>
+            <label className="block text-[11px] text-gray-400 mb-1 font-medium uppercase tracking-wide">
+              X List URL
+            </label>
+            <input
+              type="text"
+              value={url}
+              onChange={e => setUrl(e.target.value)}
+              placeholder="https://twitter.com/i/lists/…"
+              className="w-full px-3 py-2 text-sm bg-gray-800 border border-gray-700 text-gray-100 placeholder-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] text-gray-400 mb-1 font-medium uppercase tracking-wide">
+              Column Label
+            </label>
+            <input
+              type="text"
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              placeholder="e.g. FIFA WC 2026"
+              className="w-full px-3 py-2 text-sm bg-gray-800 border border-gray-700 text-gray-100 placeholder-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+          </div>
+          {err && <p className="text-xs text-red-400">{err}</p>}
           <button
             type="submit"
-            disabled={adding || !input.trim()}
+            disabled={!url.trim()}
             className="w-full px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors font-medium"
           >
-            {adding ? 'Adding…' : 'Add Feed'}
+            Add Column
           </button>
         </form>
-        <div className="text-[11px] text-gray-300 space-y-1 mt-2">
-          <p>Tier 1 — polls every run</p>
-          <p>Tier 2 — polls every 10 min</p>
-          <p>Tier 3 — polls every 20 min</p>
+        <div className="mt-2 text-[11px] text-gray-500 space-y-1">
+          <p>Paste a public X List URL.</p>
+          <p className="font-mono text-gray-600 break-all">twitter.com/i/lists/&lt;id&gt;</p>
+          <p>Tweets are rendered live by X.</p>
         </div>
       </div>
     </div>
   )
 }
 
-// ── Main FeedsView ─────────────────────────────────────────────────────────────
-export default function FeedsView({ category = null, title = null, subtitle = null }) {
-  const [handles, setHandles] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [selectedArticle, setSelectedArticle] = useState(null)
-  const [coworkData, setCoworkData] = useState(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const [refreshToast, setRefreshToast] = useState(false)
+export default function FeedsView() {
+  const [lists, setLists] = useState(loadLists)
 
-  const fetchHandles = async () => {
-    try {
-      const url = category ? `feeds/?category=${category}` : 'feeds/'
-      const r = await api.get(url)
-      setHandles(r.data.handles || [])
-    } catch {
-      // silently degrade
-    } finally {
-      setLoading(false)
-    }
-  }
-
+  // Load twitter widget.js once — official async snippet with twttr.ready() queue
   useEffect(() => {
-    fetchHandles()
+    window.twttr = (function(d, s, id) {
+      const t = window.twttr || {}
+      if (d.getElementById(id)) return t
+      const js = d.createElement(s)
+      js.id = id
+      js.src = 'https://platform.twitter.com/widgets.js'
+      d.head.appendChild(js)
+      t._e = []
+      t.ready = function(f) { t._e.push(f) }
+      return t
+    }(document, 'script', 'twitter-wjs'))
   }, [])
 
-  const handleAdd = (newHandle) => {
-    setHandles(prev => {
-      if (prev.find(h => h.x_handle === newHandle.x_handle)) {
-        return prev.map(h => h.x_handle === newHandle.x_handle ? newHandle : h)
-      }
-      return [...prev, newHandle]
+  // Persist to localStorage on every change
+  useEffect(() => {
+    saveLists(lists)
+  }, [lists])
+
+  const handleAdd = useCallback((newList) => {
+    setLists(prev => {
+      if (prev.find(l => l.id === newList.id)) return prev
+      return [...prev, newList]
     })
-  }
+  }, [])
 
-  const handleRemove = async (x_handle) => {
-    try {
-      await api.post(`feeds/${x_handle}/remove/`)
-      setHandles(prev => prev.filter(h => h.x_handle !== x_handle))
-    } catch {
-      // ignore
-    }
-  }
-
-  const handleRefreshAll = async () => {
-    setRefreshing(true)
-    try {
-      await api.post('feeds/refresh/')
-      setRefreshToast(true)
-      setTimeout(() => setRefreshToast(false), 3000)
-    } catch {
-      // ignore
-    } finally {
-      setRefreshing(false)
-    }
-  }
+  const handleRemove = useCallback((id) => {
+    setLists(prev => prev.filter(l => l.id !== id))
+  }, [])
 
   return (
-    // Escape Dashboard's p-6 wrapper so we can go edge-to-edge
-    <div className="-mx-6 -my-6 flex flex-col bg-gray-50" style={{ height: '100vh' }}>
+    <div className="-mx-6 -my-6 flex flex-col bg-gray-950" style={{ height: '100vh' }}>
       {/* Top bar */}
-      <div className="shrink-0 flex items-center justify-between px-5 py-3 bg-white border-b border-gray-200">
+      <div className="shrink-0 flex items-center justify-between px-5 py-3 bg-gray-900 border-b border-gray-800">
         <div className="flex items-center gap-3">
-          <span className="text-base font-bold text-gray-800">{title || '⚡ Feeds'}</span>
-          <span className="text-xs text-gray-400 hidden sm:block">{subtitle || 'FIFA World Cup 2026 Intelligence'}</span>
+          <span className="text-base font-bold text-white">⚡ Feeds</span>
+          <span className="text-xs text-gray-400 hidden sm:block">Live · X Lists</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-gray-300 hidden sm:block">Auto-refresh · 60s per column</span>
-          {handles.length > 0 && (
-            <span className="text-[11px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full font-medium">
-              {handles.length} feeds
-            </span>
-          )}
-          <button
-            onClick={handleRefreshAll}
-            disabled={refreshing}
-            className="flex items-center gap-1.5 text-[11px] px-3 py-1.5 rounded-full border border-gray-200 text-gray-600 hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-50 transition-colors font-medium"
-            title="Trigger poll_social_handles + fetch_rss_feeds now"
-          >
-            {refreshing ? (
-              <>
-                <span className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-                Refreshing…
-              </>
-            ) : (
-              <>↻ Refresh Feeds</>
-            )}
-          </button>
-        </div>
+        {lists.length > 0 && (
+          <span className="text-[11px] bg-indigo-900/60 text-indigo-300 px-2.5 py-0.5 rounded-full font-medium">
+            {lists.length} {lists.length === 1 ? 'list' : 'lists'}
+          </span>
+        )}
       </div>
 
-      {/* Success toast */}
-      {refreshToast && (
-        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 bg-green-600 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-lg animate-fade-in">
-          <span>✓</span>
-          <span>Refresh queued — feeds updating</span>
-        </div>
-      )}
-
-      {/* Columns area */}
+      {/* Columns area — TweetDeck-style horizontal scroll */}
       <div className="flex-1 flex overflow-x-auto overflow-y-hidden">
-        {loading && (
-          <div className="flex items-center justify-center w-full">
-            <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-
-        {!loading && handles.map(h => (
-          <FeedColumn
-            key={h.x_handle}
-            handle={h}
-            onRemove={handleRemove}
-            onViewPost={setSelectedArticle}
-            onCoworkReady={setCoworkData}
-          />
-        ))}
-
-        {!loading && handles.length === 0 && (
+        {lists.length === 0 && (
           <div className="flex flex-col items-center justify-center flex-1 text-center px-8">
-            <div className="text-4xl mb-4">📡</div>
-            <h2 className="text-lg font-semibold text-gray-700 mb-2">No feeds yet</h2>
-            <p className="text-sm text-gray-400 max-w-xs">
-              Add an X/Twitter handle to start monitoring it. Celery will poll it every 5 minutes and fact-check each tweet with Gemini.
+            <XLogo size={40} className="text-gray-700 mb-4" />
+            <h2 className="text-lg font-semibold text-gray-300 mb-2">No lists yet</h2>
+            <p className="text-sm text-gray-500 max-w-xs leading-relaxed">
+              Paste an X List URL in the panel on the right to add a live embedded feed column.
             </p>
           </div>
         )}
 
-        <AddFeedColumn onAdd={handleAdd} />
-      </div>
+        {lists.map(list => (
+          <ListColumn key={list.id} list={list} onRemove={handleRemove} />
+        ))}
 
-      {selectedArticle && (
-        <TweetModal article={selectedArticle} onClose={() => setSelectedArticle(null)} />
-      )}
-      {coworkData && (
-        <CoworkHandoffModal data={coworkData} onClose={() => setCoworkData(null)} />
-      )}
+        <AddListPanel onAdd={handleAdd} />
+      </div>
     </div>
   )
 }

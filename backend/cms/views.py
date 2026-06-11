@@ -3036,3 +3036,62 @@ class SystemStatusView(APIView):
             })
         except Exception:
             return Response({'traction_frozen': False, 'frozen_since': None})
+
+
+# ── FeedHandle API ─────────────────────────────────────────────────────────────
+
+class FeedHandleListView(APIView):
+    """
+    GET  /api/feeds/handles/?category=football  — list tenant's handles
+    POST /api/feeds/handles/                    — add a handle
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import FeedHandle
+        category = request.query_params.get('category', '').strip().lower()
+        qs = FeedHandle.objects.filter(tenant=request.tenant)
+        if category in ('football', 'cricket', 'general'):
+            qs = qs.filter(category=category)
+        data = [
+            {'handle': h.handle, 'label': h.label, 'category': h.category,
+             'added_at': h.added_at.isoformat()}
+            for h in qs
+        ]
+        return Response({'handles': data})
+
+    def post(self, request):
+        from .models import FeedHandle
+        import re
+        handle = (request.data.get('handle') or '').strip().lstrip('@')
+        label = (request.data.get('label') or '').strip() or f'@{handle}'
+        category = (request.data.get('category') or 'general').strip().lower()
+        if not handle or not re.match(r'^[A-Za-z0-9_]{1,50}$', handle):
+            return Response({'error': 'invalid handle'}, status=400)
+        if category not in ('football', 'cricket', 'general'):
+            return Response({'error': 'invalid category'}, status=400)
+        obj, created = FeedHandle.objects.get_or_create(
+            tenant=request.tenant, handle=handle, category=category,
+            defaults={'label': label},
+        )
+        return Response(
+            {'handle': obj.handle, 'label': obj.label, 'category': obj.category,
+             'added_at': obj.added_at.isoformat()},
+            status=201 if created else 200,
+        )
+
+
+class FeedHandleDeleteView(APIView):
+    """DELETE /api/feeds/handles/{handle}/?category=football — remove a handle"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, handle):
+        from .models import FeedHandle
+        category = request.query_params.get('category', '').strip().lower()
+        qs = FeedHandle.objects.filter(tenant=request.tenant, handle=handle)
+        if category in ('football', 'cricket', 'general'):
+            qs = qs.filter(category=category)
+        deleted, _ = qs.delete()
+        if not deleted:
+            return Response({'error': 'not found'}, status=404)
+        return Response(status=204)

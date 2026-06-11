@@ -1,168 +1,219 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import api from '../../services/api'
 
-const STORAGE_KEY = 'pavilion_x_lists'
+const POLL_MS = 20_000
 
-function loadLists() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-  } catch {
-    return []
-  }
-}
-
-function saveLists(lists) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(lists))
+function timeAgo(pubDate) {
+  if (!pubDate) return ''
+  const diff = Date.now() - new Date(pubDate).getTime()
+  const s = Math.floor(diff / 1000)
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
 }
 
 function XLogo({ size = 14, className = '' }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 1200 1227"
-      fill="currentColor"
-      className={className}
-      aria-hidden="true"
-    >
+    <svg width={size} height={size} viewBox="0 0 1200 1227" fill="currentColor" className={className} aria-hidden="true">
       <path d="M714.163 519.284L1160.89 0H1055.03L667.137 450.887L357.328 0H0L468.492 681.821L0 1226.37H105.866L515.491 750.218L842.672 1226.37H1200L714.163 519.284ZM569.165 687.828L521.697 619.934L144.011 79.6944H306.615L611.412 515.685L658.88 583.579L1055.08 1150.3H892.476L569.165 687.828Z" />
     </svg>
   )
 }
 
-function ColumnSkeleton() {
+function ExternalLinkIcon() {
   return (
-    <div className="p-3 space-y-3">
-      {[120, 90, 140, 100].map((h, i) => (
-        <div
-          key={i}
-          className="rounded-lg bg-gray-800 animate-pulse"
-          style={{ height: h }}
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+      <polyline points="15 3 21 3 21 9"/>
+      <line x1="10" y1="14" x2="21" y2="3"/>
+    </svg>
+  )
+}
+
+// ── Tweet card ─────────────────────────────────────────────────────────────────
+function TweetCard({ item, isNew }) {
+  return (
+    <div className={`bg-gray-900 rounded-lg p-3 mb-2 border transition-all duration-300 ${
+      isNew ? 'border-green-500 ring-2 ring-green-400' : 'border-gray-800'
+    }`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <XLogo size={12} className="text-gray-400 shrink-0" />
+          <span className="text-[11px] text-gray-400 truncate">{item.author || 'X'}</span>
+        </div>
+        <span className="text-[10px] text-gray-600 shrink-0 ml-2">{timeAgo(item.pubDate)}</span>
+      </div>
+
+      <p className="text-sm text-gray-100 leading-snug mb-2">{item.text}</p>
+
+      {item.image && (
+        <img
+          src={item.image}
+          alt=""
+          className="w-full rounded-lg object-cover mb-2"
+          style={{ maxHeight: '192px' }}
+          loading="lazy"
+          onError={e => { e.target.style.display = 'none' }}
         />
-      ))}
+      )}
+
+      {item.link && (
+        <a
+          href={item.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-indigo-400 transition-colors"
+        >
+          <ExternalLinkIcon />
+          View on X
+        </a>
+      )}
     </div>
   )
 }
 
-function ListColumn({ list, onRemove }) {
-  const containerRef = useRef(null)
+// ── Feed column ────────────────────────────────────────────────────────────────
+function FeedColumn({ handle, label, category, onRemove }) {
+  const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [newIds, setNewIds] = useState(new Set())
+  const seenIds = useRef(new Set())
+  const pollRef = useRef(null)
 
-  // Clear skeleton on "rendered" event; 8 s fallback checks if iframe was injected
-  useEffect(() => {
-    const onRendered = () => setLoading(false)
-    window.twttr?.ready?.(() => {
-      window.twttr.events.bind('rendered', onRendered)
-    })
-    const timer = setTimeout(() => {
-      if (containerRef.current?.querySelector('a.twitter-timeline')) {
-        setError('X could not load this list. Check that it is a public list.')
+  const fetchFeed = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/feeds/rss/?handle=${encodeURIComponent(handle)}`)
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const data = await r.json()
+      if (data.error) throw new Error(data.error)
+
+      const incoming = data.items || []
+      const freshIds = new Set()
+      if (seenIds.current.size > 0) {
+        incoming.forEach(item => {
+          if (!seenIds.current.has(item.id)) freshIds.add(item.id)
+        })
       }
+      incoming.forEach(item => seenIds.current.add(item.id))
+
+      setItems(incoming)
+      setError('')
+      if (freshIds.size > 0) {
+        setNewIds(freshIds)
+        setTimeout(() => setNewIds(new Set()), 3000)
+      }
+    } catch {
+      setError('Feed unavailable')
+    } finally {
       setLoading(false)
-    }, 8000)
-    return () => {
-      clearTimeout(timer)
-      window.twttr?.events?.unbind('rendered', onRendered)
     }
-  }, [list.id])
+  }, [handle])
 
-  // Delay load by one rAF so flex layout has settled before X measures container
   useEffect(() => {
-    if (!containerRef.current) return
-    requestAnimationFrame(() => {
-      if (window.twttr?.widgets) {
-        window.twttr.widgets.load(containerRef.current)
-      } else {
-        window.twttr = window.twttr || {}
-        window.twttr._e = window.twttr._e || []
-        window.twttr._e.push(() => window.twttr.widgets.load(containerRef.current))
-      }
-    })
-  }, [list.id])
+    fetchFeed()
+    pollRef.current = setInterval(fetchFeed, POLL_MS)
+    return () => clearInterval(pollRef.current)
+  }, [fetchFeed])
 
   return (
     <div className="flex-none w-[340px] flex flex-col border-r border-gray-800 bg-gray-950 overflow-hidden">
-      {/* Column header */}
       <div className="shrink-0 flex items-center justify-between px-3 py-2.5 bg-gray-900 border-b border-gray-800">
         <div className="flex items-center gap-2 min-w-0">
           <XLogo size={13} className="text-white shrink-0" />
-          <span className="font-semibold text-sm text-white truncate">{list.label}</span>
+          <span className="font-semibold text-sm text-white truncate">{label}</span>
+          <a
+            href={`https://twitter.com/${handle}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-gray-500 hover:text-gray-300 transition-colors shrink-0"
+            title={`Open @${handle} on X`}
+          >
+            <ExternalLinkIcon />
+          </a>
         </div>
         <button
-          onClick={() => onRemove(list.id)}
+          onClick={() => onRemove(handle, category)}
           className="text-gray-500 hover:text-red-400 transition-colors text-xl leading-none shrink-0 ml-2"
-          title={`Remove ${list.label}`}
-          aria-label={`Remove ${list.label}`}
+          title={`Remove ${label}`}
         >
           ×
         </button>
       </div>
 
-      {/* Tweet stream */}
-      {error && (
-        <div className="p-4 text-sm text-red-400">{error}</div>
-      )}
-      <div
-        ref={containerRef}
-        style={{ minHeight: '400px', height: '100%' }}
-        className="flex-1 overflow-y-auto overflow-x-hidden relative"
-      >
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-2">
         {loading && (
-          <div className="absolute inset-0 bg-gray-950 z-10 pointer-events-none">
-            <ColumnSkeleton />
+          <div className="flex items-center justify-center py-10">
+            <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
           </div>
         )}
-        <a
-          className="twitter-timeline"
-          data-tweet-limit="20"
-          data-chrome="noheader nofooter noborders"
-          data-theme="light"
-          data-height="800"
-          data-aria-polite="assertive"
-          href={`https://twitter.com/i/lists/${list.id}`}
-        >Tweets from list</a>
+        {!loading && error && (
+          <p className="text-xs text-red-400 text-center py-8">{error}</p>
+        )}
+        {!loading && !error && items.length === 0 && (
+          <p className="text-xs text-gray-500 text-center py-8">No tweets yet</p>
+        )}
+        {!loading && items.map(item => (
+          <TweetCard key={item.id} item={item} isNew={newIds.has(item.id)} />
+        ))}
       </div>
     </div>
   )
 }
 
-function AddListPanel({ onAdd }) {
-  const [url, setUrl] = useState('')
+// ── Add Feed panel ─────────────────────────────────────────────────────────────
+function AddFeedPanel({ category, onAdd }) {
+  const [handleInput, setHandleInput] = useState('')
   const [label, setLabel] = useState('')
   const [err, setErr] = useState('')
+  const [adding, setAdding] = useState(false)
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setErr('')
-    const match = url.trim().match(/lists\/(\d+)/)
-    if (!match) {
-      setErr('Paste a valid X List URL (must contain /lists/<id>)')
+    const handle = handleInput.trim().replace(/^@/, '')
+    if (!handle || !/^[A-Za-z0-9_]{1,50}$/.test(handle)) {
+      setErr('Enter a valid X handle (letters, numbers, underscores only)')
       return
     }
-    const id = match[1]
-    const name = label.trim() || `List …${id.slice(-6)}`
-    onAdd({ id, label: name, addedAt: new Date().toISOString() })
-    setUrl('')
-    setLabel('')
+    setAdding(true)
+    try {
+      const r = await api.post('feeds/handles/', {
+        handle,
+        label: label.trim() || `@${handle}`,
+        category,
+      })
+      onAdd(r.data)
+      setHandleInput('')
+      setLabel('')
+    } catch (ex) {
+      setErr(ex.response?.data?.error || 'Failed to add feed')
+    } finally {
+      setAdding(false)
+    }
   }
 
   return (
     <div className="flex-none w-72 flex flex-col border-r border-gray-800 bg-gray-900 overflow-hidden">
-      <div className="shrink-0 px-3 py-2.5 bg-gray-900 border-b border-gray-800">
-        <span className="text-sm font-semibold text-gray-300">+ Add List</span>
+      <div className="shrink-0 px-3 py-2.5 border-b border-gray-800">
+        <span className="text-sm font-semibold text-gray-300">+ Add Feed</span>
       </div>
       <div className="p-4 flex flex-col gap-3">
         <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
           <div>
             <label className="block text-[11px] text-gray-400 mb-1 font-medium uppercase tracking-wide">
-              X List URL
+              X Handle
             </label>
             <input
               type="text"
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              placeholder="https://twitter.com/i/lists/…"
-              className="w-full px-3 py-2 text-sm bg-gray-800 border border-gray-700 text-gray-100 placeholder-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              value={handleInput}
+              onChange={e => setHandleInput(e.target.value)}
+              placeholder="@FIFAWorldCup or FIFAWorldCup"
+              disabled={adding}
+              className="w-full px-3 py-2 text-sm bg-gray-800 border border-gray-700 text-gray-100 placeholder-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
             />
           </div>
           <div>
@@ -173,61 +224,56 @@ function AddListPanel({ onAdd }) {
               type="text"
               value={label}
               onChange={e => setLabel(e.target.value)}
-              placeholder="e.g. FIFA WC 2026"
-              className="w-full px-3 py-2 text-sm bg-gray-800 border border-gray-700 text-gray-100 placeholder-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              placeholder="e.g. FIFA World Cup"
+              disabled={adding}
+              className="w-full px-3 py-2 text-sm bg-gray-800 border border-gray-700 text-gray-100 placeholder-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
             />
           </div>
           {err && <p className="text-xs text-red-400">{err}</p>}
           <button
             type="submit"
-            disabled={!url.trim()}
+            disabled={!handleInput.trim() || adding}
             className="w-full px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors font-medium"
           >
-            Add Column
+            {adding ? 'Adding…' : 'Add Column'}
           </button>
         </form>
         <div className="mt-2 text-[11px] text-gray-500 space-y-1">
-          <p>Paste a public X List URL.</p>
-          <p className="font-mono text-gray-600 break-all">twitter.com/i/lists/&lt;id&gt;</p>
-          <p>Tweets are rendered live by X.</p>
+          <p>Enter any public X account handle.</p>
+          <p className="font-mono text-gray-600">twitter.com/@handle</p>
+          <p>Polls via RSSHub every 20 seconds.</p>
         </div>
       </div>
     </div>
   )
 }
 
-export default function FeedsView() {
-  const [lists, setLists] = useState(loadLists)
+// ── Main view ──────────────────────────────────────────────────────────────────
+export default function FeedsView({ category = 'general', title = '⚡ Feeds', subtitle = 'Live · RSSHub' }) {
+  const [handles, setHandles] = useState([])
+  const [loading, setLoading] = useState(true)
 
-  // Load twitter widget.js once — official async snippet with twttr.ready() queue
   useEffect(() => {
-    window.twttr = (function(d, s, id) {
-      const t = window.twttr || {}
-      if (d.getElementById(id)) return t
-      const js = d.createElement(s)
-      js.id = id
-      js.src = 'https://platform.twitter.com/widgets.js'
-      d.head.appendChild(js)
-      t._e = []
-      t.ready = function(f) { t._e.push(f) }
-      return t
-    }(document, 'script', 'twitter-wjs'))
-  }, [])
+    api.get(`feeds/handles/?category=${category}`)
+      .then(r => setHandles(r.data.handles || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [category])
 
-  // Persist to localStorage on every change
-  useEffect(() => {
-    saveLists(lists)
-  }, [lists])
-
-  const handleAdd = useCallback((newList) => {
-    setLists(prev => {
-      if (prev.find(l => l.id === newList.id)) return prev
-      return [...prev, newList]
+  const handleAdd = useCallback((newHandle) => {
+    setHandles(prev => {
+      if (prev.find(h => h.handle === newHandle.handle)) return prev
+      return [...prev, newHandle]
     })
   }, [])
 
-  const handleRemove = useCallback((id) => {
-    setLists(prev => prev.filter(l => l.id !== id))
+  const handleRemove = useCallback(async (handle, cat) => {
+    try {
+      await api.delete(`feeds/handles/${handle}/?category=${cat}`)
+      setHandles(prev => prev.filter(h => !(h.handle === handle && h.category === cat)))
+    } catch {
+      // ignore
+    }
   }, [])
 
   return (
@@ -235,33 +281,45 @@ export default function FeedsView() {
       {/* Top bar */}
       <div className="shrink-0 flex items-center justify-between px-5 py-3 bg-gray-900 border-b border-gray-800">
         <div className="flex items-center gap-3">
-          <span className="text-base font-bold text-white">⚡ Feeds</span>
-          <span className="text-xs text-gray-400 hidden sm:block">Live · X Lists</span>
+          <span className="text-base font-bold text-white">{title}</span>
+          <span className="text-xs text-gray-400 hidden sm:block">{subtitle}</span>
         </div>
-        {lists.length > 0 && (
+        {!loading && handles.length > 0 && (
           <span className="text-[11px] bg-indigo-900/60 text-indigo-300 px-2.5 py-0.5 rounded-full font-medium">
-            {lists.length} {lists.length === 1 ? 'list' : 'lists'}
+            {handles.length} {handles.length === 1 ? 'feed' : 'feeds'}
           </span>
         )}
       </div>
 
-      {/* Columns area — TweetDeck-style horizontal scroll */}
+      {/* Columns */}
       <div className="flex-1 flex overflow-x-auto overflow-y-hidden">
-        {lists.length === 0 && (
+        {loading && (
+          <div className="flex items-center justify-center flex-1">
+            <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+
+        {!loading && handles.length === 0 && (
           <div className="flex flex-col items-center justify-center flex-1 text-center px-8">
             <XLogo size={40} className="text-gray-700 mb-4" />
-            <h2 className="text-lg font-semibold text-gray-300 mb-2">No lists yet</h2>
+            <h2 className="text-lg font-semibold text-gray-300 mb-2">No feeds yet</h2>
             <p className="text-sm text-gray-500 max-w-xs leading-relaxed">
-              Paste an X List URL in the panel on the right to add a live embedded feed column.
+              Enter an X handle in the panel on the right to add a live feed column.
             </p>
           </div>
         )}
 
-        {lists.map(list => (
-          <ListColumn key={list.id} list={list} onRemove={handleRemove} />
+        {!loading && handles.map(h => (
+          <FeedColumn
+            key={`${h.handle}-${h.category}`}
+            handle={h.handle}
+            label={h.label}
+            category={h.category}
+            onRemove={handleRemove}
+          />
         ))}
 
-        <AddListPanel onAdd={handleAdd} />
+        <AddFeedPanel category={category} onAdd={handleAdd} />
       </div>
     </div>
   )

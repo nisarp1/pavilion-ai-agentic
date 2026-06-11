@@ -732,6 +732,26 @@ class SocialMediaHandle(models.Model):
         return f"@{self.x_handle} [{self.platform}] (Tier {self.credibility_tier})"
 
 
+class FeedHandle(models.Model):
+    CATEGORY_CHOICES = [
+        ('football', 'Football'),
+        ('cricket', 'Cricket'),
+        ('general', 'General'),
+    ]
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='feed_handles')
+    handle = models.CharField(max_length=50)
+    label = models.CharField(max_length=100)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='general')
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('tenant', 'handle', 'category')
+        ordering = ['added_at']
+
+    def __str__(self):
+        return f"@{self.handle} [{self.category}]"
+
+
 class FactCheck(models.Model):
     VERDICT_CHOICES = [
         ('CONFIRMED', 'Confirmed by multiple sources'),

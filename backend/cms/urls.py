@@ -3,7 +3,10 @@ CMS API URLs.
 """
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from .rss_proxy import rss_proxy
 from .views import (
+    FeedHandleListView,
+    FeedHandleDeleteView,
     ArticleViewSet,
     CanvaTemplateViewSet,
     CategoryViewSet,
@@ -40,6 +43,11 @@ urlpatterns = [
     path('social-studio/generate/', SocialStudioGenerateView.as_view(), name='social-studio-generate'),
     path('social-studio/extract-image-context/', SocialStudioExtractImageView.as_view(), name='social-studio-extract-image'),
     path('social-studio/save-edits/', SocialStudioSaveEditsView.as_view(), name='social-studio-save-edits'),
+    # RSSHub proxy — no auth required, no CORS issues
+    path('feeds/rss/', rss_proxy, name='feeds-rss-proxy'),
+    # FeedHandle CRUD (per-tenant, JWT auth)
+    path('feeds/handles/', FeedHandleListView.as_view(), name='feeds-handles-list'),
+    path('feeds/handles/<str:handle>/', FeedHandleDeleteView.as_view(), name='feeds-handles-delete'),
     # Feeds (Social Handle Monitor)
     path('feeds/', FeedsListView.as_view(), name='feeds-list'),
     path('feeds/add/', FeedAddHandleView.as_view(), name='feeds-add'),

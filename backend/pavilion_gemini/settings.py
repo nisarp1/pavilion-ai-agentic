@@ -179,8 +179,10 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# HTTPS / security headers (active when not in DEBUG mode)
-if not DEBUG:
+# HTTPS / transport security — gated on production, NOT DEBUG. Coupling these to DEBUG
+# forced SSL-redirect/HSTS the moment DEBUG was turned off, which broke admin/static
+# (nginx /static/ doesn't forward X-Forwarded-Proto) and the internal django:8000 call.
+if ENVIRONMENT == 'production':
     SECURE_HSTS_SECONDS = 31536000          # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True

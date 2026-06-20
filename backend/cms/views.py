@@ -3095,3 +3095,194 @@ class FeedHandleDeleteView(APIView):
         if not deleted:
             return Response({'error': 'not found'}, status=404)
         return Response(status=204)
+
+
+# ── FeedCategory API ───────────────────────────────────────────────────────────
+
+def _serialize_feed_category(cat):
+    return {'id': cat.id, 'name': cat.name, 'slug': cat.slug,
+            'color': cat.color, 'position': cat.position}
+
+def _serialize_feed_handle_full(h):
+    cat = h.category_obj
+    return {
+        'id': h.id,
+        'handle': h.handle,
+        'label': h.label,
+        'category': h.category,
+        'category_obj': _serialize_feed_category(cat) if cat else None,
+        'position': h.position,
+        'added_at': h.added_at.isoformat(),
+    }
+
+def _auto_seed_categories(tenant):
+    """Create Football + Cricket categories if tenant has handles but no categories."""
+    from .models import FeedCategory
+    if FeedCategory.objects.filter(tenant=tenant).exists():
+        return
+    defaults = [
+        {'name': 'Football', 'slug': 'football', 'color': '#22c55e', 'position': 0},
+        {'name': 'Cricket',  'slug': 'cricket',  'color': '#f59e0b', 'position': 1},
+    ]
+    for d in defaults:
+        FeedCategory.objects.get_or_create(tenant=tenant, slug=d['slug'], defaults={**d, 'tenant': tenant})
+
+
+class FeedCategoryListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import FeedCategory
+        _auto_seed_categories(request.tenant)
+        cats = FeedCategory.objects.filter(tenant=request.tenant)
+        return Response({'categories': [_serialize_feed_category(c) for c in cats]})
+
+    def post(self, request):
+        from .models import FeedCategory
+        import re
+        name = (request.data.get('name') or '').strip()
+        color = (request.data.get('color') or '#6366f1').strip()
+        if not name:
+            return Response({'error': 'name required'}, status=400)
+        slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+        pos = FeedCategory.objects.filter(tenant=request.tenant).count()
+        cat, created = FeedCategory.objects.get_or_create(
+            tenant=request.tenant, slug=slug,
+            defaults={'name': name, 'color': color, 'position': pos},
+        )
+        return Response(_serialize_feed_category(cat), status=201 if created else 200)
+
+
+class FeedCategoryDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get(self, request, pk):
+        from .models import FeedCategory
+        return get_object_or_404(FeedCategory, pk=pk, tenant=request.tenant)
+
+    def patch(self, request, pk):
+        cat = self._get(request, pk)
+        if 'name' in request.data:
+            cat.name = request.data['name'].strip() or cat.name
+        if 'color' in request.data:
+            cat.color = request.data['color'].strip() or cat.color
+        cat.save(update_fields=['name', 'color'])
+        return Response(_serialize_feed_category(cat))
+
+    def delete(self, request, pk):
+        cat = self._get(request, pk)
+        cat.handles.update(category_obj=None)
+        cat.delete()
+        return Response(status=204)
+
+
+class FeedCategoryReorderView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request):
+        from .models import FeedCategory
+        ids = request.data.get('ids', [])
+        for pos, pk in enumerate(ids):
+            FeedCategory.objects.filter(pk=pk, tenant=request.tenant).update(position=pos)
+        return Response({'status': 'ok'})
+
+
+# ── Updated FeedHandle API (replaces earlier simple views) ─────────────────────
+
+class FeedHandleListCreateView(APIView):
+    """
+    GET  /api/feeds/handles/             — all handles (optionally filtered by category_slug)
+    POST /api/feeds/handles/             — add a handle
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import FeedHandle
+        slug = request.query_params.get('category_slug', '').strip().lower()
+        cat_str = request.query_params.get('category', '').strip().lower()
+        qs = FeedHandle.objects.filter(tenant=request.tenant).select_related('category_obj')
+        if slug:
+            qs = qs.filter(category_obj__slug=slug)
+        elif cat_str in ('football', 'cricket', 'general'):
+            qs = qs.filter(category=cat_str)
+        return Response({'handles': [_serialize_feed_handle_full(h) for h in qs]})
+
+    def post(self, request):
+        from .models import FeedHandle, FeedCategory
+        import re
+        handle = (request.data.get('handle') or '').strip().lstrip('@')
+        label = (request.data.get('label') or '').strip() or f'@{handle}'
+        category = (request.data.get('category') or 'general').strip().lower()
+        category_id = request.data.get('category_id')
+        if not handle or not re.match(r'^[A-Za-z0-9_]{1,50}$', handle):
+            return Response({'error': 'invalid handle'}, status=400)
+        if category not in ('football', 'cricket', 'general'):
+            category = 'general'
+        cat_obj = None
+        if category_id:
+            cat_obj = FeedCategory.objects.filter(pk=category_id, tenant=request.tenant).first()
+        pos = FeedHandle.objects.filter(tenant=request.tenant).count()
+        obj, created = FeedHandle.objects.get_or_create(
+            tenant=request.tenant, handle=handle, category=category,
+            defaults={'label': label, 'category_obj': cat_obj, 'position': pos},
+        )
+        return Response(_serialize_feed_handle_full(obj), status=201 if created else 200)
+
+
+class FeedHandleDetailView(APIView):
+    """
+    PATCH  /api/feeds/handles/{handle}/   — assign category_id and/or position
+    DELETE /api/feeds/handles/{handle}/   — remove (optionally filter by category)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, handle):
+        from .models import FeedHandle, FeedCategory
+        category = request.query_params.get('category', '').strip().lower()
+        qs = FeedHandle.objects.filter(tenant=request.tenant, handle=handle)
+        if category in ('football', 'cricket', 'general'):
+            qs = qs.filter(category=category)
+        obj = qs.first()
+        if not obj:
+            return Response({'error': 'not found'}, status=404)
+        if 'category_id' in request.data:
+            cid = request.data['category_id']
+            if cid is None:
+                obj.category_obj = None
+            else:
+                obj.category_obj = FeedCategory.objects.filter(pk=cid, tenant=request.tenant).first()
+        if 'position' in request.data:
+            obj.position = int(request.data['position'])
+        obj.save(update_fields=['category_obj', 'position'])
+        return Response(_serialize_feed_handle_full(obj))
+
+    def delete(self, request, handle):
+        from .models import FeedHandle
+        category = request.query_params.get('category', '').strip().lower()
+        qs = FeedHandle.objects.filter(tenant=request.tenant, handle=handle)
+        if category in ('football', 'cricket', 'general'):
+            qs = qs.filter(category=category)
+        deleted, _ = qs.delete()
+        if not deleted:
+            return Response({'error': 'not found'}, status=404)
+        return Response(status=204)
+
+
+class FeedHandleReorderView(APIView):
+    """PATCH /api/feeds/handles/reorder/ — bulk reorder: {items: [{id, position, category_id}]}"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request):
+        from .models import FeedHandle, FeedCategory
+        items = request.data.get('items', [])
+        for item in items:
+            qs = FeedHandle.objects.filter(pk=item['id'], tenant=request.tenant)
+            updates = {'position': int(item.get('position', 0))}
+            if 'category_id' in item:
+                cid = item['category_id']
+                updates['category_obj'] = (
+                    FeedCategory.objects.filter(pk=cid, tenant=request.tenant).first()
+                    if cid else None
+                )
+            qs.update(**updates)
+        return Response({'status': 'ok'})

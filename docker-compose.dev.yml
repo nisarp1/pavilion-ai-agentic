@@ -75,6 +75,7 @@ services:
       GEMINI_API_KEY: "${GEMINI_API_KEY}"
       SECRET_KEY: "${SECRET_KEY}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      CLAUDE_MODEL: "${CLAUDE_MODEL}"
       SOCIALDATA_API_KEY: "${SOCIALDATA_API_KEY}"
       TWITTER_AUTH_TOKEN: "${TWITTER_AUTH_TOKEN}"
       RSSHUB_URL: "http://rsshub:1200"
@@ -106,6 +107,7 @@ services:
       GEMINI_API_KEY: "${GEMINI_API_KEY}"
       SECRET_KEY: "${SECRET_KEY}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      CLAUDE_MODEL: "${CLAUDE_MODEL}"
       SOCIALDATA_API_KEY: "${SOCIALDATA_API_KEY}"
       RSSHUB_URL: "http://rsshub:1200"
       ENVIRONMENT: development
@@ -143,6 +145,7 @@ services:
       GEMINI_API_KEY: "${GEMINI_API_KEY}"
       SECRET_KEY: "${SECRET_KEY}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      CLAUDE_MODEL: "${CLAUDE_MODEL}"
       ALLOWED_HOSTS: '*'
       CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:8000
     ports:

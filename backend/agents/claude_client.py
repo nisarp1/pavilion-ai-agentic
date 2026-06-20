@@ -1,7 +1,58 @@
-import anthropic
+import json
 import os
 
-client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
+import anthropic
+
+# Single shared client — reads ANTHROPIC_API_KEY from the environment.
+# The SDK auto-retries 429/5xx with exponential backoff, so no manual retry loop.
+_client = anthropic.Anthropic()
+
+# Model is overridable via env without code changes; per-call override also supported.
+DEFAULT_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-8")
+
+
+def complete(prompt, *, system=None, max_tokens=4000, model=None) -> str:
+    """Canonical text completion. Returns the concatenated text blocks."""
+    resp = _client.messages.create(
+        model=model or DEFAULT_MODEL,
+        max_tokens=max_tokens,
+        system=system or anthropic.NOT_GIVEN,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return "".join(b.text for b in resp.content if b.type == "text")
+
+
+def complete_json(prompt, *, system=None, max_tokens=4000, model=None) -> dict:
+    """Like complete(), but parses the response as JSON.
+
+    Robust replacement for the brittle ``\\{.*\\}`` regex: try a direct parse
+    first, then fall back to the outermost {...} span.
+    """
+    text = complete(prompt, system=system, max_tokens=max_tokens, model=model)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(text[start:end + 1])
+        raise
+
+
+def complete_vision(prompt, image_bytes, media_type="image/png", *,
+                    max_tokens=2000, model=None) -> str:
+    """Vision completion (screenshot / visual-trends path) via base64 image block."""
+    import base64
+    data = base64.standard_b64encode(image_bytes).decode()
+    resp = _client.messages.create(
+        model=model or DEFAULT_MODEL,
+        max_tokens=max_tokens,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64",
+             "media_type": media_type, "data": data}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    return "".join(b.text for b in resp.content if b.type == "text")
 
 
 def generate_social_post(tweet_text: str, tweet_url: str, handle: str, category: str) -> dict:
@@ -33,15 +84,4 @@ Respond in this exact JSON format:
 
 The cowork_prompt must be self-contained, include the tweet context, the Malayalam caption, the creative brief, and instruct Claude to: search Canva for suitable templates, pick or build the best one, customize it fully, and return the editable Canva link. It should sound like a briefing from a creative director to a designer."""
 
-    message = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=1500,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    import json, re
-    text = message.content[0].text
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if match:
-        return json.loads(match.group())
-    raise ValueError("No JSON in response")
+    return complete_json(prompt, max_tokens=1500)

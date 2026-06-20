@@ -82,3 +82,4 @@ anthropic>=0.40.0
 
 # LiteLLM (required by crewai for Vertex AI / gemini/ model prefix routing)
 litellm>=1.40.0
+flower>=2.0

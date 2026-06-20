@@ -17,7 +17,6 @@ channels-redis==4.1.0
 
 # Database
 psycopg[binary]>=3.1.0
-cloud-sql-python-connector>=1.4.0
 
 # Async / Task Queue
 celery==5.3.4
@@ -27,13 +26,13 @@ amqp>=5.1.0
 vine>=5.1.0
 billiard>=4.1.0
 
-# Google AI & Cloud
-google-cloud-speech>=2.0.0
+# Google services still in use (GCP compute is gone; these are SaaS/library deps)
+google-cloud-texttospeech>=2.0.0   # Phase 5 Malayalam TTS
+google-cloud-speech>=2.0.0          # STT agent
 google-api-python-client>=2.100.0
-google-auth>=2.20.0
+google-auth>=2.20.0                  # google.oauth2 (Google login + service accounts)
 google-auth-httplib2>=0.2.0
-gspread>=6.0.0
-google-genai>=1.0.0
+gspread>=6.0.0                       # Google Sheets push
 
 # HTTP & Networking
 requests>=2.28.0
@@ -79,6 +78,6 @@ crewai>=1.14.4
 # Anthropic Claude API
 anthropic>=0.40.0
 
-# LiteLLM (required by crewai for Vertex AI / gemini/ model prefix routing)
+# LiteLLM (used by crewai for anthropic/ model prefix routing)
 litellm>=1.40.0
 flower>=2.0

@@ -95,49 +95,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'pavilion_gemini.wsgi.application'
 
-# Database
-# Use SQLite for development if PostgreSQL is not available
+# Database — single DATABASE_URL-driven config for all environments
+# (Postgres on this AWS stack via compose; SQLite fallback for bare local runs).
 import dj_database_url
 
-# Database
-# Production: Cloud SQL via Unix socket (Cloud Run --add-cloudsql-instances, no VPC needed)
-# Development: DATABASE_URL env var or SQLite fallback
-if ENVIRONMENT == 'production':
-    db_instance = env('CLOUD_SQL_INSTANCE', default='')   # project:region:instance
-    db_user     = env('DB_USER',     default='pavilion_app')
-    db_password = env('DB_PASSWORD', default='')
-    db_name     = env('DB_NAME',     default='pavilion_newsai')
-
-    if db_instance:
-        # Cloud Run injects a Unix socket at /cloudsql/<instance> automatically
-        DATABASES = {
-            'default': {
-                'ENGINE':   'django.db.backends.postgresql',
-                'HOST':     f'/cloudsql/{db_instance}',
-                'NAME':     db_name,
-                'USER':     db_user,
-                'PASSWORD': db_password,
-                'CONN_MAX_AGE': 600,
-            }
-        }
-    else:
-        # Fallback for manual DATABASE_URL (local testing against prod DB)
-        DATABASES = {
-            'default': dj_database_url.config(
-                default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
-                conn_max_age=600,
-                conn_health_checks=True,
-            )
-        }
-else:
-    # Development: DATABASE_URL or SQLite
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
-    }
+DATABASES = {
+    'default': dj_database_url.config(
+        default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+}
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -388,29 +356,10 @@ if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
 # RSS Feeds
 RSS_FEEDS = env.list('RSS_FEEDS', default=[])
 
-VERTEX_PROJECT = env('VERTEX_PROJECT', default='') or env('VERTEXAI_PROJECT', default='')
-VERTEX_LOCATION = env('VERTEX_LOCATION', default='') or env('VERTEXAI_LOCATION', default='us-central1')
-
 # Google Cloud Text-to-Speech
 # Set this to the full path of your service account JSON key file
 # Example: GOOGLE_APPLICATION_CREDENTIALS=/Users/username/Downloads/pavilion-tts-key.json
 GOOGLE_APPLICATION_CREDENTIALS = env('GOOGLE_APPLICATION_CREDENTIALS', default='')
-
-# Support for raw JSON credentials (for Railway/Vercel)
-# Support for raw JSON credentials (for Railway/Vercel)
-GOOGLE_CREDENTIALS_JSON = env('GOOGLE_CREDENTIALS_JSON', default='')
-if GOOGLE_CREDENTIALS_JSON:
-    import json
-    import tempfile
-    
-    # Create a temporary file to store the credentials
-    # We use a fixed path in /tmp so it persists across requests in the same instance
-    creds_path = os.path.join(tempfile.gettempdir(), 'google-credentials.json')
-    with open(creds_path, 'w') as f:
-        f.write(GOOGLE_CREDENTIALS_JSON)
-    
-    GOOGLE_APPLICATION_CREDENTIALS = creds_path
-    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = creds_path
 
 if GOOGLE_APPLICATION_CREDENTIALS:
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = GOOGLE_APPLICATION_CREDENTIALS

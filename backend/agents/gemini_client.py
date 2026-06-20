@@ -1,174 +1,86 @@
 """
-Central Gemini client.
+Central LLM client.
 
-Primary:  Vertex AI REST API (VERTEX_PROJECT configured) — no free-tier quota.
-Fallback: google-generativeai AI Studio SDK (GEMINI_API_KEY).
+Historically wrapped Gemini (Vertex AI REST + google-generativeai SDK). Now a thin
+compatibility shim that delegates to ``agents.claude_client`` so the ~10 callers that
+import this module keep working unchanged after the Gemini → Claude migration.
 
-No dependency on google-genai package — uses google.auth + requests only.
+Public API preserved for callers:
+    get_model_name()            -> str
+    generate_text(...)          -> str
+    generate_with_parts(...)    -> str   (text + image; vision)
+    make_image_part(...)        -> dict
+    generate_grounded(...)      -> str   (web-grounded; flag-gated via claude_client)
 """
-import base64
 import logging
-import os
-import time
 
-import requests as _requests
+from . import claude_client
 
 logger = logging.getLogger(__name__)
 
-_vertex_creds_cache: dict = {'data': None, 'expires_at': 0.0}
+# Default max_tokens preserved from the historical Claude layer default.
+_DEFAULT_MAX_TOKENS = 4000
 
 
 def get_model_name() -> str:
-    """Return plain model name (strips gemini/ or vertex_ai/ prefix)."""
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
-    for prefix in ("gemini/", "vertex_ai/"):
-        if model.startswith(prefix):
-            model = model[len(prefix):]
-    return model
+    """Return the active model name (now the Claude default)."""
+    return claude_client.DEFAULT_MODEL
 
 
-def _vertex_bearer() -> tuple[str, str]:
-    """Return (bearer_token, project_id), refreshing credentials when near expiry."""
-    import google.auth
-    import google.auth.transport.requests
-
-    cache = _vertex_creds_cache
-    now = time.time()
-    if cache['data'] is None or now >= cache['expires_at'] - 60:
-        creds, detected_project = google.auth.default(
-            scopes=['https://www.googleapis.com/auth/cloud-platform']
-        )
-        req = google.auth.transport.requests.Request()
-        creds.refresh(req)
-        expiry = getattr(creds, 'expiry', None)
-        cache['data'] = (creds, detected_project)
-        cache['expires_at'] = expiry.timestamp() if expiry else (now + 3600)
-
-    creds, project = cache['data']
-    return creds.token, project
-
-
-def _vertex_post(
-    parts: list,
-    *,
-    json_mode: bool = False,
-    temperature: float | None = None,
-    use_search: bool = False,
-) -> str:
-    """POST to Vertex AI generateContent endpoint. `parts` is a list of REST part dicts."""
-    project = os.environ.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT", "")
-    location = os.environ.get("VERTEX_LOCATION") or os.environ.get("VERTEXAI_LOCATION", "us-central1")
-    model = get_model_name()
-
-    token, detected_project = _vertex_bearer()
-    project = project or detected_project
-
-    endpoint = (
-        f"https://{location}-aiplatform.googleapis.com/v1"
-        f"/projects/{project}/locations/{location}"
-        f"/publishers/google/models/{model}:generateContent"
-    )
-
-    body: dict = {"contents": [{"role": "user", "parts": parts}]}
-
-    gen_cfg: dict = {}
-    if json_mode:
-        gen_cfg["responseMimeType"] = "application/json"
-    if temperature is not None:
-        gen_cfg["temperature"] = temperature
-    if gen_cfg:
-        body["generationConfig"] = gen_cfg
-
-    if use_search:
-        body["tools"] = [{"googleSearch": {}}]
-
-    resp = _requests.post(
-        endpoint,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json=body,
-        timeout=120,
-    )
-    resp.raise_for_status()
-    return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-
-
-def _ai_studio_generate(prompt: str, *, json_mode: bool = False, temperature: float | None = None) -> str:
-    """Fallback text generation via google-generativeai AI Studio SDK."""
-    import google.generativeai as genai  # noqa: deprecated but available
-
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("Neither VERTEX_PROJECT nor GEMINI_API_KEY is set.")
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(get_model_name())
-
-    cfg: dict = {}
-    if json_mode:
-        cfg["response_mime_type"] = "application/json"
-    if temperature is not None:
-        cfg["temperature"] = temperature
-    # Disable thinking mode — flash-lite/2.0-flash don't need it and 2.5-flash thinking
-    # costs 6x more per token. Always off for background/automated tasks.
-
-    response = model.generate_content(prompt, generation_config=cfg or None)
-    return response.text.strip() if response and response.text else ""
-
-
-# ── Public API ──────────────────────────────────────────────────────────────────
-
-def generate_text(prompt: str, *, json_mode: bool = False, temperature: float | None = None) -> str:
-    """Call Gemini with a text prompt. Returns the response text."""
-    vertex_project = os.environ.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT", "")
-    if vertex_project:
-        logger.debug("[Gemini] Using Vertex AI REST — project=%s", vertex_project)
-        return _vertex_post([{"text": prompt}], json_mode=json_mode, temperature=temperature)
-    logger.debug("[Gemini] Using AI Studio SDK (fallback)")
-    return _ai_studio_generate(prompt, json_mode=json_mode, temperature=temperature)
-
-
-def _ai_studio_generate_multimodal(parts, *, json_mode=False, temperature=None):
-    import base64 as b64, io, google.generativeai as genai
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("No GEMINI_API_KEY set")
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(get_model_name())
-    cfg = {}
-    if json_mode: cfg["response_mime_type"] = "application/json"
-    if temperature is not None: cfg["temperature"] = temperature
-    cp = []
-    for p in parts:
-        if "text" in p:
-            cp.append(p["text"])
-        elif "inlineData" in p:
-            import PIL.Image
-            cp.append(PIL.Image.open(io.BytesIO(b64.b64decode(p["inlineData"]["data"]))))
-    r = model.generate_content(cp, generation_config=cfg or None)
-    return r.text.strip() if r and r.text else ""
-
-
-def generate_with_parts(parts: list, *, json_mode: bool = False, temperature: float | None = None) -> str:
-    """
-    Call Gemini with mixed content (text + images).
-    `parts` may be strings or dicts with keys 'text' or 'inlineData'.
-    Strings are converted to {"text": ...} automatically.
-    """
-    normalised = [{"text": p} if isinstance(p, str) else p for p in parts]
-    vertex_project = os.environ.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT", "")
-    if vertex_project:
-        return _vertex_post(normalised, json_mode=json_mode, temperature=temperature)
-    return _ai_studio_generate_multimodal(normalised, json_mode=json_mode, temperature=temperature)
+def generate_text(prompt: str, *, json_mode: bool = False, temperature: float | None = None, **_ignored) -> str:
+    """Text completion. Gemini-only kwargs (json_mode/temperature/top_p/...) are accepted
+    for signature compatibility but ignored — Claude's messages API rejects them."""
+    logger.debug("[LLM] generate_text via Claude (model=%s)", claude_client.DEFAULT_MODEL)
+    return claude_client.complete(prompt, max_tokens=_DEFAULT_MAX_TOKENS)
 
 
 def make_image_part(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
-    """Build an inlineData part dict for generate_with_parts()."""
-    return {"inlineData": {"mimeType": mime_type, "data": base64.b64encode(image_bytes).decode()}}
+    """Build a normalized image part for generate_with_parts()."""
+    return {"bytes": image_bytes, "media_type": mime_type}
+
+
+def generate_with_parts(parts: list, *, json_mode: bool = False, temperature: float | None = None, **_ignored) -> str:
+    """Multimodal completion (text + image). Splits `parts` into the text prompt and the
+    first image part, then delegates to claude_client.complete_vision().
+
+    Accepts parts as strings (text) or dicts. Supported image dict shapes:
+      - {"bytes": <raw>, "media_type": <mime>}            (make_image_part)
+      - {"inlineData": {"data": <b64>, "mimeType": ...}}  (legacy REST shape)
+    """
+    import base64
+
+    text_chunks: list[str] = []
+    image: dict | None = None
+
+    for p in parts:
+        if isinstance(p, str):
+            text_chunks.append(p)
+        elif "text" in p:
+            text_chunks.append(p["text"])
+        elif "bytes" in p:
+            if image is None:
+                image = {"bytes": p["bytes"], "media_type": p.get("media_type", "image/jpeg")}
+        elif "inlineData" in p:
+            if image is None:
+                image = {
+                    "bytes": base64.b64decode(p["inlineData"]["data"]),
+                    "media_type": p["inlineData"].get("mimeType", "image/jpeg"),
+                }
+
+    text = "\n".join(text_chunks)
+
+    if image is None:
+        # No image present — fall back to plain text completion.
+        return claude_client.complete(text, max_tokens=_DEFAULT_MAX_TOKENS)
+
+    logger.debug("[LLM] generate_with_parts (vision) via Claude (model=%s)", claude_client.DEFAULT_MODEL)
+    return claude_client.complete_vision(
+        text, image["bytes"], media_type=image["media_type"], max_tokens=_DEFAULT_MAX_TOKENS
+    )
 
 
 def generate_grounded(prompt: str) -> str:
-    """Call Gemini with Google Search Grounding (Vertex AI only; text-only fallback otherwise)."""
-    vertex_project = os.environ.get("VERTEX_PROJECT") or os.environ.get("VERTEXAI_PROJECT", "")
-    if vertex_project:
-        return _vertex_post([{"text": prompt}], use_search=True)
-    return _ai_studio_generate(prompt)
+    """Web-grounded completion. Delegates to claude_client.complete_grounded(),
+    which uses Claude's web_search tool when ENABLE_WEB_GROUNDING is set and
+    otherwise falls back to a plain completion (zero search cost)."""
+    return claude_client.complete_grounded(prompt)

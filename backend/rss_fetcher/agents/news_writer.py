@@ -12,7 +12,6 @@ JSON output, causing silent fallthrough to the garbage static HTML fallback.
 import json
 import logging
 import re
-from django.conf import settings
 from .tools import configure_gemini, call_vertex_ai, fetch_google_news_rss, classify_sport
 
 _style_guide_cache: dict = {'content': None}
@@ -40,11 +39,6 @@ def invalidate_style_guide_cache():
     _style_guide_cache['content'] = None
 
 logger = logging.getLogger(__name__)
-
-# Models tried in order. Plain GenerativeModel — NO grounding tools in the writer.
-# Grounding tools interfere with strict JSON output and are the root cause of the
-# old pipeline's silent fallback to static HTML.
-_WRITER_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
 
 _WRITER_PROMPT = """\
 You are an expert sports journalist writing for a major Malayalam-language sports publication in India.
@@ -189,26 +183,15 @@ class NewsWriterAgent:
     # ── Step 2: Write ─────────────────────────────────────────────────────────
 
     def _write_with_vertex(self, topic: str, context: dict):
-        """
-        Primary write path: Vertex AI REST API via the GCP service account.
-        No free-tier quota — bypasses the AI Studio RPM/daily limits entirely.
-        """
-        configured_model = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')
-        # Strip litellm prefix: "vertex_ai/gemini-2.5-flash" → "gemini-2.5-flash"
-        if '/' in configured_model:
-            configured_model = configured_model.split('/', 1)[1]
-        models_to_try = list(dict.fromkeys([configured_model] + _WRITER_MODELS))
+        """Primary write path via the shared Claude client (call_vertex_ai)."""
         prompt = self._build_prompt(topic, context)
-
-        for model_name in models_to_try:
-            text = call_vertex_ai(prompt, model=model_name)
-            if text:
-                result = self._parse_response(text, topic, context)
-                if result:
-                    logger.info('NewsWriterAgent: Malayalam article written via Vertex AI (%s)', model_name)
-                    return result
-                logger.warning('NewsWriterAgent: Vertex AI %s returned unparseable/short response', model_name)
-            # call_vertex_ai already logged the failure — try next model
+        text = call_vertex_ai(prompt)
+        if text:
+            result = self._parse_response(text, topic, context)
+            if result:
+                logger.info('NewsWriterAgent: Malayalam article written via Claude')
+                return result
+            logger.warning('NewsWriterAgent: Claude returned unparseable/short response')
         return None
 
     def _write_with_context(self, genai, topic: str, context: dict):

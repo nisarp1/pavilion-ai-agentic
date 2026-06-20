@@ -69,6 +69,8 @@ const navSections = [
       { path: '/feeds', label: 'All Feeds', icon: FiRss, exact: true },
       { path: '/football-feeds', label: '⚽ Football Feeds', icon: FiRss, matchStart: true },
       { path: '/cricket-feeds', label: '🏏 Cricket Feeds', icon: FiRss, matchStart: true },
+      { path: '/instagram-feeds', label: '📸 Instagram Feeds', icon: FiRss, matchStart: true },
+      { path: '/feed-sources', label: 'Feed Sources', icon: FiLayers, matchStart: true },
     ],
   },
   {

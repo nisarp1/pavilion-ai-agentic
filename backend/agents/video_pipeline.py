@@ -198,8 +198,8 @@ class VideoProductionPipeline:
     """
 
     def __init__(self):
-        from agents.gemini_client import get_model_name as _get_gemini_model_name
-        self.model_name = _get_gemini_model_name()
+        from agents.gemini_client import get_model_name as _get_model_name
+        self.model_name = _get_model_name()
         logger.info(f"VideoProductionPipeline initialised — model: {self.model_name}")
 
     # ── Script Writer ──────────────────────────────────────────────────────────

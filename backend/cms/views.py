@@ -643,7 +643,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
             "D_ID_API_KEY": check_key("D_ID_API_KEY"),
             "GOOGLE_CREDENTIALS_JSON": check_key("GOOGLE_CREDENTIALS_JSON"),
             "VERCEL_BLOB_READ_WRITE_TOKEN": check_key("VERCEL_BLOB_READ_WRITE_TOKEN"),
-            "GEMINI_API_KEY": check_key("GEMINI_API_KEY"),
+            "ANTHROPIC_API_KEY": check_key("ANTHROPIC_API_KEY"),
             "CREATOMATE_API_KEY": check_key("CREATOMATE_API_KEY"),
             "RAILWAY_ENVIRONMENT": os.getenv("RAILWAY_ENVIRONMENT", "Not detected"),
             "DATABASE_URL_DETECTED": bool(os.getenv("DATABASE_URL")),
@@ -2536,6 +2536,7 @@ def _serialize_handle(handle, include_counts=True):
         'id': handle.id,
         'name': handle.name,
         'x_handle': handle.x_handle,
+        'platform': getattr(handle, 'platform', 'twitter'),
         'credibility_tier': handle.credibility_tier,
         'category': handle.category,
         'is_active': handle.is_active,
@@ -2562,8 +2563,10 @@ class FeedsListView(APIView):
         from .models import SocialMediaHandle
         qs = SocialMediaHandle.objects.filter(is_active=True).order_by('credibility_tier', 'name')
         category = request.query_params.get('category', '').strip().lower()
-        if category in ('football', 'cricket', 'general'):
-            qs = qs.filter(sport=category)
+        if category == 'instagram':
+            qs = qs.filter(platform='instagram')
+        elif category in ('football', 'cricket', 'general'):
+            qs = qs.filter(sport=category, platform='twitter')
         return Response({'handles': [_serialize_handle(h) for h in qs]})
 
     def post(self, request):
@@ -2593,9 +2596,14 @@ class FeedArticlesView(APIView):
     def get(self, request, x_handle):
         from .models import Article
         limit = min(int(request.query_params.get('limit', 20)), 100)
+        platform = request.query_params.get('platform', 'twitter').strip().lower()
+        qs = Article.objects.filter(source_handle__iexact=f"@{x_handle}")
+        if platform == 'instagram':
+            qs = qs.filter(source_url__icontains='instagram.com')
+        else:
+            qs = qs.exclude(source_url__icontains='instagram.com')
         articles = (
-            Article.objects
-            .filter(source_handle__iexact=f"@{x_handle}")
+            qs
             .select_related('fact_check')
             .order_by(F('published_at').desc(nulls_last=True))[:limit]
         )
@@ -2886,27 +2894,59 @@ class BreakingQueueView(APIView):
 
     def get(self, request):
         from .models import SocialMediaHandle
-        from django.db.models import OuterRef, Subquery
+        from django.utils import timezone
+        from datetime import timedelta
 
-        sport_filter = request.query_params.get('sport', '').lower()
+        tab = request.query_params.get('tab', '').lower()
+        now = timezone.now()
+        last_24h = now - timedelta(hours=24)
+        last_3h = now - timedelta(hours=3)
 
-        qs = (
-            Article.objects
-            .filter(status='fetched')
-            .select_related('fact_check')
-            .order_by('-traction_score', '-created_at')
-        )
+        base_qs = Article.objects.filter(status='fetched').select_related('fact_check')
 
-        if sport_filter in ('football', 'cricket'):
-            handles_in_sport = SocialMediaHandle.objects.filter(
-                sport=sport_filter
-            ).values_list('x_handle', flat=True)
-            # source_handle stored as "@Handle" — match case-insensitively
-            qs = qs.filter(
-                source_handle__in=[f'@{h}' for h in handles_in_sport]
+        def _breaking_qs():
+            tier1_handles = list(
+                SocialMediaHandle.objects.filter(credibility_tier=1)
+                .values_list('x_handle', flat=True)
             )
+            return base_qs.filter(
+                source_handle__in=[f'@{h}' for h in tier1_handles],
+                title__icontains='breaking',
+            ).order_by('-published_at')
 
+        def _hot_qs():
+            return base_qs.filter(
+                published_at__gte=last_3h,
+                traction_score__gt=100,
+            ).order_by('-traction_score')
+
+        def _trending_qs():
+            return base_qs.filter(
+                published_at__gte=last_24h,
+            ).order_by('-traction_score')
+
+        def _sport_qs(sport):
+            handles = list(
+                SocialMediaHandle.objects.filter(sport=sport)
+                .values_list('x_handle', flat=True)
+            )
+            return base_qs.filter(
+                source_handle__in=[f'@{h}' for h in handles],
+                published_at__gte=last_24h,
+            ).order_by('-traction_score')
+
+        tab_map = {
+            'breaking': _breaking_qs,
+            'hot':      _hot_qs,
+            'trending': _trending_qs,
+            'football': lambda: _sport_qs('football'),
+            'cricket':  lambda: _sport_qs('cricket'),
+        }
+
+        qs = tab_map[tab]() if tab in tab_map else _trending_qs()
         qs = qs[:50]
+
+        tab_counts = {name: fn().count() for name, fn in tab_map.items()}
 
         result = []
         for a in qs:
@@ -2931,7 +2971,7 @@ class BreakingQueueView(APIView):
                 'time_ago': _time_ago(a.published_at or a.created_at),
                 'fact_check': fc,
             })
-        return Response({'count': len(result), 'results': result})
+        return Response({'count': len(result), 'results': result, 'tab_counts': tab_counts})
 
 
 class BreakingQueueUrgencyView(APIView):
@@ -2980,3 +3020,269 @@ class TwitterHealthCheckView(APIView):
         from workers.tasks import check_twitter_auth_health
         task = check_twitter_auth_health.delay()
         return Response({'status': 'queued', 'task_id': task.id})
+
+
+class SystemStatusView(APIView):
+    permission_classes = []
+    def get(self, request):
+        import redis, os
+        try:
+            r = redis.from_url(os.environ.get('REDIS_URL', 'redis://redis:6379/0'))
+            low_balance = r.get('socialdata_low_balance')
+            frozen_since = r.get('socialdata_frozen_since')
+            return Response({
+                'traction_frozen': bool(low_balance),
+                'frozen_since': frozen_since.decode() if frozen_since else None,
+            })
+        except Exception:
+            return Response({'traction_frozen': False, 'frozen_since': None})
+
+
+# ── FeedHandle API ─────────────────────────────────────────────────────────────
+
+class FeedHandleListView(APIView):
+    """
+    GET  /api/feeds/handles/?category=football  — list tenant's handles
+    POST /api/feeds/handles/                    — add a handle
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import FeedHandle
+        category = request.query_params.get('category', '').strip().lower()
+        qs = FeedHandle.objects.filter(tenant=request.tenant)
+        if category in ('football', 'cricket', 'general'):
+            qs = qs.filter(category=category)
+        data = [
+            {'handle': h.handle, 'label': h.label, 'category': h.category,
+             'added_at': h.added_at.isoformat()}
+            for h in qs
+        ]
+        return Response({'handles': data})
+
+    def post(self, request):
+        from .models import FeedHandle
+        import re
+        handle = (request.data.get('handle') or '').strip().lstrip('@')
+        label = (request.data.get('label') or '').strip() or f'@{handle}'
+        category = (request.data.get('category') or 'general').strip().lower()
+        if not handle or not re.match(r'^[A-Za-z0-9_]{1,50}$', handle):
+            return Response({'error': 'invalid handle'}, status=400)
+        if category not in ('football', 'cricket', 'general'):
+            return Response({'error': 'invalid category'}, status=400)
+        obj, created = FeedHandle.objects.get_or_create(
+            tenant=request.tenant, handle=handle, category=category,
+            defaults={'label': label},
+        )
+        return Response(
+            {'handle': obj.handle, 'label': obj.label, 'category': obj.category,
+             'added_at': obj.added_at.isoformat()},
+            status=201 if created else 200,
+        )
+
+
+class FeedHandleDeleteView(APIView):
+    """DELETE /api/feeds/handles/{handle}/?category=football — remove a handle"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, handle):
+        from .models import FeedHandle
+        category = request.query_params.get('category', '').strip().lower()
+        qs = FeedHandle.objects.filter(tenant=request.tenant, handle=handle)
+        if category in ('football', 'cricket', 'general'):
+            qs = qs.filter(category=category)
+        deleted, _ = qs.delete()
+        if not deleted:
+            return Response({'error': 'not found'}, status=404)
+        return Response(status=204)
+
+
+# ── FeedCategory API ───────────────────────────────────────────────────────────
+
+def _serialize_feed_category(cat):
+    return {'id': cat.id, 'name': cat.name, 'slug': cat.slug,
+            'color': cat.color, 'position': cat.position}
+
+def _serialize_feed_handle_full(h):
+    cat = h.category_obj
+    return {
+        'id': h.id,
+        'handle': h.handle,
+        'label': h.label,
+        'category': h.category,
+        'category_obj': _serialize_feed_category(cat) if cat else None,
+        'position': h.position,
+        'added_at': h.added_at.isoformat(),
+    }
+
+def _auto_seed_categories(tenant):
+    """Create Football + Cricket categories if tenant has handles but no categories."""
+    from .models import FeedCategory
+    if FeedCategory.objects.filter(tenant=tenant).exists():
+        return
+    defaults = [
+        {'name': 'Football', 'slug': 'football', 'color': '#22c55e', 'position': 0},
+        {'name': 'Cricket',  'slug': 'cricket',  'color': '#f59e0b', 'position': 1},
+    ]
+    for d in defaults:
+        FeedCategory.objects.get_or_create(tenant=tenant, slug=d['slug'], defaults={**d, 'tenant': tenant})
+
+
+class FeedCategoryListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import FeedCategory
+        _auto_seed_categories(request.tenant)
+        cats = FeedCategory.objects.filter(tenant=request.tenant)
+        return Response({'categories': [_serialize_feed_category(c) for c in cats]})
+
+    def post(self, request):
+        from .models import FeedCategory
+        import re
+        name = (request.data.get('name') or '').strip()
+        color = (request.data.get('color') or '#6366f1').strip()
+        if not name:
+            return Response({'error': 'name required'}, status=400)
+        slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+        pos = FeedCategory.objects.filter(tenant=request.tenant).count()
+        cat, created = FeedCategory.objects.get_or_create(
+            tenant=request.tenant, slug=slug,
+            defaults={'name': name, 'color': color, 'position': pos},
+        )
+        return Response(_serialize_feed_category(cat), status=201 if created else 200)
+
+
+class FeedCategoryDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get(self, request, pk):
+        from .models import FeedCategory
+        return get_object_or_404(FeedCategory, pk=pk, tenant=request.tenant)
+
+    def patch(self, request, pk):
+        cat = self._get(request, pk)
+        if 'name' in request.data:
+            cat.name = request.data['name'].strip() or cat.name
+        if 'color' in request.data:
+            cat.color = request.data['color'].strip() or cat.color
+        cat.save(update_fields=['name', 'color'])
+        return Response(_serialize_feed_category(cat))
+
+    def delete(self, request, pk):
+        cat = self._get(request, pk)
+        cat.handles.update(category_obj=None)
+        cat.delete()
+        return Response(status=204)
+
+
+class FeedCategoryReorderView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request):
+        from .models import FeedCategory
+        ids = request.data.get('ids', [])
+        for pos, pk in enumerate(ids):
+            FeedCategory.objects.filter(pk=pk, tenant=request.tenant).update(position=pos)
+        return Response({'status': 'ok'})
+
+
+# ── Updated FeedHandle API (replaces earlier simple views) ─────────────────────
+
+class FeedHandleListCreateView(APIView):
+    """
+    GET  /api/feeds/handles/             — all handles (optionally filtered by category_slug)
+    POST /api/feeds/handles/             — add a handle
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import FeedHandle
+        slug = request.query_params.get('category_slug', '').strip().lower()
+        cat_str = request.query_params.get('category', '').strip().lower()
+        qs = FeedHandle.objects.filter(tenant=request.tenant).select_related('category_obj')
+        if slug:
+            qs = qs.filter(category_obj__slug=slug)
+        elif cat_str in ('football', 'cricket', 'general'):
+            qs = qs.filter(category=cat_str)
+        return Response({'handles': [_serialize_feed_handle_full(h) for h in qs]})
+
+    def post(self, request):
+        from .models import FeedHandle, FeedCategory
+        import re
+        handle = (request.data.get('handle') or '').strip().lstrip('@')
+        label = (request.data.get('label') or '').strip() or f'@{handle}'
+        category = (request.data.get('category') or 'general').strip().lower()
+        category_id = request.data.get('category_id')
+        if not handle or not re.match(r'^[A-Za-z0-9_]{1,50}$', handle):
+            return Response({'error': 'invalid handle'}, status=400)
+        if category not in ('football', 'cricket', 'general'):
+            category = 'general'
+        cat_obj = None
+        if category_id:
+            cat_obj = FeedCategory.objects.filter(pk=category_id, tenant=request.tenant).first()
+        pos = FeedHandle.objects.filter(tenant=request.tenant).count()
+        obj, created = FeedHandle.objects.get_or_create(
+            tenant=request.tenant, handle=handle, category=category,
+            defaults={'label': label, 'category_obj': cat_obj, 'position': pos},
+        )
+        return Response(_serialize_feed_handle_full(obj), status=201 if created else 200)
+
+
+class FeedHandleDetailView(APIView):
+    """
+    PATCH  /api/feeds/handles/{handle}/   — assign category_id and/or position
+    DELETE /api/feeds/handles/{handle}/   — remove (optionally filter by category)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, handle):
+        from .models import FeedHandle, FeedCategory
+        category = request.query_params.get('category', '').strip().lower()
+        qs = FeedHandle.objects.filter(tenant=request.tenant, handle=handle)
+        if category in ('football', 'cricket', 'general'):
+            qs = qs.filter(category=category)
+        obj = qs.first()
+        if not obj:
+            return Response({'error': 'not found'}, status=404)
+        if 'category_id' in request.data:
+            cid = request.data['category_id']
+            if cid is None:
+                obj.category_obj = None
+            else:
+                obj.category_obj = FeedCategory.objects.filter(pk=cid, tenant=request.tenant).first()
+        if 'position' in request.data:
+            obj.position = int(request.data['position'])
+        obj.save(update_fields=['category_obj', 'position'])
+        return Response(_serialize_feed_handle_full(obj))
+
+    def delete(self, request, handle):
+        from .models import FeedHandle
+        category = request.query_params.get('category', '').strip().lower()
+        qs = FeedHandle.objects.filter(tenant=request.tenant, handle=handle)
+        if category in ('football', 'cricket', 'general'):
+            qs = qs.filter(category=category)
+        deleted, _ = qs.delete()
+        if not deleted:
+            return Response({'error': 'not found'}, status=404)
+        return Response(status=204)
+
+
+class FeedHandleReorderView(APIView):
+    """PATCH /api/feeds/handles/reorder/ — bulk reorder: {items: [{id, position, category_id}]}"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request):
+        from .models import FeedHandle, FeedCategory
+        items = request.data.get('items', [])
+        for item in items:
+            qs = FeedHandle.objects.filter(pk=item['id'], tenant=request.tenant)
+            updates = {'position': int(item.get('position', 0))}
+            if 'category_id' in item:
+                cid = item['category_id']
+                updates['category_obj'] = (
+                    FeedCategory.objects.filter(pk=cid, tenant=request.tenant).first()
+                    if cid else None
+                )
+            qs.update(**updates)
+        return Response({'status': 'ok'})

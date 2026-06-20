@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       host: '0.0.0.0',
+      allowedHosts: ['newsai.pavilionend.in', 'localhost'],
       port: 3001,
       proxy: {
         '/api': {

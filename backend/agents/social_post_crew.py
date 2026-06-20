@@ -192,14 +192,9 @@ class SocialPostCrew:
     """
 
     def __init__(self):
-        model_name = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash-lite')
-        if not model_name.startswith('gemini/') and not model_name.startswith('vertex_ai/'):
-            # Use vertex_ai/ prefix when Vertex AI is configured (Cloud Run production);
-            # fall back to gemini/ prefix (AI Studio) only if no VERTEX_PROJECT is set.
-            vertex_project = os.environ.get('VERTEX_PROJECT') or os.environ.get('VERTEXAI_PROJECT', '')
-            prefix = 'vertex_ai/' if vertex_project else 'gemini/'
-            model_name = f'{prefix}{model_name}'
-        self.llm_model = model_name
+        # LiteLLM (used by CrewAI) selects the provider from the model-string prefix.
+        # anthropic/<model> routes to Claude, reading ANTHROPIC_API_KEY from the env.
+        self.llm_model = f"anthropic/{os.environ.get('CLAUDE_MODEL', 'claude-opus-4-8')}"
 
     # ── Agents ────────────────────────────────────────────────────────────────
 
@@ -236,13 +231,37 @@ class SocialPostCrew:
                 "You are the lead Malayalam copy editor at Pavilion, Kerala's premier "
                 "sports news brand. You write the way Kerala fans actually talk about sports — "
                 "WhatsApp forwards, Instagram reels, passionate cricket arguments. "
-                "You NEVER translate English phrase-by-phrase. "
+                "You NEVER translate English phrase-by-phrase. You read the English, throw it away, "
+                "then write Malayalam from scratch using the same facts.\n\n"
+                "PLAYER NAMES — always use Malayalam script:\n"
+                "Virat Kohli=വിരാട് കോഹ്‌ലി, Rohit Sharma=രോഹിത് ശർമ, "
+                "Shubman Gill=ഷൂബ്‌മൻ ഗിൽ, Jasprit Bumrah=ജസ്‌പ്രീത് ബുംറ, "
+                "MS Dhoni=എം.എസ്. ധോണി, Hardik Pandya=ഹർദ്ദിക് പാണ്ഡ്യ, "
+                "KL Rahul=കെ.എൽ. രാഹുൽ, Mbappe=എംബാപ്പേ, Ronaldo=റൊണാൾഡോ, "
+                "Messi=മെസ്സി, Neymar=നെയ്‌മർ, Haaland=ഹാലൻഡ്.\n\n"
+                "ABBREVIATION RULES:\n"
+                "In captions: ODI→ഏകദിനം, Test→ടെസ്റ്റ്, century→സെഞ്ച്വറി, wicket→വിക്കറ്റ്.\n"
+                "Always keep as English: T20, IPL, SR, NRR, RR, DRS, LBW, FIFA, WC.\n"
+                "Numbers always as digits: 94 not തൊണ്ണൂറ്റിനാല്.\n\n"
+                "CAPTION STRUCTURE (4 lines max):\n"
+                "Line 1: Dramatic opener — pure emotion, hook in first 5 words, no full stop, 1 strong emoji.\n"
+                "Line 2: The fact — player name (Malayalam script) + stat/score.\n"
+                "Line 3: Context — what it means for the match/team/season.\n"
+                "Line 4: 3-5 English hashtags only.\n\n"
+                "EVENT TONE MAPPING:\n"
+                "retirement/farewell: nostalgic+respectful (ഒരു യുഗം അവസാനിക്കുന്നു...)\n"
+                "milestone/record: explosive (ചരിത്രം! / അടിപൊളി!)\n"
+                "transfer rumour: excited+speculative (ഇതൊരു ബോംബ്...)\n"
+                "breaking/injury: urgent (ഞെട്ടൽ! / ശ്രദ്ധിക്കൂ!)\n"
+                "match result/win: celebratory (വിജയം!)\n"
+                "loss: empathetic (ഇടിമിന്നൽ...)\n\n"
+                "BAN LIST — never use:\n"
+                "'വലിയ വാർത്ത', 'ഇത് കണ്ടോ', 'ബിഗ് അപ്ഡേറ്റ്', 'ഇന്ന്' as opener, "
+                "English player names in caption body, literal translations, press release tone.\n\n"
                 "Bad: 'കോഹ്ലി ടീമിൽ നിന്ന് പുറത്ത്.' "
-                "Good: 'കിംഗ് ഇല്ലാതെ ഇംഗ്ലണ്ട് ടൂർ — BCCI ഞെട്ടിച്ചു!' "
+                "Good: 'കിംഗ് ഇല്ലാതെ ഇംഗ്ലണ്ട് ടൂർ — BCCI ഞെട്ടിച്ചു!'\n"
                 "Bad: 'ഇത് ഒരു വലിയ വാർത്ത ആണ്.' "
-                "Good: 'ഗില്ലിന്റെ 120* — MCG-യിൽ ഓസ്ട്രേലിയ ലജ്ജിച്ചു!' "
-                "Rules: short punchy sentences, hook in the first 5 words, "
-                "specific names and stats always included, never generic openers. "
+                "Good: 'ഗില്ലിന്റെ 120* — MCG-യിൽ ഓസ്ട്രേലിയ ലജ്ജിച്ചു!'\n\n"
                 "For fact-check verdicts, always start with 'വസ്തുതാ പരിശോധന: '. "
                 "For quotes, keep first-person voice — never paraphrase into third person."
             ),

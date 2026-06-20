@@ -36,8 +36,6 @@ logger = logging.getLogger(__name__)
 # Google Cloud Text-to-Speech — imported lazily inside tasks that use it (gRPC init is slow).
 TTS_AVAILABLE = True  # assume available; actual import happens inside tasks
 
-GEMINI_MODEL = getattr(settings, 'GEMINI_MODEL', 'gemini-2.0-flash')  # 2.0-flash: no thinking overhead, 3x cheaper
-
 
 def fetch_featured_image_from_url(article_url):
     """
@@ -525,9 +523,9 @@ def generate_article_with_gemini(article, mode='core'):
 
         prompt += "\nReturn the JSON response with all fields filled."
 
-        # Generate content via Vertex AI / AI Studio
+        # Generate content via the shared Claude client
         try:
-            logger.info(f"Calling Gemini API with model: {GEMINI_MODEL}")
+            logger.info("Calling LLM (Claude) for content generation")
             from agents.gemini_client import generate_text as _gemini_text
             generated_text = _gemini_text(prompt, json_mode=True)
             logger.info("Gemini API call successful")
@@ -1717,6 +1715,7 @@ def fact_check_article_task(self, article_id):
 
 def _fetch_tweets_for_handle(handle):
     """Fetch recent tweets via SocialData API (primary) or RSSHub (fallback)."""
+    import re
     import xml.etree.ElementTree as ET
     import requests as _requests
     from django.utils import timezone
@@ -1730,13 +1729,24 @@ def _fetch_tweets_for_handle(handle):
 
     socialdata_key = os.environ.get('SOCIALDATA_API_KEY', '')
 
+    if getattr(handle, 'platform', 'twitter') == 'instagram':
+        return 0  # Instagram not supported via SocialData API
+
     # ── Primary: SocialData API ───────────────────────────────────────────────
     if socialdata_key:
         try:
             search_url = (
                 f"https://api.socialdata.tools/twitter/search"
-                f"?query=from:{handle.x_handle}&type=Latest"
+                f"?query=from:{handle.x_handle}&type=Latest&count=20"
             )
+            # Only fetch tweets newer than the last seen — avoids re-fetching (and re-billing) old tweets.
+            # last_tweet_id may be a raw ID or a full URL (set by RSSHub fallback); extract numeric ID.
+            raw_last = handle.last_tweet_id or ''
+            since_id_match = re.search(r'/status/(\d+)', raw_last)
+            since_id = since_id_match.group(1) if since_id_match else (raw_last if raw_last.isdigit() else '')
+            if since_id:
+                search_url += f"&since_id={since_id}"
+            logger.info(f'[SocialData] fetch URL for @{handle.x_handle}: {search_url}')
             resp = _requests.get(
                 search_url,
                 headers={'Authorization': f'Bearer {socialdata_key}', 'Accept': 'application/json'},
@@ -1747,10 +1757,14 @@ def _fetch_tweets_for_handle(handle):
             tweets = data.get('tweets', [])
 
             latest_guid = handle.last_tweet_id or ''
+            batch_max_id = ''  # tracks max tweet ID seen in this batch, including duplicates
             created = 0
 
             for tweet in tweets:
                 tweet_id = str(tweet.get('id_str', '') or tweet.get('id', '') or '')
+                # Advance batch_max_id for every tweet regardless of whether we store it
+                if tweet_id and (not batch_max_id or tweet_id > batch_max_id):
+                    batch_max_id = tweet_id
                 # Skip retweets (retweeted_status present means it's an RT)
                 if tweet.get('retweeted_status'):
                     continue
@@ -1796,10 +1810,16 @@ def _fetch_tweets_for_handle(handle):
                     f"via SocialData (traction={traction})"
                 )
 
-                if tweet_id and (not latest_guid or tweet_id > latest_guid):
-                    latest_guid = tweet_id
+            # Advance last_tweet_id to the highest ID seen in this batch — even if
+            # every tweet was a duplicate. This ensures since_id always moves forward
+            # and we never re-fetch (and re-bill) the same tweets on the next poll.
+            if batch_max_id and (not latest_guid or batch_max_id > latest_guid):
+                latest_guid = batch_max_id
 
-            handle.last_tweet_id = latest_guid
+            # Always store numeric ID only, never full URL
+            raw_id = str(latest_guid)
+            numeric_match = re.search(r'(\d{15,})', raw_id)
+            handle.last_tweet_id = numeric_match.group(1) if numeric_match else raw_id
             handle.last_polled_at = timezone.now()
             handle.save(update_fields=['last_polled_at', 'last_tweet_id'])
             logger.info(
@@ -1864,7 +1884,10 @@ def _fetch_tweets_for_handle(handle):
             if guid and (not latest_guid or guid > latest_guid):
                 latest_guid = guid
 
-        handle.last_tweet_id = latest_guid
+        # Always store numeric ID only, never full URL
+        raw_id = str(latest_guid)
+        numeric_match = re.search(r'(\d{15,})', raw_id)
+        handle.last_tweet_id = numeric_match.group(1) if numeric_match else raw_id
         handle.last_polled_at = timezone.now()
         handle.save(update_fields=['last_polled_at', 'last_tweet_id'])
 
@@ -1883,8 +1906,8 @@ def poll_single_handle(x_handle):
         logger.warning(f"poll_single_handle: @{x_handle} not found or inactive")
 
 
-@shared_task
-def poll_social_handles():
+@shared_task(bind=True, queue='pavilion_docker_social')
+def poll_social_handles(self):
     """Poll active SocialMediaHandle records for new tweets according to their tier."""
     from cms.models import SocialMediaHandle
     from django.utils import timezone
@@ -2023,3 +2046,71 @@ def check_twitter_auth_health():
     except Exception as e:
         _send_alert(f'RSSHub request failed: {e}')
         return {'status': 'error', 'error': str(e)}
+
+
+@shared_task(name='workers.tasks.check_socialdata_spend')
+def check_socialdata_spend():
+    """
+    Daily balance check for the SocialData API key.
+    Logs current balance and sends a one-time email alert if it drops below $2.00.
+    Alert suppressed for 20 hours so a single low-balance day doesn't spam.
+    """
+    import requests as _requests
+    from django.core.cache import cache
+    from django.core.mail import send_mail
+
+    ALERT_EMAIL = 'nisar@milieumedia.in'
+    LOW_BALANCE_THRESHOLD = 2.00
+    ALERT_CACHE_KEY = 'socialdata_low_balance_alert_sent'
+
+    api_key = os.environ.get('SOCIALDATA_API_KEY', '')
+    if not api_key:
+        logger.info('check_socialdata_spend: SOCIALDATA_API_KEY not set, skipping.')
+        return {'status': 'skipped', 'reason': 'no_api_key'}
+
+    try:
+        resp = _requests.get(
+            'https://api.socialdata.tools/user/balance',
+            headers={'Authorization': f'Bearer {api_key}', 'Accept': 'application/json'},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        balance = float(data.get('balance_usd', data.get('balance', 0)))
+
+        logger.info(f'SocialData balance: ${balance:.4f}')
+
+        import redis as _redis
+        _r = _redis.from_url(os.environ.get('REDIS_URL', 'redis://redis:6379/0'))
+        if balance < 2.00:
+            from django.utils.timezone import now
+            _r.setex('socialdata_low_balance', 3600, '1')
+            _r.set('socialdata_frozen_since', now().strftime('%H:%M on %b %d'))
+        else:
+            _r.delete('socialdata_low_balance')
+            _r.delete('socialdata_frozen_since')
+
+        if balance < LOW_BALANCE_THRESHOLD:
+            if not cache.get(ALERT_CACHE_KEY):
+                subject = '⚠️ SocialData balance low — add funds'
+                body = (
+                    f"Your SocialData API balance has dropped below ${LOW_BALANCE_THRESHOLD:.2f}.\n\n"
+                    f"Current balance: ${balance:.4f}\n\n"
+                    f"Top up at: https://api.socialdata.tools/app/dashboard\n\n"
+                    f"Without funds the Twitter/X handle polling will stop fetching new tweets.\n\n"
+                    f"This alert will not repeat for 20 hours."
+                )
+                try:
+                    send_mail(subject, body, None, [ALERT_EMAIL], fail_silently=True)
+                    logger.warning(f'SocialData low-balance alert sent (balance=${balance:.4f})')
+                except Exception as mail_exc:
+                    logger.error(f'Failed to send SocialData balance alert: {mail_exc}')
+                cache.set(ALERT_CACHE_KEY, True, timeout=20 * 3600)
+            else:
+                logger.warning(f'SocialData balance low (${balance:.4f}) — alert already sent, suppressing.')
+
+        return {'status': 'ok', 'balance': balance}
+
+    except Exception as exc:
+        logger.error(f'check_socialdata_spend failed: {exc}', exc_info=True)
+        return {'status': 'error', 'error': str(exc)}

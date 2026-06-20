@@ -252,14 +252,10 @@ class StyleAnalyzerAgent:
     """
 
     def __init__(self, model: str = None):
-        self.model = model or os.environ.get("STYLE_ANALYZER_MODEL", "gemini-2.5-pro")
-        # Ensure correct prefix
-        if not self.model.startswith(("gemini/", "vertex_ai/")):
-            # Check if we should use Vertex AI
-            if os.environ.get("VERTEX_PROJECT"):
-                self.model = f"vertex_ai/{self.model}"
-            else:
-                self.model = f"gemini/{self.model}"
+        # Actual inference routes through agents.gemini_client → claude_client; this is
+        # only the label reported in the Style DNA metadata, so report the real model.
+        from agents import claude_client
+        self.model = model or os.environ.get("STYLE_ANALYZER_MODEL") or claude_client.DEFAULT_MODEL
         logger.info(f"[StyleAnalyzer] Initialized with model: {self.model}")
 
     def analyze(

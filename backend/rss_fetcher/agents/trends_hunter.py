@@ -443,7 +443,7 @@ class TrendsHunterAgent:
         return sports_results, all_results
 
     # -------------------------------------------------------------------------
-    # 2. Gemini Search Grounding (fixed for google-generativeai>=0.8)
+    # 2. Web-grounded search via the shared Claude client (flag-gated)
     # -------------------------------------------------------------------------
 
     def _run_gemini(self, genai) -> list[dict]:

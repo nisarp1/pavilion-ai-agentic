@@ -34,20 +34,22 @@ ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=_default_allowed_hosts)
 
 # Application definition
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
     # Third-party apps
+    'channels',
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'django_extensions',
-    
+
     # Local apps
     'tenants',
     'cms',
@@ -93,49 +95,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'pavilion_gemini.wsgi.application'
 
-# Database
-# Use SQLite for development if PostgreSQL is not available
+# Database — single DATABASE_URL-driven config for all environments
+# (Postgres on this AWS stack via compose; SQLite fallback for bare local runs).
 import dj_database_url
 
-# Database
-# Production: Cloud SQL via Unix socket (Cloud Run --add-cloudsql-instances, no VPC needed)
-# Development: DATABASE_URL env var or SQLite fallback
-if ENVIRONMENT == 'production':
-    db_instance = env('CLOUD_SQL_INSTANCE', default='')   # project:region:instance
-    db_user     = env('DB_USER',     default='pavilion_app')
-    db_password = env('DB_PASSWORD', default='')
-    db_name     = env('DB_NAME',     default='pavilion_newsai')
-
-    if db_instance:
-        # Cloud Run injects a Unix socket at /cloudsql/<instance> automatically
-        DATABASES = {
-            'default': {
-                'ENGINE':   'django.db.backends.postgresql',
-                'HOST':     f'/cloudsql/{db_instance}',
-                'NAME':     db_name,
-                'USER':     db_user,
-                'PASSWORD': db_password,
-                'CONN_MAX_AGE': 600,
-            }
-        }
-    else:
-        # Fallback for manual DATABASE_URL (local testing against prod DB)
-        DATABASES = {
-            'default': dj_database_url.config(
-                default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
-                conn_max_age=600,
-                conn_health_checks=True,
-            )
-        }
-else:
-    # Development: DATABASE_URL or SQLite
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
-    }
+DATABASES = {
+    'default': dj_database_url.config(
+        default=env('DATABASE_URL', default='sqlite:///' + str(BASE_DIR / 'db.sqlite3')),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+}
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -195,16 +165,13 @@ def _whitenoise_no_cache_index(headers, path, url):
 
 WHITENOISE_ADD_HEADERS_FUNCTION = _whitenoise_no_cache_index
 
-# CSRF trusted origins
+# CSRF trusted origins (explicit list; removed the dead ALLOWED_HOSTS-derived
+# comprehension — it only ever yielded retired wildcard hosts, filtered to nothing here)
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
     'https://newsai.pavilionend.in',
     'http://localhost:3001',
     'http://localhost:8000',
-]) + [
-    'https://' + host
-    for host in ALLOWED_HOSTS
-    if host not in ('*', 'localhost', '127.0.0.1') and not host.startswith('.')
-]
+])
 
 # Trust the X-Forwarded-Proto header for SSL (Required for Railway)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -212,8 +179,10 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# HTTPS / security headers (active when not in DEBUG mode)
-if not DEBUG:
+# HTTPS / transport security — gated on production, NOT DEBUG. Coupling these to DEBUG
+# forced SSL-redirect/HSTS the moment DEBUG was turned off, which broke admin/static
+# (nginx /static/ doesn't forward X-Forwarded-Proto) and the internal django:8000 call.
+if ENVIRONMENT == 'production':
     SECURE_HSTS_SECONDS = 31536000          # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
@@ -263,11 +232,8 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip() and (origin.startswith('http://') or origin.startswith('https://'))
 ]
 
-# Allow all Cloud Run, Vercel and Railway deployments (Preview & Production)
+# Local frontend dev origins (retired Cloud Run / Vercel / Railway regexes removed)
 CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://pavilion-frontend-.*\.a\.run\.app$",  # Cloud Run frontend services
-    r"^https://.*\.vercel\.app$",  # Vercel deployments
-    r"^https://.*\.up\.railway\.app$",  # Railway deployments
     r"^http://localhost:5173$",  # Local frontend dev (Vite)
     r"^http://localhost:3000$",  # Local frontend dev (alternative port)
 ]
@@ -330,13 +296,28 @@ CELERY_BEAT_SCHEDULE = {
     # removed from schedule — ON-DEMAND only via Refresh button in UI
     'poll-social-handles': {
         'task': 'workers.tasks.poll_social_handles',
-        'schedule': timedelta(minutes=5),
+        'schedule': timedelta(minutes=180),
+        'options': {'queue': 'pavilion_docker_social'},
     },
     'check-twitter-auth-health': {
         'task': 'workers.tasks.check_twitter_auth_health',
         'schedule': timedelta(hours=24),
     },
+    'check-socialdata-spend': {
+        'task': 'workers.tasks.check_socialdata_spend',
+        'schedule': timedelta(hours=24),
+    },
 }
+
+ASGI_APPLICATION = 'pavilion_gemini.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {'hosts': [('redis', 6379)], 'socket_timeout': None, 'socket_connect_timeout': 5},
+    }
+}
+
 # Django cache backend
 # Upstash free tier is single-DB, so broker and cache share the same URL —
 # key prefixes prevent collisions. On Memorystore, REDIS_CACHE_URL uses DB 1.
@@ -371,32 +352,10 @@ if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
 # RSS Feeds
 RSS_FEEDS = env.list('RSS_FEEDS', default=[])
 
-# Google Gemini AI (Vertex AI preferred; falls back to AI Studio API key)
-GEMINI_API_KEY = env('GEMINI_API_KEY', default='')
-GEMINI_MODEL = env('GEMINI_MODEL', default='gemini-2.5-flash-lite')
-VERTEX_PROJECT = env('VERTEX_PROJECT', default='') or env('VERTEXAI_PROJECT', default='')
-VERTEX_LOCATION = env('VERTEX_LOCATION', default='') or env('VERTEXAI_LOCATION', default='us-central1')
-
 # Google Cloud Text-to-Speech
 # Set this to the full path of your service account JSON key file
 # Example: GOOGLE_APPLICATION_CREDENTIALS=/Users/username/Downloads/pavilion-tts-key.json
 GOOGLE_APPLICATION_CREDENTIALS = env('GOOGLE_APPLICATION_CREDENTIALS', default='')
-
-# Support for raw JSON credentials (for Railway/Vercel)
-# Support for raw JSON credentials (for Railway/Vercel)
-GOOGLE_CREDENTIALS_JSON = env('GOOGLE_CREDENTIALS_JSON', default='')
-if GOOGLE_CREDENTIALS_JSON:
-    import json
-    import tempfile
-    
-    # Create a temporary file to store the credentials
-    # We use a fixed path in /tmp so it persists across requests in the same instance
-    creds_path = os.path.join(tempfile.gettempdir(), 'google-credentials.json')
-    with open(creds_path, 'w') as f:
-        f.write(GOOGLE_CREDENTIALS_JSON)
-    
-    GOOGLE_APPLICATION_CREDENTIALS = creds_path
-    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = creds_path
 
 if GOOGLE_APPLICATION_CREDENTIALS:
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = GOOGLE_APPLICATION_CREDENTIALS

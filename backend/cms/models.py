@@ -710,10 +710,15 @@ class SocialMediaHandle(models.Model):
         ('general', 'General'),
     ]
     name = models.CharField(max_length=200)
-    x_handle = models.CharField(max_length=100, unique=True)
+    x_handle = models.CharField(max_length=100)
     credibility_tier = models.IntegerField(choices=TIER_CHOICES, default=2)
     category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default='journalist')
     sport = models.CharField(max_length=50, choices=SPORT_CHOICES, default='football')
+    platform = models.CharField(
+        max_length=20,
+        choices=[('twitter', 'Twitter/X'), ('instagram', 'Instagram')],
+        default='twitter',
+    )
     is_active = models.BooleanField(default=True)
     last_polled_at = models.DateTimeField(null=True, blank=True)
     last_tweet_id = models.CharField(max_length=100, blank=True)
@@ -721,9 +726,50 @@ class SocialMediaHandle(models.Model):
 
     class Meta:
         ordering = ['credibility_tier', 'name']
+        unique_together = [('x_handle', 'platform')]
 
     def __str__(self):
-        return f"@{self.x_handle} (Tier {self.credibility_tier})"
+        return f"@{self.x_handle} [{self.platform}] (Tier {self.credibility_tier})"
+
+
+class FeedCategory(models.Model):
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='feed_categories')
+    name = models.CharField(max_length=50)
+    slug = models.CharField(max_length=50)
+    color = models.CharField(max_length=7, default='#6366f1')
+    position = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('tenant', 'slug')
+        ordering = ['position', 'created_at']
+
+    def __str__(self):
+        return f"{self.name} [{self.tenant}]"
+
+
+class FeedHandle(models.Model):
+    CATEGORY_CHOICES = [
+        ('football', 'Football'),
+        ('cricket', 'Cricket'),
+        ('general', 'General'),
+    ]
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='feed_handles')
+    handle = models.CharField(max_length=50)
+    label = models.CharField(max_length=100)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='general')
+    category_obj = models.ForeignKey(
+        FeedCategory, null=True, blank=True, on_delete=models.SET_NULL, related_name='handles'
+    )
+    position = models.PositiveIntegerField(default=0)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('tenant', 'handle', 'category')
+        ordering = ['position', 'added_at']
+
+    def __str__(self):
+        return f"@{self.handle} [{self.category}]"
 
 
 class FactCheck(models.Model):

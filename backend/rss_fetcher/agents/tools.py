@@ -1,7 +1,6 @@
 """Shared utilities for the agentic trends pipeline."""
 import json
 import logging
-import time
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -55,104 +54,50 @@ _SPORT_PATTERNS = {
 def get_model_priority_list():
     """Returns model names in priority order (for backward compat — tools arg ignored)."""
     from agents.gemini_client import get_model_name
-    configured = get_model_name()
-    fallbacks = ['gemini-2.0-flash', 'gemini-1.5-flash']
-    seen: set[str] = set()
-    result = []
-    for m in [configured] + fallbacks:
-        if m not in seen:
-            seen.add(m)
-            result.append((m, []))  # tool_spec is empty; callers use call_gemini_grounded()
-    return result
+    # All inference now routes through the shared Claude client; report the real model.
+    return [(get_model_name(), [])]  # tool_spec is empty; callers use call_gemini_grounded()
 
 
-_vertex_creds_cache = {'creds': None, 'project': None, 'expires_at': 0}
-
-
-def call_vertex_ai(prompt: str, model: str = 'gemini-2.0-flash', location: str = 'us-central1') -> str | None:
+def call_vertex_ai(prompt: str, model: str = '', location: str = '') -> str | None:
     """
-    Call Vertex AI Gemini via the REST API using the GCP service account.
-    Bypasses the AI Studio free-tier quota entirely — uses cloud-platform scope.
+    Text completion for the newsroom pipeline. Now routes through the shared Claude
+    client (web-grounded when ENABLE_WEB_GROUNDING is set, plain otherwise). The
+    `model`/`location` args are kept for call-site compatibility but ignored.
     Returns the response text, or None on failure.
     """
-    import requests as http_requests
+    from agents import claude_client
     try:
-        import google.auth
-        import google.auth.transport.requests
-
-        cache = _vertex_creds_cache
-        now = time.time()
-
-        # Refresh credentials if missing or expiring within 60 s
-        if cache['creds'] is None or now >= cache['expires_at'] - 60:
-            creds, detected_project = google.auth.default(
-                scopes=['https://www.googleapis.com/auth/cloud-platform']
-            )
-            auth_req = google.auth.transport.requests.Request()
-            creds.refresh(auth_req)
-            cache['creds'] = creds
-            cache['project'] = detected_project
-            # google.auth expiry is a datetime; convert to epoch
-            expiry = getattr(creds, 'expiry', None)
-            cache['expires_at'] = expiry.timestamp() if expiry else (now + 3600)
-
-        creds = cache['creds']
-        project = cache['project']
-
-        # Strip litellm prefixes from model name (e.g. "vertex_ai/gemini-2.5-flash")
-        if '/' in model:
-            model = model.split('/', 1)[1]
-
-        endpoint = (
-            f'https://{location}-aiplatform.googleapis.com/v1'
-            f'/projects/{project}/locations/{location}'
-            f'/publishers/google/models/{model}:generateContent'
-        )
-        headers = {
-            'Authorization': f'Bearer {creds.token}',
-            'Content-Type': 'application/json',
-        }
-        body = {'contents': [{'role': 'user', 'parts': [{'text': prompt}]}]}
-
-        resp = http_requests.post(endpoint, headers=headers, json=body, timeout=120)
-        if resp.status_code == 200:
-            data = resp.json()
-            return data['candidates'][0]['content']['parts'][0]['text']
-        logger.warning('Vertex AI %s returned %d: %s', model, resp.status_code, resp.text[:200])
+        return claude_client.complete_grounded(prompt)
     except Exception as exc:
-        logger.warning('call_vertex_ai failed (%s): %s', model, exc)
-    return None
+        logger.warning('call_vertex_ai failed: %s', exc)
+        return None
 
 
 def configure_gemini():
-    """Return a sentinel truthy value so callers can fall back to RSS when Gemini is unavailable."""
+    """Return a sentinel truthy value so callers can fall back to RSS when the LLM
+    is unavailable. Now gated on ANTHROPIC_API_KEY (Claude) rather than Gemini."""
     try:
         import os
-        vertex_project = os.environ.get('VERTEX_PROJECT') or os.environ.get('VERTEXAI_PROJECT', '')
-        api_key = os.environ.get('GEMINI_API_KEY', '')
-        if not vertex_project and not api_key:
-            raise RuntimeError('Neither VERTEX_PROJECT nor GEMINI_API_KEY is configured')
+        if not os.environ.get('ANTHROPIC_API_KEY', ''):
+            raise RuntimeError('ANTHROPIC_API_KEY is not configured')
         return True
     except Exception as exc:
-        logger.warning('Gemini not available — agentic trends will use RSS fallback only: %s', exc)
+        logger.warning('LLM not available — agentic trends will use RSS fallback only: %s', exc)
         return None
 
 
 def call_gemini_grounded(prompt: str, *, model: str | None = None) -> str | None:
     """
-    Call Gemini with Google Search Grounding enabled via Vertex AI REST API.
-    Falls back to plain generate_text() if Vertex AI is not configured.
-    Returns response text, or None on failure.
+    Web-grounded completion via the shared Claude client (web_search when
+    ENABLE_WEB_GROUNDING is set, plain completion otherwise). The `model` arg is
+    kept for call-site compatibility but ignored. Returns response text, or None.
     """
-    from agents.gemini_client import generate_grounded, generate_text
+    from agents import claude_client
     try:
-        return generate_grounded(prompt)
+        return claude_client.complete_grounded(prompt)
     except Exception as exc:
         logger.warning('call_gemini_grounded failed: %s', exc)
-        try:
-            return generate_text(prompt)
-        except Exception:
-            return None
+        return None
 
 
 def fetch_google_news_rss(query: str, geo: str = 'IN', max_items: int = 10) -> list[dict]:

@@ -10,7 +10,7 @@ Public API preserved for callers:
     generate_text(...)          -> str
     generate_with_parts(...)    -> str   (text + image; vision)
     make_image_part(...)        -> dict
-    generate_grounded(...)      -> raises NotImplementedError (handled in Batch 4)
+    generate_grounded(...)      -> str   (web-grounded; flag-gated via claude_client)
 """
 import logging
 
@@ -80,12 +80,7 @@ def generate_with_parts(parts: list, *, json_mode: bool = False, temperature: fl
 
 
 def generate_grounded(prompt: str) -> str:
-    """Google Search Grounding has no direct Claude equivalent.
-
-    Left unimplemented intentionally — the grounded/search path is migrated in Batch 4
-    (web-search tool or removal). Callers that need grounding will fail loudly here
-    rather than silently downgrading to ungrounded output.
-    """
-    raise NotImplementedError(
-        "generate_grounded() has no Claude equivalent yet — grounding is handled in Batch 4."
-    )
+    """Web-grounded completion. Delegates to claude_client.complete_grounded(),
+    which uses Claude's web_search tool when ENABLE_WEB_GROUNDING is set and
+    otherwise falls back to a plain completion (zero search cost)."""
+    return claude_client.complete_grounded(prompt)

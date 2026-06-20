@@ -10,6 +10,10 @@ _client = anthropic.Anthropic()
 # Model is overridable via env without code changes; per-call override also supported.
 DEFAULT_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-8")
 
+# Web-search grounding is billed per search — off by default. When disabled,
+# complete_grounded() behaves exactly like complete() (zero search cost).
+WEB_GROUNDING = os.environ.get("ENABLE_WEB_GROUNDING", "false").lower() == "true"
+
 
 def complete(prompt, *, system=None, max_tokens=4000, model=None) -> str:
     """Canonical text completion. Returns the concatenated text blocks."""
@@ -52,6 +56,40 @@ def complete_vision(prompt, image_bytes, media_type="image/png", *,
             {"type": "text", "text": prompt},
         ]}],
     )
+    return "".join(b.text for b in resp.content if b.type == "text")
+
+
+def complete_grounded(prompt, *, system=None, max_tokens=4000, model=None) -> str:
+    """Web-grounded completion (replaces Gemini Google-Search grounding).
+
+    Flag-gated: when ENABLE_WEB_GROUNDING is off, this is just complete() — no
+    web_search tool is attached, so there is zero search cost. When enabled, it
+    uses Claude's server-side web_search tool and resumes across pause_turn until
+    the server-side search loop finishes.
+    """
+    if not WEB_GROUNDING:
+        return complete(prompt, system=system, max_tokens=max_tokens, model=model)
+
+    mdl = model or DEFAULT_MODEL
+    sys = system or anthropic.NOT_GIVEN
+    tools = [{"type": "web_search_20260209", "name": "web_search"}]
+    msgs = [{"role": "user", "content": prompt}]
+
+    resp = _client.messages.create(
+        model=mdl, max_tokens=max_tokens, system=sys, messages=msgs, tools=tools,
+    )
+    # The server-side search loop may pause; resume by re-sending the assistant
+    # turn (no extra "continue" message — the API detects the trailing tool block).
+    guard = 0
+    while resp.stop_reason == "pause_turn" and guard < 5:
+        guard += 1
+        msgs = [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": resp.content},
+        ]
+        resp = _client.messages.create(
+            model=mdl, max_tokens=max_tokens, system=sys, messages=msgs, tools=tools,
+        )
     return "".join(b.text for b in resp.content if b.type == "text")
 
 

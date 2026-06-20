@@ -11,12 +11,9 @@ class ReelRecreationCrew:
     rebuilding it in Pavilion's Malayalam brand style.
     """
     def __init__(self):
-        model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
-        # Ensure it has the correct prefix for LiteLLM if not using Vertex AI
-        if not model_name.startswith("gemini/") and not model_name.startswith("vertex_ai/"):
-            model_name = f"gemini/{model_name}"
-            
-        self.llm_model = model_name  # Using liteLLM format, works natively with CrewAI
+        # LiteLLM (used by CrewAI) selects the provider from the model-string prefix.
+        # anthropic/<model> routes to Claude, reading ANTHROPIC_API_KEY from the env.
+        self.llm_model = f"anthropic/{os.environ.get('CLAUDE_MODEL', 'claude-opus-4-8')}"
 
     def get_vision_agent(self):
         return Agent(

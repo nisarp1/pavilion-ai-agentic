@@ -141,7 +141,7 @@ services:
       AWS_S3_BUCKET: pavilion-media-009846
       AWS_REGION: us-east-1
       ENVIRONMENT: development
-      DEBUG: 'true'
+      DEBUG: 'false'
       SECRET_KEY: "${SECRET_KEY}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
       CLAUDE_MODEL: "${CLAUDE_MODEL}"

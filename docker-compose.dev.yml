@@ -72,7 +72,6 @@ services:
       DJANGO_INTERNAL_URL: http://django:8000
       AWS_S3_BUCKET: pavilion-media-009846
       AWS_REGION: us-east-1
-      GEMINI_API_KEY: "${GEMINI_API_KEY}"
       SECRET_KEY: "${SECRET_KEY}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
       CLAUDE_MODEL: "${CLAUDE_MODEL}"
@@ -105,7 +104,6 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       REDIS_URL: redis://redis:6379/0
       REDIS_CACHE_URL: redis://redis:6379/1
-      GEMINI_API_KEY: "${GEMINI_API_KEY}"
       SECRET_KEY: "${SECRET_KEY}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
       CLAUDE_MODEL: "${CLAUDE_MODEL}"
@@ -144,7 +142,6 @@ services:
       AWS_REGION: us-east-1
       ENVIRONMENT: development
       DEBUG: 'true'
-      GEMINI_API_KEY: "${GEMINI_API_KEY}"
       SECRET_KEY: "${SECRET_KEY}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
       CLAUDE_MODEL: "${CLAUDE_MODEL}"

@@ -36,8 +36,6 @@ logger = logging.getLogger(__name__)
 # Google Cloud Text-to-Speech — imported lazily inside tasks that use it (gRPC init is slow).
 TTS_AVAILABLE = True  # assume available; actual import happens inside tasks
 
-GEMINI_MODEL = getattr(settings, 'GEMINI_MODEL', 'gemini-2.0-flash')  # 2.0-flash: no thinking overhead, 3x cheaper
-
 
 def fetch_featured_image_from_url(article_url):
     """
@@ -525,9 +523,9 @@ def generate_article_with_gemini(article, mode='core'):
 
         prompt += "\nReturn the JSON response with all fields filled."
 
-        # Generate content via Vertex AI / AI Studio
+        # Generate content via the shared Claude client
         try:
-            logger.info(f"Calling Gemini API with model: {GEMINI_MODEL}")
+            logger.info("Calling LLM (Claude) for content generation")
             from agents.gemini_client import generate_text as _gemini_text
             generated_text = _gemini_text(prompt, json_mode=True)
             logger.info("Gemini API call successful")

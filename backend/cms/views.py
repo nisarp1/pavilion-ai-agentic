@@ -643,7 +643,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
             "D_ID_API_KEY": check_key("D_ID_API_KEY"),
             "GOOGLE_CREDENTIALS_JSON": check_key("GOOGLE_CREDENTIALS_JSON"),
             "VERCEL_BLOB_READ_WRITE_TOKEN": check_key("VERCEL_BLOB_READ_WRITE_TOKEN"),
-            "GEMINI_API_KEY": check_key("GEMINI_API_KEY"),
+            "ANTHROPIC_API_KEY": check_key("ANTHROPIC_API_KEY"),
             "CREATOMATE_API_KEY": check_key("CREATOMATE_API_KEY"),
             "RAILWAY_ENVIRONMENT": os.getenv("RAILWAY_ENVIRONMENT", "Not detected"),
             "DATABASE_URL_DETECTED": bool(os.getenv("DATABASE_URL")),

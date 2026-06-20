@@ -54,18 +54,11 @@ _SPORT_PATTERNS = {
 def get_model_priority_list():
     """Returns model names in priority order (for backward compat — tools arg ignored)."""
     from agents.gemini_client import get_model_name
-    configured = get_model_name()
-    fallbacks = ['gemini-2.0-flash', 'gemini-1.5-flash']
-    seen: set[str] = set()
-    result = []
-    for m in [configured] + fallbacks:
-        if m not in seen:
-            seen.add(m)
-            result.append((m, []))  # tool_spec is empty; callers use call_gemini_grounded()
-    return result
+    # All inference now routes through the shared Claude client; report the real model.
+    return [(get_model_name(), [])]  # tool_spec is empty; callers use call_gemini_grounded()
 
 
-def call_vertex_ai(prompt: str, model: str = 'gemini-2.0-flash', location: str = 'us-central1') -> str | None:
+def call_vertex_ai(prompt: str, model: str = '', location: str = '') -> str | None:
     """
     Text completion for the newsroom pipeline. Now routes through the shared Claude
     client (web-grounded when ENABLE_WEB_GROUNDING is set, plain otherwise). The

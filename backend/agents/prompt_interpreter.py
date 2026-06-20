@@ -7,12 +7,11 @@ structured parameters for the social post pipeline:
   - vibe_override      → tone instruction for the Malayalam localizer
   - plain_text         → the actual subject matter / content to generate from
 
-The Gemini call is tried first; keyword fallback is used if Gemini fails.
+The Claude call is tried first; keyword fallback is used if it fails.
 """
-import json
 import logging
-import os
-import re
+
+from . import claude_client
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +39,7 @@ _VIBE_MAP = {
     'general':        'energetic',
 }
 
-_GEMINI_SYSTEM = """You are a social media content intent classifier for a sports news platform.
+_CLASSIFIER_SYSTEM = """You are a social media content intent classifier for a sports news platform.
 
 Given a user's prompt (which may be a content creation instruction, raw news text, or both),
 extract the following as a strict JSON object with no markdown fences:
@@ -75,40 +74,27 @@ def interpret_prompt(prompt_text: str) -> dict:
         vibe_override      (str)  — tone for the Malayalam localizer
         plain_text         (str)  — content to pass to the crew
         post_type          (str)  — human-readable type label
-        inferred           (bool) — True if Gemini was used
+        inferred           (bool) — True if the LLM was used
     """
     try:
-        return _gemini_interpret(prompt_text)
+        return _llm_interpret(prompt_text)
     except Exception as exc:
-        logger.warning('[PromptInterpreter] Gemini parse failed (%s), using keyword fallback', exc)
+        logger.warning('[PromptInterpreter] LLM parse failed (%s), using keyword fallback', exc)
         return _keyword_interpret(prompt_text)
 
 
-def _gemini_interpret(prompt_text: str) -> dict:
-    import google.generativeai as genai
-
-    api_key = os.environ.get('GEMINI_API_KEY', '')
-    if not api_key:
-        raise ValueError('GEMINI_API_KEY not set')
-
-    genai.configure(api_key=api_key)
-    model_name = os.environ.get('GEMINI_MODEL', 'gemini-2.5-flash-lite')
-    model = genai.GenerativeModel(model_name)
-
-    response = model.generate_content(
-        f"{_GEMINI_SYSTEM}\n\nUser prompt:\n{prompt_text[:2000]}"
+def _llm_interpret(prompt_text: str) -> dict:
+    parsed = claude_client.complete_json(
+        f"User prompt:\n{prompt_text[:2000]}",
+        system=_CLASSIFIER_SYSTEM,
+        max_tokens=1000,
     )
-    raw = response.text.strip()
-    raw = re.sub(r'^```[a-zA-Z]*\s*', '', raw)
-    raw = re.sub(r'\s*```$', '', raw.strip())
-
-    parsed = json.loads(raw)
     post_type = parsed.get('post_type', 'general')
     vibe = parsed.get('vibe', 'energetic')
     content = parsed.get('content') or prompt_text
 
     logger.info(
-        '[PromptInterpreter] Gemini → post_type=%r vibe=%r content=%r',
+        '[PromptInterpreter] Claude → post_type=%r vibe=%r content=%r',
         post_type, vibe, content[:80],
     )
 

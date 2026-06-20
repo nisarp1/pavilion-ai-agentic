@@ -732,6 +732,22 @@ class SocialMediaHandle(models.Model):
         return f"@{self.x_handle} [{self.platform}] (Tier {self.credibility_tier})"
 
 
+class FeedCategory(models.Model):
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='feed_categories')
+    name = models.CharField(max_length=50)
+    slug = models.CharField(max_length=50)
+    color = models.CharField(max_length=7, default='#6366f1')
+    position = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('tenant', 'slug')
+        ordering = ['position', 'created_at']
+
+    def __str__(self):
+        return f"{self.name} [{self.tenant}]"
+
+
 class FeedHandle(models.Model):
     CATEGORY_CHOICES = [
         ('football', 'Football'),
@@ -742,11 +758,15 @@ class FeedHandle(models.Model):
     handle = models.CharField(max_length=50)
     label = models.CharField(max_length=100)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='general')
+    category_obj = models.ForeignKey(
+        FeedCategory, null=True, blank=True, on_delete=models.SET_NULL, related_name='handles'
+    )
+    position = models.PositiveIntegerField(default=0)
     added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = ('tenant', 'handle', 'category')
-        ordering = ['added_at']
+        ordering = ['position', 'added_at']
 
     def __str__(self):
         return f"@{self.handle} [{self.category}]"

@@ -165,16 +165,13 @@ def _whitenoise_no_cache_index(headers, path, url):
 
 WHITENOISE_ADD_HEADERS_FUNCTION = _whitenoise_no_cache_index
 
-# CSRF trusted origins
+# CSRF trusted origins (explicit list; removed the dead ALLOWED_HOSTS-derived
+# comprehension — it only ever yielded retired wildcard hosts, filtered to nothing here)
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
     'https://newsai.pavilionend.in',
     'http://localhost:3001',
     'http://localhost:8000',
-]) + [
-    'https://' + host
-    for host in ALLOWED_HOSTS
-    if host not in ('*', 'localhost', '127.0.0.1') and not host.startswith('.')
-]
+])
 
 # Trust the X-Forwarded-Proto header for SSL (Required for Railway)
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -233,11 +230,8 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip() and (origin.startswith('http://') or origin.startswith('https://'))
 ]
 
-# Allow all Cloud Run, Vercel and Railway deployments (Preview & Production)
+# Local frontend dev origins (retired Cloud Run / Vercel / Railway regexes removed)
 CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://pavilion-frontend-.*\.a\.run\.app$",  # Cloud Run frontend services
-    r"^https://.*\.vercel\.app$",  # Vercel deployments
-    r"^https://.*\.up\.railway\.app$",  # Railway deployments
     r"^http://localhost:5173$",  # Local frontend dev (Vite)
     r"^http://localhost:3000$",  # Local frontend dev (alternative port)
 ]

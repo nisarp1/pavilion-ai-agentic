@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# newsai article-only prod stack: keep the template, ignore the real secrets file
+!.env.prod-newsai.example
+.env.prod-newsai
 .gcp-secrets/
 *.key.json
 

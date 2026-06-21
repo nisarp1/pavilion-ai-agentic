@@ -1,0 +1,172 @@
+# Portable production compose — ARTICLE PRODUCT ONLY ("newsai")
+#
+# Trimmed from docker-compose.dev.yml. Excludes all Social/Video Studio surfaces:
+#   - remotion-renderer  (video reels)
+#   - selenium-chrome    (scraping for studios)
+#   - flower             (celery monitor; not needed in prod)
+#   - frontend           (prod nginx serves the built React from dist)
+#
+# Own compose project ("newsai") => isolated newsai_* network/volumes, newsai-* containers.
+# Only django is published to the host (NEWSAI_DJANGO_PORT, default 8001) for the nginx upstream.
+# postgres / redis / rsshub stay on the internal network only — no host ports => no collisions.
+#
+# Secrets/config come from .env.prod-newsai (gitignored). See .env.prod-newsai.example.
+#
+# Validate (no containers started):
+#   docker compose -p newsai -f docker-compose.prod-newsai.yml --env-file .env.prod-newsai config
+# Start (article-only; beat optional):
+#   docker compose -p newsai -f docker-compose.prod-newsai.yml --env-file .env.prod-newsai up -d django celery postgres redis rsshub
+
+name: newsai
+
+services:
+  # PostgreSQL — isolated per-product instance, internal network only (no host port).
+  postgres:
+    image: postgres:15-alpine
+    container_name: newsai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - newsai_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - newsai-network
+
+  # Redis — broker + cache, internal network only (no host port).
+  redis:
+    image: redis:7-alpine
+    container_name: newsai-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - newsai-network
+
+  # RSSHub — article feed bridge, internal network only (Django reaches it at http://rsshub:1200).
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: newsai-rsshub
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      TWITTER_AUTH_TOKEN: "${TWITTER_AUTH_TOKEN:-}"
+      TWITTER_CT0: "${TWITTER_CT0:-}"
+      TWITTER_COOKIE: "auth_token=${TWITTER_AUTH_TOKEN:-}; ct0=${TWITTER_CT0:-}"
+    networks:
+      - newsai-network
+
+  # Django API — the only service published to the host.
+  django:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: newsai-django
+    restart: unless-stopped
+    command: >
+      sh -c "python backend/manage.py migrate &&
+             daphne -b 0.0.0.0 -p 8000 pavilion_gemini.asgi:application"
+    env_file:
+      - .env.prod-newsai
+    environment:
+      DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_CACHE_URL: redis://redis:6379/1
+      AWS_S3_BUCKET: pavilion-media-009846
+      AWS_REGION: us-east-1
+      RSSHUB_URL: "http://rsshub:1200"
+      ENVIRONMENT: production
+      DEBUG: 'false'
+      PRODUCT: article
+    ports:
+      - "${NEWSAI_DJANGO_PORT:-8001}:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - newsai-network
+
+  # Celery worker — ARTICLE QUEUES ONLY. Excludes social / pipeline / pavilion_docker_social
+  # so Social Studio and Video Studio tasks are never executed by this stack.
+  celery:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: newsai-celery
+    restart: unless-stopped
+    command: celery -A pavilion_gemini worker --loglevel=info -Q default,celery
+    env_file:
+      - .env.prod-newsai
+    environment:
+      DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_CACHE_URL: redis://redis:6379/1
+      DJANGO_INTERNAL_URL: http://django:8000
+      AWS_S3_BUCKET: pavilion-media-009846
+      AWS_REGION: us-east-1
+      RSSHUB_URL: "http://rsshub:1200"
+      ENVIRONMENT: production
+      DEBUG: 'false'
+      PRODUCT: article
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - newsai-network
+
+  # Celery beat — scheduler. Article-only schedule is enforced via settings (next prompt).
+  # Kept defined but start it explicitly only when ready; the dev box keeps beat stopped.
+  celery-beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: newsai-celery-beat
+    restart: unless-stopped
+    command: celery -A pavilion_gemini beat --loglevel=info --scheduler celery.beat.PersistentScheduler
+    env_file:
+      - .env.prod-newsai
+    environment:
+      DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_CACHE_URL: redis://redis:6379/1
+      RSSHUB_URL: "http://rsshub:1200"
+      ENVIRONMENT: production
+      DEBUG: 'false'
+      PRODUCT: article
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - newsai-network
+
+networks:
+  newsai-network:
+    driver: bridge
+
+volumes:
+  newsai_postgres_data:
+    driver: local

@@ -43,7 +43,8 @@ class ContextEnricherAgent:
         def _do_enrich(idx_topic):
             idx, topic = idx_topic
             ctx = self._enrich_gemini(genai, topic) if genai else self._enrich_rss_fallback(topic)
-            logger.debug('Enriched topic %d/%d: %s', idx + 1, len(to_enrich), topic['topic'][:40])
+            mode = 'via Claude' if genai else 'local RSS, no LLM'
+            logger.debug('Enriched topic %d/%d (%s): %s', idx + 1, len(to_enrich), mode, topic['topic'][:40])
             return idx, {**topic, **ctx}
 
         with ThreadPoolExecutor(max_workers=3) as pool:

@@ -77,7 +77,7 @@ class TrendRankerAgent:
             prev = prev_ranks.get(t['topic'])
             t['velocity'] = (prev - i) if prev is not None else 0  # positive = rising
 
-        logger.info(f'TrendRankerAgent: ranked {len(scored)} topics. Top: {scored[0]["topic"] if scored else "none"}')
+        logger.info(f'TrendRankerAgent: ranked {len(scored)} topics (local scoring, no LLM). Top: {scored[0]["topic"] if scored else "none"}')
         return scored
 
     def _compute_heat(self, topic: dict) -> float:

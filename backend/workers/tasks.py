@@ -36,6 +36,42 @@ logger = logging.getLogger(__name__)
 # Google Cloud Text-to-Speech — imported lazily inside tasks that use it (gRPC init is slow).
 TTS_AVAILABLE = True  # assume available; actual import happens inside tasks
 
+# ── Auto fact-check gate ──────────────────────────────────────────────────────
+# Tunable thresholds that decide whether a tweet-sourced article is worth a paid
+# Claude fact-check. Keeps the scheduled poll from spending on emoji replies / noise.
+FACTCHECK_MIN_TEXT_LEN = 60   # chars left after stripping @mentions, URLs, emojis
+FACTCHECK_MIN_LIKES    = 25   # only applied when engagement counts are available
+FACTCHECK_MIN_RETWEETS = 5
+
+_FACTCHECK_URL_RE     = re.compile(r'https?://\S+')
+_FACTCHECK_MENTION_RE = re.compile(r'@\w+')
+# Common emoji / pictograph / dingbat / flag / variation-selector ranges.
+_FACTCHECK_EMOJI_RE   = re.compile(
+    "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF"
+    "\U00002B00-\U00002BFF\U00002190-\U000021FF\U0000FE00-\U0000FE0F]+"
+)
+
+
+def should_factcheck(text, likes=None, retweets=None):
+    """Return True if a tweet-sourced article is worth a paid fact-check.
+
+    Content gate always applies: after stripping @mentions, URLs and emojis, the
+    remaining substantive text must be >= FACTCHECK_MIN_TEXT_LEN (this drops pure
+    replies / "winking emoji" tweets with no claim). The engagement gate is applied
+    ONLY when like/retweet counts are provided (RSSHub fallback has none) — then the
+    tweet must clear FACTCHECK_MIN_LIKES or FACTCHECK_MIN_RETWEETS.
+    """
+    cleaned = _FACTCHECK_URL_RE.sub('', text or '')
+    cleaned = _FACTCHECK_MENTION_RE.sub('', cleaned)
+    cleaned = _FACTCHECK_EMOJI_RE.sub('', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    if len(cleaned) < FACTCHECK_MIN_TEXT_LEN:
+        return False
+    if likes is not None or retweets is not None:
+        if (likes or 0) < FACTCHECK_MIN_LIKES and (retweets or 0) < FACTCHECK_MIN_RETWEETS:
+            return False
+    return True
+
 
 def fetch_featured_image_from_url(article_url):
     """
@@ -1803,7 +1839,13 @@ def _fetch_tweets_for_handle(handle):
                     urgency=urgency,
                     published_at=pub_dt,
                 )
-                fact_check_article_task.delay(article.id)
+                if should_factcheck(full_text, likes=favorite_count, retweets=retweet_count):
+                    fact_check_article_task.delay(article.id)
+                else:
+                    logger.info(
+                        "Skipped auto fact-check (low traction/no claim): handle=@%s id=%s",
+                        handle.x_handle, article.id,
+                    )
                 created += 1
                 logger.info(
                     f"Created article {article.id} from @{handle.x_handle} "
@@ -1878,7 +1920,13 @@ def _fetch_tweets_for_handle(handle):
                 urgency=urgency,
                 published_at=pub_dt,
             )
-            fact_check_article_task.delay(article.id)
+            if should_factcheck(tweet_text):
+                fact_check_article_task.delay(article.id)
+            else:
+                logger.info(
+                    "Skipped auto fact-check (low traction/no claim): handle=@%s id=%s",
+                    handle.x_handle, article.id,
+                )
             logger.info(f"Created article {article.id} from @{handle.x_handle} via RSSHub (fallback)")
 
             if guid and (not latest_guid or guid > latest_guid):

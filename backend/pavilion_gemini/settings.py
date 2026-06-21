@@ -25,6 +25,10 @@ DEBUG = env('DEBUG', default=False)
 # Environment (development, staging, production)
 ENVIRONMENT = env('ENVIRONMENT', default='development')
 
+# Product profile. 'full' = all surfaces (article + social/video studios).
+# 'article' = the standalone article product (no studio Celery beat tasks).
+PRODUCT = env('PRODUCT', default='full')
+
 if ENVIRONMENT == 'production' and SECRET_KEY == _secret_key_default:
     raise RuntimeError("SECRET_KEY must be set to a secure value in production.")
 
@@ -281,6 +285,7 @@ CELERY_TASK_DEFAULT_QUEUE = 'default'
 # Fetch interval in minutes (default: 5 minutes for more frequent updates)
 RSS_FETCH_INTERVAL_MINUTES = env.int('RSS_FETCH_INTERVAL_MINUTES', default=5)
 
+# Article tasks — always scheduled (no Gemini/Claude calls, LLM-free).
 CELERY_BEAT_SCHEDULE = {
     # RSS feed fetch — no Gemini calls, safe to keep scheduled
     "fetch-rss-feeds": {
@@ -294,20 +299,26 @@ CELERY_BEAT_SCHEDULE = {
     },
     # fetch-trends-sports, enhance-with-google-trends, refresh-agentic-trends
     # removed from schedule — ON-DEMAND only via Refresh button in UI
-    'poll-social-handles': {
-        'task': 'workers.tasks.poll_social_handles',
-        'schedule': timedelta(minutes=180),
-        'options': {'queue': 'pavilion_docker_social'},
-    },
-    'check-twitter-auth-health': {
-        'task': 'workers.tasks.check_twitter_auth_health',
-        'schedule': timedelta(hours=24),
-    },
-    'check-socialdata-spend': {
-        'task': 'workers.tasks.check_socialdata_spend',
-        'schedule': timedelta(hours=24),
-    },
 }
+
+# Social/Studio tasks — only scheduled for the full product, never for the
+# standalone article product (PRODUCT=article keeps the beat article-only).
+if PRODUCT != 'article':
+    CELERY_BEAT_SCHEDULE.update({
+        'poll-social-handles': {
+            'task': 'workers.tasks.poll_social_handles',
+            'schedule': timedelta(minutes=180),
+            'options': {'queue': 'pavilion_docker_social'},
+        },
+        'check-twitter-auth-health': {
+            'task': 'workers.tasks.check_twitter_auth_health',
+            'schedule': timedelta(hours=24),
+        },
+        'check-socialdata-spend': {
+            'task': 'workers.tasks.check_socialdata_spend',
+            'schedule': timedelta(hours=24),
+        },
+    })
 
 ASGI_APPLICATION = 'pavilion_gemini.asgi.application'
 

@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 ENRICHMENT_CACHE_KEY = 'agentic_enrichment_v2'
 ENRICHMENT_TS_KEY    = 'agentic_enrichment_v2_ts'
 LOCK_KEY             = 'agentic_trends_pipeline_lock'
+REFRESH_DEBOUNCE_KEY = 'agentic_trends_refresh_debounce'
 SOFT_TTL_RATIO       = 0.8
 
 
@@ -96,12 +97,27 @@ def _topic_key(topic: str) -> str:
 
 
 def _trigger_background_refresh():
-    """Fire-and-forget: ask Celery to rebuild the Gemini enrichment cache."""
+    """
+    Enqueue a Celery enrichment rebuild — the ONLY path that may run the paid
+    enrichment (Hunter → Enricher → Ranker). Called solely from the explicit
+    Refresh button (agentic-trends?refresh=true); the auto-poll never calls this.
+
+    Debounced: cache.add is atomic, so at most one rebuild is enqueued per
+    TRENDS_CACHE_TTL window no matter how often Refresh is clicked. Clicks while a
+    rebuild is in flight (or recently completed) are no-ops — no stampede.
+    """
+    cache_ttl = getattr(settings, 'TRENDS_CACHE_TTL', 300)
+    if not cache.add(REFRESH_DEBOUNCE_KEY, '1', cache_ttl):
+        logger.info('Agentic trends: refresh debounced — a rebuild ran within the last %ss', cache_ttl)
+        return
     try:
         from workers.tasks import run_agentic_trends_celery
         run_agentic_trends_celery.delay()
-        logger.info('Agentic trends: background enrichment refresh triggered')
+        logger.info('Agentic trends: background enrichment refresh enqueued (debounced)')
     except Exception as exc:
+        # Enqueue failed (e.g. broker unreachable) — release the debounce so a
+        # later Refresh can retry instead of being blocked for the whole TTL.
+        cache.delete(REFRESH_DEBOUNCE_KEY)
         logger.warning('Agentic trends: background refresh trigger failed: %s', exc)
 
 
@@ -121,7 +137,6 @@ def run_trends_pipeline(force_refresh: bool = False) -> dict:
             return _run_enrichment_only()
 
         cache_ttl = getattr(settings, 'TRENDS_CACHE_TTL', 300)
-        soft_ttl  = int(cache_ttl * SOFT_TTL_RATIO)
 
         # ── Step 1: Always fetch live sports headlines ────────────────────────────
         fresh = _run_rss_only_pipeline()
@@ -144,18 +159,19 @@ def run_trends_pipeline(force_refresh: bool = False) -> dict:
                 age = cache_ttl + 1  # treat as expired
 
             if age <= cache_ttl:
+                # Cached enrichment still valid → serve it. The auto-poll is
+                # READ-ONLY: it never enqueues a rebuild (not even past the old
+                # soft-TTL). Only an explicit Refresh may pay for enrichment.
                 fresh = _apply_enrichment(fresh, enrichment_map)
                 fresh.pop('rss_only', None)
                 fresh['cached'] = False
-                if age > soft_ttl:
-                    _trigger_background_refresh()
-                logger.info('Agentic trends: live RSS + Gemini enrichment (age=%.0fs)', age)
+                logger.info('Agentic trends: live RSS + cached enrichment (age=%.0fs)', age)
             else:
-                _trigger_background_refresh()
-                logger.info('Agentic trends: live RSS only (enrichment expired at %.0fs)', age)
+                # Expired enrichment → serve free RSS-only topics. No LLM, no enqueue.
+                logger.info('Agentic trends: live RSS only (enrichment expired at %.0fs; Refresh to rebuild)', age)
         else:
-            _trigger_background_refresh()
-            logger.info('Agentic trends: live RSS only (no enrichment cached)')
+            # Cold cache → serve free RSS-only topics. No LLM, no enqueue.
+            logger.info('Agentic trends: live RSS only (no enrichment cached; Refresh to rebuild)')
 
         return fresh
 

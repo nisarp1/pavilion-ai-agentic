@@ -4,6 +4,7 @@ Celery tasks for RSS feed fetching.
 from celery import shared_task
 from django.utils import timezone
 from django.conf import settings
+from django.core.cache import cache
 from datetime import timedelta, datetime
 from cms.models import Article
 from .models import RSSFeed
@@ -94,7 +95,23 @@ def fetch_rss_feeds(force=False):
                 errors.append(error_msg)
     
     logger.info(f"RSS feed fetch completed. Processed {feeds_processed} feeds, skipped {feeds_skipped}, created {articles_created} new articles.")
-    
+
+    # Freshness heartbeat for the watchdog. Written every run (success path), never
+    # expires (None) so the watchdog can measure true age + zero-output streaks.
+    now_iso = timezone.now().isoformat()
+    try:
+        cache.set('health:rss:last_success', now_iso, None)
+        cache.set('health:rss:last_new_count', articles_created, None)
+        # Track consecutive zero-output RSS runs so the watchdog can distinguish a
+        # single quiet cycle from a real "feeds returning nothing" outage.
+        if articles_created == 0:
+            streak = (cache.get('health:rss:zero_streak') or 0) + 1
+            cache.set('health:rss:zero_streak', streak, None)
+        else:
+            cache.set('health:rss:zero_streak', 0, None)
+    except Exception as cache_exc:
+        logger.error(f"Failed to write RSS health heartbeat: {cache_exc}")
+
     return {
         'success': True,
         'articles_created': articles_created,
@@ -192,8 +209,19 @@ def fetch_single_rss_feed(feed_url, category='reliable_sources', trend_data=None
             try:
                 from cms.broadcast import broadcast_new_article
                 broadcast_new_article(article)
-            except Exception:
-                pass
+            except Exception as broadcast_exc:
+                # Was a silent `except: pass` — the article IS created, but the
+                # realtime broadcast failed. Make it LOUD instead of swallowing.
+                logger.error(
+                    f"broadcast_new_article failed for article {article.id}: {broadcast_exc}",
+                    exc_info=True,
+                )
+                try:
+                    from pavilion_gemini.alerts import send_alert
+                    send_alert('ERROR', 'broadcast_new_article failed',
+                               source='fetch_single_rss_feed', article_id=article.id)
+                except Exception:
+                    logger.error('Failed to send broadcast-failure alert', exc_info=True)
 
         except Exception as e:
             logger.error(f"Error creating article from entry: {str(e)}")

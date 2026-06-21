@@ -2162,3 +2162,86 @@ def check_socialdata_spend():
     except Exception as exc:
         logger.error(f'check_socialdata_spend failed: {exc}', exc_info=True)
         return {'status': 'error', 'error': str(exc)}
+
+
+def _parse_health_ts(value):
+    """Parse a health:* ISO timestamp into an aware UTC datetime, or None."""
+    if not value:
+        return None
+    from datetime import datetime, timezone as _tz
+    try:
+        # Normalise a trailing 'Z' (not accepted by fromisoformat before 3.11).
+        dt = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_tz.utc)
+        return dt
+    except Exception:
+        return None
+
+
+@shared_task(name='workers.tasks.pipeline_health_watchdog')
+def pipeline_health_watchdog():
+    """
+    LLM-free freshness/output-floor watchdog for the ARTICLE pipeline.
+
+    Pure timestamp/count checks against the health:* cache heartbeats written by
+    fetch_rss_feeds (A) and the trends enrichment success path (C). Emits alerts via
+    pavilion_gemini.alerts.send_alert (Slack + always-log). Makes NO LLM calls.
+
+    Checks:
+      1. RSS ingestion stalled — now - health:rss:last_success > RSS_STALE_MINUTES  -> CRITICAL
+      2. RSS zero new items   — health:rss:zero_streak >= ZERO_STREAK_K            -> WARNING
+      3. Trends stale         — now - health:trends:last_enriched > TRENDS_STALE_HOURS,
+                                 only when trends have been enriched at least once    -> WARNING
+    """
+    from datetime import datetime, timezone as _tz, timedelta
+    from django.core.cache import cache
+    from django.conf import settings
+    from pavilion_gemini.alerts import send_alert
+
+    rss_stale_minutes = getattr(settings, 'RSS_STALE_MINUTES', 30)
+    trends_stale_hours = getattr(settings, 'TRENDS_STALE_HOURS', 6)
+    zero_streak_k = getattr(settings, 'RSS_ZERO_STREAK_K', 3)
+
+    now = datetime.now(_tz.utc)
+    findings = []
+
+    # ── 1. RSS ingestion stalled ──────────────────────────────────────────────
+    last_success = _parse_health_ts(cache.get('health:rss:last_success'))
+    if last_success is None:
+        # No heartbeat ever recorded — ingestion hasn't completed a single run.
+        send_alert('CRITICAL', 'RSS ingestion stalled',
+                   source='pipeline_health_watchdog', reason='no_heartbeat_recorded')
+        findings.append('rss_no_heartbeat')
+    else:
+        age_min = (now - last_success).total_seconds() / 60
+        if age_min > rss_stale_minutes:
+            send_alert('CRITICAL', 'RSS ingestion stalled',
+                       source='pipeline_health_watchdog',
+                       last_success=last_success.isoformat(),
+                       age_minutes=round(age_min, 1), threshold_minutes=rss_stale_minutes)
+            findings.append('rss_stalled')
+
+    # ── 2. RSS zero new items for K consecutive runs ──────────────────────────
+    zero_streak = cache.get('health:rss:zero_streak') or 0
+    if zero_streak >= zero_streak_k:
+        send_alert('WARNING', 'RSS zero new items',
+                   source='pipeline_health_watchdog',
+                   zero_streak=zero_streak, threshold_runs=zero_streak_k)
+        findings.append('rss_zero_output')
+
+    # ── 3. Trends stale / running on placeholder ──────────────────────────────
+    # Only meaningful once trends have been enriched at least once (i.e. the feature
+    # is actually in use). If never enriched, there's nothing to call "stale".
+    last_enriched = _parse_health_ts(cache.get('health:trends:last_enriched'))
+    if last_enriched is not None:
+        age_h = (now - last_enriched).total_seconds() / 3600
+        if age_h > trends_stale_hours:
+            send_alert('WARNING', 'trends stale / running on placeholder',
+                       source='pipeline_health_watchdog',
+                       last_enriched=last_enriched.isoformat(),
+                       age_hours=round(age_h, 2), threshold_hours=trends_stale_hours)
+            findings.append('trends_stale')
+
+    logger.info('pipeline_health_watchdog ran: findings=%s', findings or 'none')
+    return {'status': 'ok', 'findings': findings}

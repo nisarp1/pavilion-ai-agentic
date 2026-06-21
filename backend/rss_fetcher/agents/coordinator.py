@@ -31,7 +31,31 @@ ENRICHMENT_CACHE_KEY = 'agentic_enrichment_v2'
 ENRICHMENT_TS_KEY    = 'agentic_enrichment_v2_ts'
 LOCK_KEY             = 'agentic_trends_pipeline_lock'
 REFRESH_DEBOUNCE_KEY = 'agentic_trends_refresh_debounce'
+ALERT_DEBOUNCE_KEY   = 'agentic_trends_degraded_alert'
 SOFT_TTL_RATIO       = 0.8
+
+# Freshness key written ONLY on real (non-placeholder) Gemini enrichment success.
+HEALTH_TRENDS_LAST_ENRICHED = 'health:trends:last_enriched'
+
+
+def _alert_degradation(reason: str, **context):
+    """
+    Fire a degradation alert, debounced so a hot request path can't spam Slack.
+
+    run_trends_pipeline runs on every trend view, so the WARNING log (emitted by the
+    caller, unconditionally) stays loud while the Slack POST happens at most once per
+    TRENDS_CACHE_TTL window. The watchdog (pipeline_health_watchdog) owns the
+    sustained-condition alerting; this is the immediate signal.
+    """
+    cache_ttl = getattr(settings, 'TRENDS_CACHE_TTL', 300)
+    if not cache.add(ALERT_DEBOUNCE_KEY, '1', cache_ttl):
+        return
+    try:
+        from pavilion_gemini.alerts import send_alert
+        send_alert('WARNING', 'trends degraded to RSS-only/placeholder',
+                   source='trends_coordinator', reason=reason, **context)
+    except Exception as exc:
+        logger.error('Agentic trends: degradation alert failed: %s', exc)
 
 
 @dataclasses.dataclass
@@ -141,7 +165,9 @@ def run_trends_pipeline(force_refresh: bool = False) -> dict:
         # ── Step 1: Always fetch live sports headlines ────────────────────────────
         fresh = _run_rss_only_pipeline()
         if fresh.get('fallback'):
-            logger.warning('Agentic trends: both RSS and fallback failed, returning static fallback')
+            # Worst case: even live RSS failed → serving static placeholder topics.
+            logger.warning('Agentic trends DEGRADED: both RSS and fallback failed, returning static placeholder')
+            _alert_degradation(reason='rss_failed_static_placeholder')
             return fresh
 
         # ── Step 2: Augment with Gemini enrichment if available and fresh ─────────
@@ -168,7 +194,13 @@ def run_trends_pipeline(force_refresh: bool = False) -> dict:
                 logger.info('Agentic trends: live RSS + cached enrichment (age=%.0fs)', age)
             else:
                 # Expired enrichment → serve free RSS-only topics. No LLM, no enqueue.
-                logger.info('Agentic trends: live RSS only (enrichment expired at %.0fs; Refresh to rebuild)', age)
+                # This is a SILENT-QUALITY-DEGRADATION path (the audit's top risk): the
+                # newsroom keeps serving topics without paid Gemini context. Make it LOUD.
+                logger.warning(
+                    'Agentic trends DEGRADED: live RSS only (enrichment expired at %.0fs; Refresh to rebuild)',
+                    age,
+                )
+                _alert_degradation(reason='enrichment_expired', age_seconds=int(age))
         else:
             # Cold cache → serve free RSS-only topics. No LLM, no enqueue.
             logger.info('Agentic trends: live RSS only (no enrichment cached; Refresh to rebuild)')
@@ -221,6 +253,9 @@ def _run_enrichment_only() -> dict:
 
         cache.set(ENRICHMENT_CACHE_KEY, enrichment_map, cache_ttl)
         cache.set(ENRICHMENT_TS_KEY, datetime.now(dt_timezone.utc), cache_ttl)
+        # Freshness heartbeat — written ONLY here, on real (non-placeholder) Gemini
+        # enrichment success. Never expires (None) so the watchdog can measure true age.
+        cache.set(HEALTH_TRENDS_LAST_ENRICHED, datetime.now(dt_timezone.utc).isoformat(), None)
         logger.info('Agentic trends: enrichment cached (%d topics)', len(enrichment_map))
         return {'status': 'ok', 'count': len(enrichment_map)}
 

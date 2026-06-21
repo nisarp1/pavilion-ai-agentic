@@ -297,6 +297,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "workers.tasks.publish_scheduled_articles",
         "schedule": timedelta(minutes=1),
     },
+    # Event-day safety net — LLM-free freshness/output-floor watchdog. Runs on the
+    # article beat so it's active wherever ingestion runs (dev beat stays stopped).
+    "pipeline-health-watchdog": {
+        "task": "workers.tasks.pipeline_health_watchdog",
+        "schedule": timedelta(minutes=15),
+    },
     # fetch-trends-sports, enhance-with-google-trends, refresh-agentic-trends
     # removed from schedule — ON-DEMAND only via Refresh button in UI
 }
@@ -349,6 +355,12 @@ CACHES = {
 TRENDS_CACHE_TTL = 3600  # seconds (1 hr) — matches beat schedule
 TRENDS_MAX_TOPICS = 15
 TRENDS_SPORTS = ['cricket', 'football', 'kabaddi', 'tennis', 'hockey', 'badminton']
+
+# Pipeline health watchdog thresholds (event-day safety net, LLM-free).
+RSS_STALE_MINUTES = env.int('RSS_STALE_MINUTES', default=30)
+TRENDS_STALE_HOURS = env.int('TRENDS_STALE_HOURS', default=6)
+# Consecutive zero-output RSS runs before the watchdog warns "zero new items".
+RSS_ZERO_STREAK_K = env.int('RSS_ZERO_STREAK_K', default=3)
 
 # AWS S3 Settings (Optional)
 AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID', default='')

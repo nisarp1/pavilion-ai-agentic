@@ -85,8 +85,6 @@ services:
       AWS_S3_BUCKET: pavilion-media-009846
       AWS_REGION: us-east-1
       RSSHUB_URL: "http://rsshub:1200"
-      ENVIRONMENT: production
-      DEBUG: 'false'
       PRODUCT: article
     ports:
       - "${NEWSAI_DJANGO_PORT:-8001}:8000"
@@ -120,8 +118,6 @@ services:
       AWS_S3_BUCKET: pavilion-media-009846
       AWS_REGION: us-east-1
       RSSHUB_URL: "http://rsshub:1200"
-      ENVIRONMENT: production
-      DEBUG: 'false'
       PRODUCT: article
     volumes:
       - .:/app
@@ -150,8 +146,6 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       REDIS_CACHE_URL: redis://redis:6379/1
       RSSHUB_URL: "http://rsshub:1200"
-      ENVIRONMENT: production
-      DEBUG: 'false'
       PRODUCT: article
     volumes:
       - .:/app

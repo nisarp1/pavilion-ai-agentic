@@ -31,6 +31,7 @@ import {
 } from 'react-icons/fi'
 import { useState, useRef, useEffect } from 'react'
 import TenantSwitcher from '../Auth/TenantSwitcher'
+import { STUDIOS_ENABLED } from '../../config/features'
 
 const navSections = [
   {
@@ -53,6 +54,7 @@ const navSections = [
   },
   {
     label: 'VIDEO STUDIO',
+    studio: true,
     newAction: { path: '/video-studio?new=1', label: 'New Reel', icon: FiFilm },
     items: [
       { path: '/video-studio', label: 'Video Studio', icon: FiVideo, matchStart: true, excludeStart: '/articles' },
@@ -63,6 +65,7 @@ const navSections = [
   },
   {
     label: 'SOCIAL STUDIO',
+    studio: true,
     items: [
       { path: '/social-studio', label: 'Social Studio', icon: FiZap, matchStart: true, excludeStart: '/feeds', excludeStart2: '/traction-queue' },
       { path: '/traction-queue', label: '⚡ Traction Queue', icon: FiZap, matchStart: true },
@@ -95,15 +98,16 @@ const navSections = [
       { path: '/invite', label: 'Invite Member', icon: FiUserPlus, adminOnly: true },
     ],
   },
-]
+// Studio sections (marked studio:true) are dropped from the nav when STUDIOS_ENABLED is false.
+].filter((section) => STUDIOS_ENABLED || !section.studio)
 
 // Global + New dropdown options
 const CREATE_OPTIONS = [
   { label: 'Article', icon: FiFileText, path: '/articles/create' },
-  { label: 'Video Reel', icon: FiFilm, path: '/video-studio?new=1' },
-  { label: 'Social Post', icon: FiZap, path: '/social-studio' },
+  { label: 'Video Reel', icon: FiFilm, path: '/video-studio?new=1', studio: true },
+  { label: 'Social Post', icon: FiZap, path: '/social-studio', studio: true },
   { label: 'Web Story', icon: FiBookOpen, path: '/webstories/create' },
-]
+].filter((opt) => STUDIOS_ENABLED || !opt.studio)
 
 function Dashboard() {
   const { currentRole, generatingIds = [] } = useSelector((state) => ({

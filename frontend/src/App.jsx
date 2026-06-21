@@ -6,6 +6,7 @@ import { loadBrandingForTenant, setTenantContext } from './utils/brandingLoader'
 import Login from './components/Auth/Login'
 import ProtectedRoute from './components/ProtectedRoute'
 import ErrorBoundary from './components/ErrorBoundary'
+import { STUDIOS_ENABLED } from './config/features'
 
 const Dashboard = lazy(() => import('./components/Dashboard/Dashboard'))
 const DashboardHome = lazy(() => import('./components/Dashboard/DashboardHome'))
@@ -89,14 +90,20 @@ function App() {
             <Route path="invite" element={<InviteUser />} />
             <Route path="profile" element={<UserProfile />} />
             <Route path="settings" element={<TenantSettings />} />
-            <Route path="video-studio" element={<VideoStudio />} />
-            <Route path="social-studio" element={<SocialPostGenerator />} />
-            <Route path="feeds" element={<FeedsView />} />
-            <Route path="football-feeds" element={<FootballFeedsView />} />
-            <Route path="cricket-feeds" element={<CricketFeedsView />} />
-            <Route path="traction-queue" element={<BreakingQueue />} />
-            <Route path="instagram-feeds" element={<InstagramFeedsView />} />
-            <Route path="feed-sources" element={<FeedSourcesView />} />
+            {/* Video/Social Studio surfaces — only registered for the full build.
+                When STUDIOS_ENABLED is false these paths fall through to the "*" redirect. */}
+            {STUDIOS_ENABLED && (
+              <>
+                <Route path="video-studio" element={<VideoStudio />} />
+                <Route path="social-studio" element={<SocialPostGenerator />} />
+                <Route path="feeds" element={<FeedsView />} />
+                <Route path="football-feeds" element={<FootballFeedsView />} />
+                <Route path="cricket-feeds" element={<CricketFeedsView />} />
+                <Route path="traction-queue" element={<BreakingQueue />} />
+                <Route path="instagram-feeds" element={<InstagramFeedsView />} />
+                <Route path="feed-sources" element={<FeedSourcesView />} />
+              </>
+            )}
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

@@ -203,7 +203,7 @@ class NewsWriterAgent:
             if text:
                 result = self._parse_response(text, topic, context)
                 if result:
-                    logger.info('NewsWriterAgent: Malayalam article written via Gemini SDK')
+                    logger.info('NewsWriterAgent: Malayalam article written via Claude')
                     return result
                 logger.warning('NewsWriterAgent: Gemini SDK returned unparseable/short response')
         except Exception as exc:

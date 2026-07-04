@@ -1,14 +1,18 @@
 """
-Central LLM client.
+Central LLM client (compatibility shim).
 
-Historically wrapped Gemini (Vertex AI REST + google-generativeai SDK). Now a thin
-compatibility shim that delegates to ``agents.claude_client`` so the ~10 callers that
-import this module keep working unchanged after the Gemini → Claude migration.
+Historically wrapped Gemini (Vertex AI REST + google-generativeai SDK). After the
+Gemini → Claude migration this became a thin shim over ``agents.claude_client``.
+
+Text generation (``generate_text``) is now routed through ``agents.article_llm``, the
+provider router, so the article writer's model is selected by the ARTICLE_LLM_PROVIDER
+env (default 'claude'; set 'gemini' to use the restored Gemini article writer) without
+touching any caller. Vision (``generate_with_parts``) and web grounding stay on Claude.
 
 Public API preserved for callers:
     get_model_name()            -> str
-    generate_text(...)          -> str
-    generate_with_parts(...)    -> str   (text + image; vision)
+    generate_text(...)          -> str   (routed via agents.article_llm)
+    generate_with_parts(...)    -> str   (text + image; vision — Claude)
     make_image_part(...)        -> dict
     generate_grounded(...)      -> str   (web-grounded; flag-gated via claude_client)
 """
@@ -23,15 +27,23 @@ _DEFAULT_MAX_TOKENS = 4000
 
 
 def get_model_name() -> str:
-    """Return the active model name (now the Claude default)."""
+    """Return the active model name (the Claude default)."""
     return claude_client.DEFAULT_MODEL
 
 
 def generate_text(prompt: str, *, json_mode: bool = False, temperature: float | None = None, **_ignored) -> str:
-    """Text completion. Gemini-only kwargs (json_mode/temperature/top_p/...) are accepted
-    for signature compatibility but ignored — Claude's messages API rejects them."""
-    logger.debug("[LLM] generate_text via Claude (model=%s)", claude_client.DEFAULT_MODEL)
-    return claude_client.complete(prompt, max_tokens=_DEFAULT_MAX_TOKENS)
+    """Text completion, routed through ``agents.article_llm``.
+
+    The provider is chosen by ARTICLE_LLM_PROVIDER (default 'claude'; set 'gemini' to
+    use the restored Gemini article writer). ``json_mode``/``temperature`` are honored
+    by the Gemini provider and ignored by Claude (its messages API rejects them)."""
+    from . import article_llm
+    return article_llm.generate(
+        prompt,
+        temperature=temperature,
+        max_tokens=_DEFAULT_MAX_TOKENS,
+        json_mode=json_mode,
+    )
 
 
 def make_image_part(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:

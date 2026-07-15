@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'workers',
     'video_studio',
     'agents',
+    'article_api',
     'style_library',
 ]
 

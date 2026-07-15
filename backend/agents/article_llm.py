@@ -19,8 +19,13 @@ DEFAULT_PROVIDER = os.environ.get("ARTICLE_LLM_PROVIDER", "claude").strip().lowe
 
 
 def generate(prompt: str, *, provider: str | None = None, temperature: float | None = None,
-             max_tokens: int = 4000, model: str | None = None, json_mode: bool = False) -> str:
-    """Generate article text with the selected provider."""
+             max_tokens: int = 4000, model: str | None = None, json_mode: bool = False,
+             return_usage: bool = False):
+    """Generate article text with the selected provider.
+
+    return_usage=False -> str (unchanged).
+    return_usage=True  -> (text, {provider, model, input_tokens, output_tokens}).
+    """
     p = (provider or DEFAULT_PROVIDER).strip().lower()
 
     if p == "gemini":
@@ -28,6 +33,7 @@ def generate(prompt: str, *, provider: str | None = None, temperature: float | N
         logger.info("[article_llm] provider=gemini model=%s", model or gemini_writer.GEMINI_ARTICLE_MODEL)
         return gemini_writer.generate_text(
             prompt, json_mode=json_mode, temperature=temperature, model=model,
+            return_usage=return_usage,
         )
 
     if p == "bedrock":
@@ -47,8 +53,14 @@ def generate(prompt: str, *, provider: str | None = None, temperature: float | N
             messages=[{"role": "user", "content": [{"text": prompt}]}],
             inferenceConfig=infcfg,
         )
-        return "".join(b.get("text", "") for b in resp["output"]["message"]["content"])
+        text = "".join(b.get("text", "") for b in resp["output"]["message"]["content"])
+        if return_usage:
+            u = resp.get("usage", {})
+            return text, {"provider": "bedrock", "model": model_id,
+                          "input_tokens": int(u.get("inputTokens", 0) or 0),
+                          "output_tokens": int(u.get("outputTokens", 0) or 0)}
+        return text
 
     from . import claude_client
     logger.info("[article_llm] provider=claude model=%s", model or claude_client.DEFAULT_MODEL)
-    return claude_client.complete(prompt, max_tokens=max_tokens, model=model)
+    return claude_client.complete(prompt, max_tokens=max_tokens, model=model, return_usage=return_usage)

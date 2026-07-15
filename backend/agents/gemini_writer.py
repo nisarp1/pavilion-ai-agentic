@@ -27,11 +27,15 @@ def _model_name(model=None) -> str:
 
 
 def generate_text(prompt: str, *, json_mode: bool = False,
-                  temperature: float | None = None, model: str | None = None) -> str:
+                  temperature: float | None = None, model: str | None = None,
+                  return_usage: bool = False):
     """Text completion via Gemini AI Studio. Fails LOUD if GEMINI_API_KEY is unset.
 
     temperature=None preserves Gemini's own default (matches the pre-migration path
     that produced the approved voice); pass a value to override.
+
+    return_usage=False -> str (unchanged).
+    return_usage=True  -> (text, {provider, model, input_tokens, output_tokens}).
     """
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
@@ -43,7 +47,8 @@ def generate_text(prompt: str, *, json_mode: bool = False,
     import google.generativeai as genai  # lazy: only when Gemini is actually used
 
     genai.configure(api_key=api_key)
-    gmodel = genai.GenerativeModel(_model_name(model))
+    mname = _model_name(model)
+    gmodel = genai.GenerativeModel(mname)
 
     cfg: dict = {}
     if json_mode:
@@ -51,6 +56,17 @@ def generate_text(prompt: str, *, json_mode: bool = False,
     if temperature is not None:
         cfg["temperature"] = temperature
 
-    logger.info("[gemini_writer] generating via %s (temp=%s)", _model_name(model), temperature)
+    logger.info("[gemini_writer] generating via %s (temp=%s)", mname, temperature)
     resp = gmodel.generate_content(prompt, generation_config=cfg or None)
-    return resp.text.strip() if resp and resp.text else ""
+    text = resp.text.strip() if resp and resp.text else ""
+
+    if return_usage:
+        um = getattr(resp, "usage_metadata", None)
+        usage = {
+            "provider": "gemini",
+            "model": mname,
+            "input_tokens": int(getattr(um, "prompt_token_count", 0) or 0),
+            "output_tokens": int(getattr(um, "candidates_token_count", 0) or 0),
+        }
+        return text, usage
+    return text

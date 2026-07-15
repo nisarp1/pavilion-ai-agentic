@@ -97,6 +97,7 @@ urlpatterns = [
     path('api/', include('cms.urls')),
     path('api/rss/', include('rss_fetcher.urls')),
     path('api/tenants/', include('tenants.urls')),
+    path('api/v1/', include('article_api.urls')),
     path('api/video/', include('video_studio.urls')),
 
     # Reel Pipeline API

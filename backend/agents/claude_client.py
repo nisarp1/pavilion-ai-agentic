@@ -15,15 +15,25 @@ DEFAULT_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-8")
 WEB_GROUNDING = os.environ.get("ENABLE_WEB_GROUNDING", "false").lower() == "true"
 
 
-def complete(prompt, *, system=None, max_tokens=4000, model=None) -> str:
-    """Canonical text completion. Returns the concatenated text blocks."""
+def complete(prompt, *, system=None, max_tokens=4000, model=None, return_usage=False):
+    """Canonical text completion. Returns the concatenated text blocks.
+
+    return_usage=False -> str (unchanged).
+    return_usage=True  -> (text, {provider, model, input_tokens, output_tokens}).
+    """
+    mdl = model or DEFAULT_MODEL
     resp = _client.messages.create(
-        model=model or DEFAULT_MODEL,
+        model=mdl,
         max_tokens=max_tokens,
         system=system or anthropic.NOT_GIVEN,
         messages=[{"role": "user", "content": prompt}],
     )
-    return "".join(b.text for b in resp.content if b.type == "text")
+    text = "".join(b.text for b in resp.content if b.type == "text")
+    if return_usage:
+        return text, {"provider": "claude", "model": mdl,
+                      "input_tokens": int(getattr(resp.usage, "input_tokens", 0) or 0),
+                      "output_tokens": int(getattr(resp.usage, "output_tokens", 0) or 0)}
+    return text
 
 
 def complete_json(prompt, *, system=None, max_tokens=4000, model=None) -> dict:

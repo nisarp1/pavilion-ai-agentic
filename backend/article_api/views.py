@@ -126,7 +126,29 @@ def styles_view(request):
                     status=201)
 
 
-# ── Public demo endpoint (no key; strict per-IP throttle + hard cap) ──────────
+# ── Public demo surface (no key; strict per-IP throttle + hard cap) ──────────
+
+def _demo_tenant():
+    from tenants.models import Tenant
+    return Tenant.objects.filter(id=2).first() or Tenant.objects.first()
+
+
+def demo_page_view(request):
+    """Self-contained demo page (no React/Dashboard dependency)."""
+    import os
+    from django.http import HttpResponse
+    path = os.path.join(os.path.dirname(__file__), "demo_page.html")
+    with open(path, encoding="utf-8") as fh:
+        return HttpResponse(fh.read())
+
+
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([])
+def demo_usage_view(request):
+    """Keyless cumulative usage for the demo tenant (read-only aggregate)."""
+    return Response(_aggregate_usage(_demo_tenant()))
+
 
 class DemoThrottle(SimpleRateThrottle):
     scope = "article_demo"
@@ -145,10 +167,8 @@ def demo_generate_view(request):
     topic = (request.data.get("topic") or "").strip()
     if not topic:
         return Response({"error": "topic is required"}, status=400)
-    from tenants.models import Tenant
-    tenant = Tenant.objects.filter(id=2).first() or Tenant.objects.first()
     result = services.generate(
-        topic, tenant=tenant,
+        topic, tenant=_demo_tenant(),
         style_profile_id=request.data.get("style_profile_id"),
         language=request.data.get("language", "ml"),
     )

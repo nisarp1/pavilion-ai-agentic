@@ -1,0 +1,109 @@
+# Isolated ARTICLE DEMO stack — fully separate from pavilion-*-dev and newsai-*.
+# Project "articledemo" => articledemo_* network/volumes, articledemo-* containers.
+# Reuses the already-built newsai-* images (code is volume-mounted, so this branch runs).
+# Only django is published to the host (port 8002). pg/redis/rsshub internal-only.
+#
+# Up (no beat — zero idle LLM spend):
+#   docker compose -p articledemo -f docker-compose.demo.yml --env-file .env.demo up -d postgres redis rsshub django celery
+name: articledemo
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: articledemo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - articledemo_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [articledemo-network]
+
+  redis:
+    image: redis:7-alpine
+    container_name: articledemo-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [articledemo-network]
+
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: articledemo-rsshub
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      TWITTER_AUTH_TOKEN: "${TWITTER_AUTH_TOKEN:-}"
+      TWITTER_CT0: "${TWITTER_CT0:-}"
+      TWITTER_COOKIE: "auth_token=${TWITTER_AUTH_TOKEN:-}; ct0=${TWITTER_CT0:-}"
+    networks: [articledemo-network]
+
+  django:
+    image: newsai-django:latest
+    container_name: articledemo-django
+    restart: unless-stopped
+    command: >
+      sh -c "python backend/manage.py migrate &&
+             daphne -b 0.0.0.0 -p 8000 pavilion_gemini.asgi:application"
+    env_file: [.env.demo]
+    environment:
+      DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
+      PRODUCT: article
+    ports:
+      - "${DEMO_DJANGO_PORT:-8002}:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [articledemo-network]
+
+  celery:
+    image: newsai-celery:latest
+    container_name: articledemo-celery
+    restart: unless-stopped
+    command: celery -A pavilion_gemini worker --loglevel=info -Q default,celery
+    env_file: [.env.demo]
+    environment:
+      DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
+      DJANGO_INTERNAL_URL: http://django:8000
+      PRODUCT: article
+    volumes:
+      - .:/app
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [articledemo-network]
+
+  celery-beat:
+    image: newsai-celery:latest
+    container_name: articledemo-celery-beat
+    restart: unless-stopped
+    command: celery -A pavilion_gemini beat --loglevel=info --scheduler celery.beat.PersistentScheduler
+    env_file: [.env.demo]
+    environment:
+      DJANGO_SETTINGS_MODULE: pavilion_gemini.settings
+      PRODUCT: article
+    volumes:
+      - .:/app
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [articledemo-network]
+
+networks:
+  articledemo-network:
+    driver: bridge
+
+volumes:
+  articledemo_postgres_data:
+    driver: local

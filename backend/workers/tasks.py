@@ -511,50 +511,66 @@ def generate_article_with_gemini(article, mode='core'):
              """
              logger.info(f"Generated Prompt for Stub (Topic: {topic})")
         else:
-            # STANDARD MODE for normal articles
-            source_links_html = "" # No dynamic sources for standard RSS fetch (passed source_url is enough)
-            prompt = f"""You are a professional Malayalam content writer and editor for a news/editorial website. Based on the following English article information, create a complete, localized Malayalam article.
-    
+            # STANDARD MODE - strictly grounded on the real source article (scraped).
+            source_links_html = ""
+            scraped = ""
+            if article.source_url:
+                try:
+                    import requests as _rq
+                    from bs4 import BeautifulSoup as _BS
+                    _h = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+                    _r = _rq.get(article.source_url, headers=_h, timeout=6, allow_redirects=True)
+                    if _r.status_code == 200:
+                        _soup = _BS(_r.content, "html.parser")
+                        _txt = " ".join(pp.get_text() for pp in _soup.find_all("p") if len(pp.get_text().split()) > 5)
+                        scraped = _txt[:4000]
+                except Exception as _e:
+                    logger.warning(f"Source scrape failed for {article.source_url}: {_e}")
+            source_content = scraped if len(scraped) > 200 else (original_summary or "")
+            logger.info(f"Standard-mode grounding: scraped {len(scraped)} chars from source")
+            try:
+                from agents import claude_client as _cc
+                if getattr(_cc, "WEB_GROUNDING", False):
+                    from agents.gemini_client import generate_text_grounded as _gg
+                    _rp = ("You are a sports news researcher. Using web search across credible, recent, authoritative news outlets, research this story and return a DETAILED FACTUAL BRIEF in English: key facts, full names, exact scores and figures, dates, venues, and direct quotes you actually find, each attributed to its source outlet. Only include facts found in search results; never invent. " + f"TOPIC: {original_title}. CONTEXT: {original_summary}")
+                    logger.info("Article grounding (research step): web_search, max_uses=3")
+                    _facts = _gg(_rp, allowed_domains=None, max_uses=3)
+                    if _facts and len(_facts) > 120:
+                        source_content = source_content + "  === RESEARCHED FACTS (credible, recent web sources) ===  " + _facts
+                        logger.info(f"Research step added {len(_facts)} chars of grounded facts")
+            except Exception as _e:
+                logger.warning(f"Web-research step failed (continuing with source only): {_e}")
+            prompt = f"""You are a professional Malayalam news editor. Write a rich, FACTUAL Malayalam news article grounded STRICTLY in the SOURCE CONTENT below (which already includes facts researched from credible, recent news sources). This is real news: accuracy is paramount - never invent anything beyond the SOURCE CONTENT.
+
     ORIGINAL ENGLISH TITLE: {original_title}
-    
-    ORIGINAL ENGLISH SUMMARY: {original_summary}
-    
-    SOURCE URL: {article.source_url if article.source_url else 'Not available'}
-    
-    IMPORTANT INSTRUCTIONS:
-    1. DO NOT provide a plain translation. Instead, rewrite the article in authentic Malayalam editorial style
-    2. Use professional, editorial, and authentic Malayalam language and tone
-    3. Localize the content - adapt it for Malayalam-speaking readers while maintaining editorial authenticity
-    4. Use appropriate Malayalam vocabulary, expressions, and cultural context
-    5. Maintain journalistic standards and editorial voice
-    
+
+    SOURCE CONTENT (your starting point - expand it with web search of credible, recent sources):
+    {source_content}
+
+    SOURCE URL: {article.source_url if article.source_url else "Not available"}
+
+    STRICT ACCURACY RULES (non-negotiable):
+    1. Use ONLY facts present in the SOURCE CONTENT below (it already includes researched facts from credible, recent sources). Do NOT state anything not supported there.
+    2. NEVER invent names, ages, scores, dates, venues, quotes, statistics, match outcomes, retirements, injuries, or any specific fact. If the source does not state it, do not write it.
+    3. Write a complete, well-developed article (4-6 paragraphs) when your search returns enough credible material; if little is found, write only what is supported and stop. Never pad with invented detail to reach a length.
+    4. Report only what THIS source reports - no general Wikipedia-style background filler.
+    5. If the source is too thin for a full report, write a brief factual note and stop. Never fabricate to reach a length.
+    6. Write in authentic Malayalam editorial style, but every FACT must trace to the SOURCE CONTENT (the source teaser plus the researched facts).
+
     REQUIRED OUTPUT FORMAT (provide as JSON):
     {{
-        "title_malayalam": "Malayalam title (professional, editorial style)",
-        "summary_malayalam": "Malayalam summary (2-3 sentences, professional editorial tone)",
-        "summary_english": "English summary (2-3 sentences)",
-        "body_malayalam": "Full article body in Malayalam (4-5 paragraphs in HTML format with <p> tags)",
-        "instagram_reel_script": "Thoughtful and engaging Instagram Reel script (voiceover type) in Malayalam. Conversational, engaging, and summarizes the key points. Approx 30-60 seconds when read aloud.",
-        "social_media_poster_text": "Short, punchy Malayalam text for a poster image (2-5 words, very catchy)",
-        "social_media_caption": "Engaging Malayalam caption for social media (Facebook/Instagram) with relevant hashtags",
-        "meta_title": "SEO meta title in Malayalam (60-70 characters)",
-        "meta_description": "SEO meta description in Malayalam (150-160 characters)",
-        "og_title": "OG title in Malayalam (60-70 characters)",
-        "og_description": "OG description in Malayalam (200 characters max)"
+        "title_malayalam": "Factual Malayalam headline reflecting the source (no invented specifics)",
+        "summary_malayalam": "2-3 sentence Malayalam summary, source facts only",
+        "summary_english": "2-3 sentence English summary, source facts only",
+        "body_malayalam": "Malayalam body in HTML <p> tags. Length proportional to the source. Facts strictly from SOURCE CONTENT.",
+        "instagram_reel_script": "Short Malayalam reel script (30-60s), facts only, no invented hype",
+        "social_media_poster_text": "Short catchy Malayalam poster text (2-5 words), no invented claim",
+        "social_media_caption": "Malayalam social caption with relevant hashtags, facts only",
+        "meta_title": "Malayalam SEO title (60-70 chars)",
+        "meta_description": "Malayalam SEO description (150-160 chars)",
+        "og_title": "Malayalam OG title (60-70 chars)",
+        "og_description": "Malayalam OG description (200 chars max)"
     }}
-    
-    BODY REQUIREMENTS:
-    - Write 4-5 substantial paragraphs (each 3-5 sentences)
-    - Use HTML format with <p> tags only (no headings unless absolutely necessary)
-    - Professional editorial tone - like a quality Malayalam news editorial
-    - Engaging introduction, detailed body paragraphs, and strong conclusion
-    - Localized yet authentic Malayalam - should read like original Malayalam journalism, not translation
-    
-    REEL SCRIPT REQUIREMENTS:
-    - Engaging, conversational tone suitable for social media
-    - Hook the viewer in the first 3 seconds
-    - Summarize the main story quickly and interestingly
-    - End with a call to action (e.g., "Read more strictly on our website")
     """
 
         prompt += "\nReturn the JSON response with all fields filled."

@@ -213,6 +213,7 @@ REST_FRAMEWORK = {
         'anon': '60/minute',
         'user': '300/minute',
         'auth': '10/minute',       # applied per-view on login/register/pw-reset
+        'generation': '10/minute',  # paid article-generation endpoint (burst cap; monthly cap is per-tenant)
     },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,

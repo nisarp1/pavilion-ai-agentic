@@ -14,6 +14,14 @@ DEFAULT_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-8")
 # complete_grounded() behaves exactly like complete() (zero search cost).
 WEB_GROUNDING = os.environ.get("ENABLE_WEB_GROUNDING", "false").lower() == "true"
 
+# Credible news domains for web-search grounding (article enrichment).
+CREDIBLE_NEWS_DOMAINS = [
+    "espncricinfo.com", "cricbuzz.com", "bbc.com", "bbc.co.uk", "reuters.com",
+    "apnews.com", "thehindu.com", "sportstar.thehindu.com", "indianexpress.com",
+    "hindustantimes.com", "ndtv.com", "theguardian.com", "icc-cricket.com",
+    "olympics.com", "timesofindia.indiatimes.com",
+]
+
 
 def complete(prompt, *, system=None, max_tokens=4000, model=None) -> str:
     """Canonical text completion. Returns the concatenated text blocks."""
@@ -59,7 +67,7 @@ def complete_vision(prompt, image_bytes, media_type="image/png", *,
     return "".join(b.text for b in resp.content if b.type == "text")
 
 
-def complete_grounded(prompt, *, system=None, max_tokens=4000, model=None) -> str:
+def complete_grounded(prompt, *, system=None, max_tokens=4000, model=None, allowed_domains=None, max_uses=None) -> str:
     """Web-grounded completion (replaces Gemini Google-Search grounding).
 
     Flag-gated: when ENABLE_WEB_GROUNDING is off, this is just complete() — no
@@ -72,7 +80,12 @@ def complete_grounded(prompt, *, system=None, max_tokens=4000, model=None) -> st
 
     mdl = model or DEFAULT_MODEL
     sys = system or anthropic.NOT_GIVEN
-    tools = [{"type": "web_search_20260209", "name": "web_search"}]
+    _ws = {"type": "web_search_20260209", "name": "web_search"}
+    if max_uses:
+        _ws["max_uses"] = max_uses
+    if allowed_domains:
+        _ws["allowed_domains"] = allowed_domains
+    tools = [_ws]
     msgs = [{"role": "user", "content": prompt}]
 
     resp = _client.messages.create(

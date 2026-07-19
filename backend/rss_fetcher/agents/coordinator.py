@@ -26,6 +26,12 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+# Hard kill-switch for PAID Claude trends enrichment. Default OFF so this stack
+# never spends on AI trend refresh unless explicitly enabled. The free live-RSS
+# topic path is unaffected. Enable with ENABLE_TRENDS_ENRICHMENT=true.
+import os
+TRENDS_ENRICHMENT_ENABLED = os.environ.get("ENABLE_TRENDS_ENRICHMENT", "false").strip().lower() == "true"
+
 # Enrichment cache: stores {topic_key → enriched_dict} (NOT the full payload)
 ENRICHMENT_CACHE_KEY = 'agentic_enrichment_v2'
 ENRICHMENT_TS_KEY    = 'agentic_enrichment_v2_ts'
@@ -130,6 +136,9 @@ def _trigger_background_refresh():
     TRENDS_CACHE_TTL window no matter how often Refresh is clicked. Clicks while a
     rebuild is in flight (or recently completed) are no-ops — no stampede.
     """
+    if not TRENDS_ENRICHMENT_ENABLED:
+        logger.info('Agentic trends: paid enrichment disabled (ENABLE_TRENDS_ENRICHMENT=false) â Refresh is a no-op, serving live RSS only')
+        return
     cache_ttl = getattr(settings, 'TRENDS_CACHE_TTL', 300)
     if not cache.add(REFRESH_DEBOUNCE_KEY, '1', cache_ttl):
         logger.info('Agentic trends: refresh debounced — a rebuild ran within the last %ss', cache_ttl)
@@ -222,6 +231,9 @@ def _run_enrichment_only() -> dict:
     Stores a {topic_key → enriched_dict} map — NOT a full user-facing payload.
     Returns a status dict for the Celery task log.
     """
+    if not TRENDS_ENRICHMENT_ENABLED:
+        logger.info('Agentic trends enrichment: disabled (ENABLE_TRENDS_ENRICHMENT=false) â skipping paid LLM run')
+        return {'status': 'disabled'}
     cache_ttl = getattr(settings, 'TRENDS_CACHE_TTL', 300)
 
     if not cache.add(LOCK_KEY, 1, 120):

@@ -62,6 +62,10 @@ class RegisterView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
+        import os
+        if os.environ.get('ENABLE_PUBLIC_REGISTRATION', 'false').strip().lower() != 'true':
+            return Response({'error': 'Public registration is disabled.'},
+                            status=status.HTTP_403_FORBIDDEN)
         serializer = RegisterSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

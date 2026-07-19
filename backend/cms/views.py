@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.throttling import UserRateThrottle
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.utils import timezone
@@ -38,6 +39,11 @@ from tenants.permissions import (
     IsEditorOrAdminOfTenant,
     HasReadAccessToTenant,
 )
+
+
+class GenerationRateThrottle(UserRateThrottle):
+    """Per-user burst limit for the paid article-generation endpoint."""
+    scope = 'generation'
 
 
 class ArticleViewSet(viewsets.ModelViewSet):
@@ -243,7 +249,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'status': 'error', 'message': str(e)})
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], throttle_classes=[GenerationRateThrottle])
     def generate(self, request, pk=None):
         """Trigger article generation via Celery (falls back to thread if broker is down)."""
         article = self.get_object()
@@ -261,7 +267,8 @@ class ArticleViewSet(viewsets.ModelViewSet):
             if not allowed:
                 return Response({'error': msg}, status=status.HTTP_402_PAYMENT_REQUIRED)
         except Exception:
-            pass
+            return Response({'error': 'Generation temporarily unavailable, please retry.'},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         article.status = 'generating'
         article.generation_started_at = timezone.now()

@@ -84,3 +84,8 @@ def generate_grounded(prompt: str) -> str:
     which uses Claude's web_search tool when ENABLE_WEB_GROUNDING is set and
     otherwise falls back to a plain completion (zero search cost)."""
     return claude_client.complete_grounded(prompt)
+
+
+def generate_text_grounded(prompt: str, *, allowed_domains=None, max_uses=3, **_ignored) -> str:
+    """Web-grounded text generation for article enrichment (credible recent sources)."""
+    return claude_client.complete_grounded(prompt, max_tokens=_DEFAULT_MAX_TOKENS, allowed_domains=allowed_domains, max_uses=max_uses)

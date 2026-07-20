@@ -304,6 +304,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "workers.tasks.pipeline_health_watchdog",
         "schedule": timedelta(minutes=15),
     },
+    # Unstick articles left in 'generating' by a crash/OOM/restart — LLM-free.
+    "reap-stuck-generations": {
+        "task": "workers.tasks.reap_stuck_generations",
+        "schedule": timedelta(minutes=5),
+    },
     # fetch-trends-sports, enhance-with-google-trends, refresh-agentic-trends
     # removed from schedule — ON-DEMAND only via Refresh button in UI
 }

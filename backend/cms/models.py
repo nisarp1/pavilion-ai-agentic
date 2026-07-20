@@ -233,12 +233,14 @@ class Article(models.Model):
     """Article model for CMS."""
     
     STATUS_CHOICES = [
-        ('fetched', 'Fetched'),      # Article fetched from RSS
-        ('generated', 'Generated'),  # AI article written, awaiting review
-        ('review', 'Review'),        # Flagged for editorial review
-        ('draft', 'Draft'),          # Ready for editing
-        ('published', 'Published'),  # Article published
-        ('archived', 'Archived'),    # Article archived
+        ('fetched', 'Fetched'),        # Article fetched from RSS
+        ('generating', 'Generating'),  # AI generation in progress
+        ('generated', 'Generated'),    # AI article written, awaiting review
+        ('review', 'Review'),          # Flagged for editorial review
+        ('draft', 'Draft'),            # Ready for editing
+        ('published', 'Published'),    # Article published
+        ('archived', 'Archived'),      # Article archived
+        ('failed', 'Failed'),          # AI generation failed — safe to retry
     ]
     
     CATEGORY_CHOICES = [
@@ -449,6 +451,7 @@ class Article(models.Model):
     publish_at = models.DateTimeField(null=True, blank=True, help_text="Schedule future publishing at this datetime")
     generation_started_at = models.DateTimeField(null=True, blank=True)
     generation_completed_at = models.DateTimeField(null=True, blank=True)
+    generation_error = models.TextField(blank=True, default='', help_text="Human-readable reason the last AI generation failed (empty when healthy)")
 
     # Celery task tracking
     celery_task_id = models.CharField(max_length=255, blank=True, default='', help_text="Celery task ID for the active background task")

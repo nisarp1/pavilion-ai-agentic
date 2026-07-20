@@ -4,8 +4,13 @@ import os
 import anthropic
 
 # Single shared client — reads ANTHROPIC_API_KEY from the environment.
-# The SDK auto-retries 429/5xx with exponential backoff, so no manual retry loop.
-_client = anthropic.Anthropic()
+# The SDK auto-retries 429/5xx with exponential backoff. We cap BOTH the per-request
+# wall-clock (timeout) and the retry count so a hung/slow upstream can never wedge a
+# Celery worker indefinitely — the generation task must fail fast and be marked failed
+# rather than sit in "generating" forever. Overridable via env for tuning.
+_LLM_TIMEOUT = float(os.environ.get("LLM_REQUEST_TIMEOUT", "90"))   # seconds per request
+_LLM_MAX_RETRIES = int(os.environ.get("LLM_MAX_RETRIES", "2"))
+_client = anthropic.Anthropic(timeout=_LLM_TIMEOUT, max_retries=_LLM_MAX_RETRIES)
 
 # Model is overridable via env without code changes; per-call override also supported.
 DEFAULT_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-8")
@@ -24,14 +29,26 @@ CREDIBLE_NEWS_DOMAINS = [
 
 
 def complete(prompt, *, system=None, max_tokens=4000, model=None) -> str:
-    """Canonical text completion. Returns the concatenated text blocks."""
+    """Canonical text completion. Returns the concatenated text blocks.
+
+    Fails loud on truncation: if the model stops because it hit max_tokens the
+    output is a partial (often mid-word) response. Silently returning it is how
+    articles used to get saved cut off mid-sentence — so we raise instead, letting
+    the caller retry with a larger budget or mark the article failed.
+    """
     resp = _client.messages.create(
         model=model or DEFAULT_MODEL,
         max_tokens=max_tokens,
         system=system or anthropic.NOT_GIVEN,
         messages=[{"role": "user", "content": prompt}],
     )
-    return "".join(b.text for b in resp.content if b.type == "text")
+    text = "".join(b.text for b in resp.content if b.type == "text")
+    if resp.stop_reason == "max_tokens":
+        raise RuntimeError(
+            f"LLM output truncated at max_tokens={max_tokens} "
+            f"(model={model or DEFAULT_MODEL}, got {len(text)} chars)"
+        )
+    return text
 
 
 def complete_json(prompt, *, system=None, max_tokens=4000, model=None) -> dict:

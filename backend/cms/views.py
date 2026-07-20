@@ -254,9 +254,23 @@ class ArticleViewSet(viewsets.ModelViewSet):
         """Trigger article generation via Celery (falls back to thread if broker is down)."""
         article = self.get_object()
 
-        if article.status != 'fetched':
+        # Allow generation from 'fetched' (first attempt) and 'failed' (retry). Block
+        # only states where generation makes no sense or a run is genuinely in flight.
+        # A 'generating' article older than the task budget is treated as stale and
+        # retryable (the worker/reaper will have given up on it).
+        GENERATABLE = {'fetched', 'failed'}
+        is_stale_generating = False
+        if article.status == 'generating' and article.generation_started_at:
+            age = (timezone.now() - article.generation_started_at).total_seconds()
+            is_stale_generating = age > 210  # matches the task hard time_limit
+        if article.status not in GENERATABLE and not is_stale_generating:
+            if article.status == 'generating':
+                return Response(
+                    {'error': 'Generation already in progress for this article.'},
+                    status=status.HTTP_409_CONFLICT
+                )
             return Response(
-                {'error': "Article must be in 'fetched' status to generate."},
+                {'error': f"Cannot generate: article is '{article.status}'. Only fetched or failed articles can be generated."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 

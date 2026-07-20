@@ -123,12 +123,12 @@ class ArticleSerializer(serializers.ModelSerializer):
             'social_post_celery_task_id', 'canva_export_log',
             # ─────────────────────────────────────────────────────────────────
             'created_at', 'updated_at', 'published_at', 'publish_at',
-            'generation_started_at', 'generation_completed_at',
+            'generation_started_at', 'generation_completed_at', 'generation_error',
             'celery_task_id',
         ]
         read_only_fields = [
             'id', 'slug', 'created_at', 'updated_at',
-            'generation_started_at', 'generation_completed_at',
+            'generation_started_at', 'generation_completed_at', 'generation_error',
             'video_error', 'newsroomx_status', 'newsroomx_error', 'newsroomx_video_url',
             'celery_task_id',
             'social_post_status', 'social_post_celery_task_id', 'canva_export_log',
@@ -220,6 +220,7 @@ class ArticleListSerializer(serializers.ModelSerializer):
             'source_url', 'featured_image_url', 'trend_data',
             'video_format', 'video_production_plan',
             'reel_generation_status', 'reel_video_url',
+            'generation_started_at', 'generation_error',
         ]
     
     def get_featured_image_url(self, obj):

@@ -14,6 +14,7 @@ except ImportError:
 
 from django.utils import timezone
 from django.conf import settings
+from celery.exceptions import SoftTimeLimitExceeded
 from cms.models import Article, Category
 from slugify import slugify
 import logging
@@ -993,11 +994,16 @@ def _generate_article_task_impl(article_id):
     """
     try:
         article = Article.objects.get(id=article_id)
-        
-        # Mark generation as started
+
+        # Mark generation as started — explicit 'generating' status + clear any error
+        # from a previous failed attempt so a retry starts clean.
+        article.status = 'generating'
         article.generation_started_at = timezone.now()
-        article.save()
-        
+        article.generation_completed_at = None
+        article.generation_error = ''
+        article.save(update_fields=['status', 'generation_started_at',
+                                    'generation_completed_at', 'generation_error'])
+
         logger.info(f"Starting article generation for Article {article_id} in Malayalam")
         
         # Store original English title for slug generation
@@ -1088,8 +1094,9 @@ def _generate_article_task_impl(article_id):
         # Mark as draft (ready for editing)
         article.status = 'draft'
         article.generation_completed_at = timezone.now()
+        article.generation_error = ''
         article.save()
-        
+
         logger.info(f"Article generation completed for Article {article_id}")
         
         return {
@@ -1104,17 +1111,41 @@ def _generate_article_task_impl(article_id):
             'success': False,
             'error': 'Article not found'
         }
-    
+
+    except SoftTimeLimitExceeded:
+        # The task ran past its wall-clock budget (usually a slow/hung LLM call).
+        # Mark the article FAILED so the UI unsticks and the user can retry — never
+        # leave it in 'generating' forever.
+        logger.error(f"Article {article_id} generation TIMED OUT (soft time limit)")
+        _mark_article_failed(article_id, "Generation timed out. Please try again.")
+        return {'success': False, 'error': 'timeout', 'article_id': article_id}
+
     except Exception as e:
-        logger.error(f"Error generating article {article_id}: {str(e)}")
-        article = Article.objects.filter(id=article_id).first()
-        if article:
-            article.generation_completed_at = timezone.now()
-            article.save()
+        # ANY failure marks the article FAILED with a human-readable reason. The old
+        # code left status='generating' here, which is exactly why articles appeared
+        # stuck forever and needed a manual reload that still showed nothing.
+        logger.error(f"Error generating article {article_id}: {str(e)}", exc_info=True)
+        _mark_article_failed(article_id, str(e)[:500] or "Generation failed.")
         return {
             'success': False,
-            'error': str(e)
+            'error': str(e),
+            'article_id': article_id,
         }
+
+
+def _mark_article_failed(article_id, reason):
+    """Move an article to the 'failed' state with a user-facing reason. Best-effort:
+    never raises (it runs inside except-handlers and the reaper)."""
+    try:
+        article = Article.objects.filter(id=article_id).first()
+        if not article:
+            return
+        article.status = 'failed'
+        article.generation_completed_at = timezone.now()
+        article.generation_error = reason
+        article.save(update_fields=['status', 'generation_completed_at', 'generation_error'])
+    except Exception as _e:  # noqa: BLE001
+        logger.error(f"Could not mark article {article_id} failed: {_e}")
 
 
 # ── Caption helpers ───────────────────────────────────────────────────────────
@@ -1579,22 +1610,46 @@ def generate_instagram_reel_audio(article, voice_name='chirp'):
         return False
 
 
-@shared_task
+# Wall-clock budget for one generation. soft_time_limit raises SoftTimeLimitExceeded
+# (caught → article marked 'failed'); time_limit is the hard SIGKILL backstop 30s later.
+# Generous vs the real cost (Gemini writer ~11s, Claude ~80s) so only a genuine hang trips it.
+@shared_task(soft_time_limit=180, time_limit=210)
 def generate_article_task(article_id):
     """Celery task wrapper for article generation."""
     result = _generate_article_task_impl(article_id)
-    # Track usage
+    # Track usage only for genuinely successful generations — never bill a timeout/failure.
     try:
-        article = Article.objects.get(id=article_id)
-        from tenants.models import UsageRecord
-        UsageRecord.objects.create(
-            tenant=article.tenant,
-            metric_type='article_generated',
-            meta={'article_id': article_id},
-        )
+        if result and result.get('success'):
+            article = Article.objects.get(id=article_id)
+            from tenants.models import UsageRecord
+            UsageRecord.objects.create(
+                tenant=article.tenant,
+                metric_type='article_generated',
+                meta={'article_id': article_id},
+            )
     except Exception:
         pass
     return result
+
+
+@shared_task
+def reap_stuck_generations(max_age_minutes=8):
+    """Safety net: mark as 'failed' any article stuck in 'generating' past the budget.
+
+    Covers the cases the in-task handler can't — a worker killed mid-task, an OOM,
+    a container restart. LLM-free, so it is safe to run on the article-only beat
+    (zero cost). Without this, a crash could strand an article in 'generating' forever.
+    """
+    from datetime import timedelta
+    cutoff = timezone.now() - timedelta(minutes=max_age_minutes)
+    stuck = Article.objects.filter(status='generating', generation_started_at__lt=cutoff)
+    reaped = []
+    for article in stuck:
+        _mark_article_failed(article.id, "Generation stalled and was reset. Please try again.")
+        reaped.append(article.id)
+    if reaped:
+        logger.warning(f"reap_stuck_generations: reset {len(reaped)} stuck article(s): {reaped}")
+    return {'reaped': reaped}
 
 
 @shared_task

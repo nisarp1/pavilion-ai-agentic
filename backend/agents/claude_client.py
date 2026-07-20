@@ -3,14 +3,32 @@ import os
 
 import anthropic
 
-# Single shared client — reads ANTHROPIC_API_KEY from the environment.
 # The SDK auto-retries 429/5xx with exponential backoff. We cap BOTH the per-request
 # wall-clock (timeout) and the retry count so a hung/slow upstream can never wedge a
 # Celery worker indefinitely — the generation task must fail fast and be marked failed
 # rather than sit in "generating" forever. Overridable via env for tuning.
 _LLM_TIMEOUT = float(os.environ.get("LLM_REQUEST_TIMEOUT", "90"))   # seconds per request
 _LLM_MAX_RETRIES = int(os.environ.get("LLM_MAX_RETRIES", "2"))
-_client = anthropic.Anthropic(timeout=_LLM_TIMEOUT, max_retries=_LLM_MAX_RETRIES)
+
+# Client is built LAZILY, not at import. This deployment can run entirely without an
+# ANTHROPIC_API_KEY (article generation uses Gemini via ARTICLE_LLM_PROVIDER=gemini).
+# Removing the key must NOT crash boot — modules import claude_client freely. Instead,
+# any actual Claude call with no key configured fails LOUD and immediately, so there is
+# zero possibility of silent Claude spend / credit leakage: no key ⇒ no request ⇒ no cost.
+_client = None
+
+
+def _get_client():
+    global _client
+    if _client is None:
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            raise RuntimeError(
+                "Claude is disabled on this deployment (ANTHROPIC_API_KEY is not set). "
+                "Article generation uses Gemini (ARTICLE_LLM_PROVIDER=gemini). A caller "
+                "attempted a Claude API call — route it through Gemini or set a key."
+            )
+        _client = anthropic.Anthropic(timeout=_LLM_TIMEOUT, max_retries=_LLM_MAX_RETRIES)
+    return _client
 
 # Model is overridable via env without code changes; per-call override also supported.
 DEFAULT_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-8")
@@ -36,7 +54,7 @@ def complete(prompt, *, system=None, max_tokens=4000, model=None) -> str:
     articles used to get saved cut off mid-sentence — so we raise instead, letting
     the caller retry with a larger budget or mark the article failed.
     """
-    resp = _client.messages.create(
+    resp = _get_client().messages.create(
         model=model or DEFAULT_MODEL,
         max_tokens=max_tokens,
         system=system or anthropic.NOT_GIVEN,
@@ -72,7 +90,7 @@ def complete_vision(prompt, image_bytes, media_type="image/png", *,
     """Vision completion (screenshot / visual-trends path) via base64 image block."""
     import base64
     data = base64.standard_b64encode(image_bytes).decode()
-    resp = _client.messages.create(
+    resp = _get_client().messages.create(
         model=model or DEFAULT_MODEL,
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": [
@@ -105,7 +123,7 @@ def complete_grounded(prompt, *, system=None, max_tokens=4000, model=None, allow
     tools = [_ws]
     msgs = [{"role": "user", "content": prompt}]
 
-    resp = _client.messages.create(
+    resp = _get_client().messages.create(
         model=mdl, max_tokens=max_tokens, system=sys, messages=msgs, tools=tools,
     )
     # The server-side search loop may pause; resume by re-sending the assistant
@@ -117,7 +135,7 @@ def complete_grounded(prompt, *, system=None, max_tokens=4000, model=None, allow
             {"role": "user", "content": prompt},
             {"role": "assistant", "content": resp.content},
         ]
-        resp = _client.messages.create(
+        resp = _get_client().messages.create(
             model=mdl, max_tokens=max_tokens, system=sys, messages=msgs, tools=tools,
         )
     return "".join(b.text for b in resp.content if b.type == "text")

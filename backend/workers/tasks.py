@@ -576,9 +576,9 @@ def generate_article_with_gemini(article, mode='core'):
 
         prompt += "\nReturn the JSON response with all fields filled."
 
-        # Generate content via the shared Claude client
+        # Generate content via the provider router (ARTICLE_LLM_PROVIDER; Gemini on this deployment)
         try:
-            logger.info("Calling LLM (Claude) for content generation")
+            logger.info(f"Calling article LLM (provider={os.environ.get('ARTICLE_LLM_PROVIDER', 'gemini')}) for content generation")
             from agents.gemini_client import generate_text as _gemini_text
             generated_text = _gemini_text(prompt, json_mode=True)
             logger.info("Gemini API call successful")

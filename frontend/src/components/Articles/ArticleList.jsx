@@ -76,6 +76,18 @@ function ArticleList() {
     }
   }, [generatingIds])
 
+  // Resume polling after a page reload: the client-side generatingIds are lost on
+  // refresh, so trust the server — any article the API reports as 'generating' gets
+  // polled until it reaches a terminal state. This is why the user no longer has to
+  // manually reload to see a generation finish.
+  useEffect(() => {
+    (items || []).forEach(a => {
+      if (a.status === 'generating' && !activePolls.current.has(a.id)) {
+        pollForCompletion(a.id)
+      }
+    })
+  }, [items])
+
   const isMounted = useRef(true)
   useEffect(() => { return () => { isMounted.current = false } }, [])
 
@@ -92,10 +104,15 @@ function ArticleList() {
         const fetchResult = await dispatch(fetchArticleStatus(articleId))
         if (fetchArticleStatus.fulfilled.match(fetchResult)) {
           const article = fetchResult.payload
-          if (article.status === 'draft' || article.status === 'published') {
+          // Terminal states — stop polling. 'failed' is terminal too: without it the
+          // spinner used to spin forever on a failed generation.
+          if (['draft', 'published', 'generated', 'failed'].includes(article.status)) {
             polling = false
             activePolls.current.delete(articleId)
             dispatch(removeGeneratingId(articleId))
+            if (article.status === 'failed') {
+              showError(article.generation_error || 'Generation failed. You can retry.')
+            }
             if (isMounted.current) refreshList()
             return
           }
@@ -264,12 +281,14 @@ function ArticleList() {
 
   const getStatusBadge = (status) => {
     const badges = {
-      fetched:   'bg-yellow-100 text-yellow-800 border-yellow-200',
-      generated: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-      review:    'bg-purple-100 text-purple-800 border-purple-200',
-      draft:     'bg-blue-100 text-blue-800 border-blue-200',
-      published: 'bg-green-100 text-green-800 border-green-200',
-      archived:  'bg-gray-100 text-gray-800 border-gray-200',
+      fetched:    'bg-yellow-100 text-yellow-800 border-yellow-200',
+      generating: 'bg-amber-100 text-amber-800 border-amber-200',
+      generated:  'bg-indigo-100 text-indigo-800 border-indigo-200',
+      review:     'bg-purple-100 text-purple-800 border-purple-200',
+      draft:      'bg-blue-100 text-blue-800 border-blue-200',
+      published:  'bg-green-100 text-green-800 border-green-200',
+      archived:   'bg-gray-100 text-gray-800 border-gray-200',
+      failed:     'bg-red-100 text-red-800 border-red-200',
     }
     return (
       <span className={`px-2 py-1 text-xs font-medium rounded border ${badges[status] || badges.fetched}`}>
@@ -616,6 +635,21 @@ function ArticleList() {
                               className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-xs font-medium flex items-center gap-1"
                             >
                               {generatingIds.includes(article.id) ? <><FiRefreshCw className="animate-spin" size={12} /> Generating...</> : <><FiPlay size={12} /> Generate</>}
+                            </button>
+                          )}
+                          {article.status === 'generating' && !generatingIds.includes(article.id) && (
+                            <span className="px-3 py-1.5 text-amber-700 text-xs font-medium flex items-center gap-1">
+                              <FiRefreshCw className="animate-spin" size={12} /> Generating...
+                            </span>
+                          )}
+                          {article.status === 'failed' && (
+                            <button
+                              onClick={() => handleGenerate(article.id)}
+                              disabled={generatingIds.includes(article.id)}
+                              title={article.generation_error || 'Generation failed'}
+                              className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-xs font-medium flex items-center gap-1"
+                            >
+                              {generatingIds.includes(article.id) ? <><FiRefreshCw className="animate-spin" size={12} /> Retrying...</> : <><FiRefreshCw size={12} /> Retry</>}
                             </button>
                           )}
                           {article.status === 'draft' && (

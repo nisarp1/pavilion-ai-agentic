@@ -83,6 +83,9 @@ class TrendResult:
     ai_confidence: float
     editorial_angle: str = ''
     velocity: int = 0  # positive = rising rank, negative = falling
+    sources: list = dataclasses.field(default_factory=list)  # e.g. ['google_trends','x']
+    cross_source: bool = False  # trending on >1 platform → stronger signal
+    momentum: float = 0.0  # cross-source-weighted rank score
 
 
 def _dict_to_result(d: dict) -> TrendResult:
@@ -104,6 +107,9 @@ def _dict_to_result(d: dict) -> TrendResult:
         ai_confidence=float(d.get('ai_confidence', 0.5)),
         editorial_angle=d.get('editorial_angle', ''),
         velocity=int(d.get('velocity', 0)),
+        sources=d.get('sources', []),
+        cross_source=bool(d.get('cross_source', False)),
+        momentum=float(d.get('momentum', 0)),
     )
 
 
@@ -325,32 +331,28 @@ def _apply_enrichment(payload: dict, enrichment_map: dict) -> dict:
 
 def _run_rss_only_pipeline() -> dict:
     """
-    Fast live-data path: Google News Sports RSS + basic RSS enrichment.
-    Always returns current sports headlines. No Gemini, ~1 second.
-    Sets rss_only=True to signal the frontend that Gemini context is pending.
+    Free multi-source Sports Trend Radar: Google Trends + X/Trends24 + Google News
+    sports, merged and ranked by CROSS-SOURCE momentum. No Gemini, no cost, ~1-2s.
+
+    This is the default (auto-poll) view — genuinely more than three tabs, for $0.
+    Sets rss_only=True to signal the frontend that paid Gemini context is still pending
+    (enrichment only runs on explicit Refresh when ENABLE_TRENDS_ENRICHMENT=true).
     """
     try:
-        from .trends_hunter import TrendsHunterAgent
-        from .context_enricher import ContextEnricherAgent
-        from .trend_ranker import TrendRankerAgent
-
-        hunter = TrendsHunterAgent()
-        raw = hunter.fetch_sports_news_fast()
+        from .sports_radar import build_radar_topics
+        raw = build_radar_topics(max_topics=15)
         if not raw:
-            raw = hunter._fetch_trends_rss()
-        if not raw:
+            # Every source came back empty (rare — the news backbone normally holds).
             return _fallback_payload()
 
-        raw     = _deduplicate_topics(raw)
-        enriched = ContextEnricherAgent().enrich(raw, gemini_enabled=False)
-        ranked   = TrendRankerAgent().rank(enriched)
-        results  = [_dict_to_result(d) for d in ranked]
-        payload  = _build_payload(results, cached=False)
-        payload['rss_only'] = True  # signal: Gemini enrichment is pending
+        results = [_dict_to_result(d) for d in raw]
+        payload = _build_payload(results, cached=False)
+        payload['rss_only'] = True       # Gemini context pending
+        payload['multi_source'] = True   # radar (Google + X + News), not single-source
         return payload
 
     except Exception as exc:
-        logger.error('RSS-only pipeline failed: %s', exc)
+        logger.error('Sports radar pipeline failed: %s', exc)
         return _fallback_payload()
 
 

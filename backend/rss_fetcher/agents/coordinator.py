@@ -40,6 +40,12 @@ REFRESH_DEBOUNCE_KEY = 'agentic_trends_refresh_debounce'
 ALERT_DEBOUNCE_KEY   = 'agentic_trends_degraded_alert'
 SOFT_TTL_RATIO       = 0.8
 
+# Sports Trend Radar: the FINAL enriched payload (clean topics) cached whole. 1-hour TTL
+# caps paid Gemini refreshes at ~1/hour no matter how often Refresh is clicked → cheap.
+RADAR_ENRICHED_KEY = 'radar_enriched_payload_v1'
+RADAR_ENRICHED_TS  = 'radar_enriched_payload_v1_ts'
+ENRICH_TTL         = 3600
+
 # Freshness key written ONLY on real (non-placeholder) Gemini enrichment success.
 HEALTH_TRENDS_LAST_ENRICHED = 'health:trends:last_enriched'
 
@@ -175,51 +181,30 @@ def run_trends_pipeline(force_refresh: bool = False) -> dict:
         if force_refresh:
             return _run_enrichment_only()
 
-        cache_ttl = getattr(settings, 'TRENDS_CACHE_TTL', 300)
-
-        # ── Step 1: Always fetch live sports headlines ────────────────────────────
-        fresh = _run_rss_only_pipeline()
-        if fresh.get('fallback'):
-            # Worst case: even live RSS failed → serving static placeholder topics.
-            logger.warning('Agentic trends DEGRADED: both RSS and fallback failed, returning static placeholder')
-            _alert_degradation(reason='rss_failed_static_placeholder')
-            return fresh
-
-        # ── Step 2: Augment with Gemini enrichment if available and fresh ─────────
-        enrichment_map = cache.get(ENRICHMENT_CACHE_KEY)
-        enrichment_ts  = cache.get(ENRICHMENT_TS_KEY)
-
-        if enrichment_map and enrichment_ts:
+        # ── Serve the cached ENRICHED radar if fresh (clean, Gemini-contextualised) ──
+        # The auto-poll is READ-ONLY: it serves this cache but NEVER pays to rebuild it.
+        # Only an explicit Refresh (gated + debounced) may spend on enrichment.
+        enriched = cache.get(RADAR_ENRICHED_KEY)
+        ts = cache.get(RADAR_ENRICHED_TS)
+        if enriched and ts:
             try:
-                # Guard against timezone-naive timestamps from an old cache entry
-                ts = enrichment_ts
                 if ts.tzinfo is None:
                     ts = ts.replace(tzinfo=dt_timezone.utc)
                 age = (datetime.now(dt_timezone.utc) - ts).total_seconds()
             except Exception:
-                age = cache_ttl + 1  # treat as expired
+                age = ENRICH_TTL + 1
+            if age <= ENRICH_TTL:
+                logger.info('SportsRadar: serving cached enriched payload (age=%.0fs)', age)
+                return {**enriched, 'cached': True, 'rss_only': False, 'age_seconds': int(age)}
+            # Expired enrichment → fall through to the free radar and make it LOUD.
+            logger.warning('SportsRadar DEGRADED: enrichment expired (%.0fs); serving free radar', age)
+            _alert_degradation(reason='radar_enrichment_expired', age_seconds=int(age))
 
-            if age <= cache_ttl:
-                # Cached enrichment still valid → serve it. The auto-poll is
-                # READ-ONLY: it never enqueues a rebuild (not even past the old
-                # soft-TTL). Only an explicit Refresh may pay for enrichment.
-                fresh = _apply_enrichment(fresh, enrichment_map)
-                fresh.pop('rss_only', None)
-                fresh['cached'] = False
-                logger.info('Agentic trends: live RSS + cached enrichment (age=%.0fs)', age)
-            else:
-                # Expired enrichment → serve free RSS-only topics. No LLM, no enqueue.
-                # This is a SILENT-QUALITY-DEGRADATION path (the audit's top risk): the
-                # newsroom keeps serving topics without paid Gemini context. Make it LOUD.
-                logger.warning(
-                    'Agentic trends DEGRADED: live RSS only (enrichment expired at %.0fs; Refresh to rebuild)',
-                    age,
-                )
-                _alert_degradation(reason='enrichment_expired', age_seconds=int(age))
-        else:
-            # Cold cache → serve free RSS-only topics. No LLM, no enqueue.
-            logger.info('Agentic trends: live RSS only (no enrichment cached; Refresh to rebuild)')
-
+        # ── Free multi-source radar (Google Trends + X + News; no LLM, no cost) ──
+        fresh = _run_rss_only_pipeline()
+        if fresh.get('fallback'):
+            logger.warning('SportsRadar DEGRADED: all sources failed, returning static placeholder')
+            _alert_degradation(reason='all_sources_failed_static_placeholder')
         return fresh
 
     except Exception as exc:
@@ -233,52 +218,39 @@ def run_trends_pipeline(force_refresh: bool = False) -> dict:
 
 def _run_enrichment_only() -> dict:
     """
-    Called by Celery: runs Gemini enrichment pipeline and caches the result.
-    Stores a {topic_key → enriched_dict} map — NOT a full user-facing payload.
-    Returns a status dict for the Celery task log.
+    Called by Celery on explicit Refresh: builds the free multi-source radar, then makes
+    ONE batched Gemini call to clean/classify/contextualise it, and caches the FINISHED
+    payload for ENRICH_TTL (1h). Lock-guarded so concurrent refreshes never double-spend.
     """
     if not TRENDS_ENRICHMENT_ENABLED:
-        logger.info('Agentic trends enrichment: disabled (ENABLE_TRENDS_ENRICHMENT=false) â skipping paid LLM run')
+        logger.info('SportsRadar enrichment: disabled (ENABLE_TRENDS_ENRICHMENT=false) - skipping paid run')
         return {'status': 'disabled'}
-    cache_ttl = getattr(settings, 'TRENDS_CACHE_TTL', 300)
 
     if not cache.add(LOCK_KEY, 1, 120):
-        logger.info('Agentic trends enrichment: lock held — skipping duplicate run')
+        logger.info('SportsRadar enrichment: lock held - skipping duplicate run')
         return {'status': 'locked'}
 
     try:
-        from .trends_hunter import TrendsHunterAgent
-        from .context_enricher import ContextEnricherAgent
-        from .trend_ranker import TrendRankerAgent
+        from .sports_radar import build_radar_topics, enrich_radar_batch
 
-        # Carry over previous ranks for velocity calculation
-        prev_map = cache.get(ENRICHMENT_CACHE_KEY) or {}
-        prev_ranks = {
-            k: v.get('rank', 0)
-            for k, v in prev_map.items()
-            if isinstance(v, dict)
-        }
+        raw = build_radar_topics(max_topics=15)
+        if not raw:
+            raise ValueError('radar returned no topics')
 
-        raw_topics = TrendsHunterAgent().run()
-        if not raw_topics:
-            raise ValueError('TrendsHunterAgent returned no topics')
+        enriched = enrich_radar_batch(raw)          # the single paid Gemini call
+        results  = [_dict_to_result(d) for d in enriched]
+        payload  = _build_payload(results, cached=True)
+        payload['multi_source'] = True
+        payload['enriched'] = True
 
-        raw_topics = _deduplicate_topics(raw_topics)
-        enriched   = ContextEnricherAgent().enrich(raw_topics)
-        ranked     = TrendRankerAgent().rank(enriched, prev_ranks=prev_ranks)
-
-        enrichment_map = {_topic_key(t.get('topic', '')): t for t in ranked}
-
-        cache.set(ENRICHMENT_CACHE_KEY, enrichment_map, cache_ttl)
-        cache.set(ENRICHMENT_TS_KEY, datetime.now(dt_timezone.utc), cache_ttl)
-        # Freshness heartbeat — written ONLY here, on real (non-placeholder) Gemini
-        # enrichment success. Never expires (None) so the watchdog can measure true age.
+        cache.set(RADAR_ENRICHED_KEY, payload, ENRICH_TTL)
+        cache.set(RADAR_ENRICHED_TS, datetime.now(dt_timezone.utc), ENRICH_TTL)
         cache.set(HEALTH_TRENDS_LAST_ENRICHED, datetime.now(dt_timezone.utc).isoformat(), None)
-        logger.info('Agentic trends: enrichment cached (%d topics)', len(enrichment_map))
-        return {'status': 'ok', 'count': len(enrichment_map)}
+        logger.info('SportsRadar: enriched payload cached (%d topics)', len(results))
+        return {'status': 'ok', 'count': len(results)}
 
     except Exception as exc:
-        logger.error('Agentic trends enrichment failed: %s', exc, exc_info=True)
+        logger.error('SportsRadar enrichment failed: %s', exc, exc_info=True)
         return {'status': 'error', 'error': str(exc)}
 
     finally:

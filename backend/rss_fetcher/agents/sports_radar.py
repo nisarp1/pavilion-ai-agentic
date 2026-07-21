@@ -193,3 +193,77 @@ def build_radar_topics(max_topics: int = 15) -> list[dict]:
     logger.info('SportsRadar: merged %d topics (%d cross-source)',
                 len(merged), sum(1 for b in merged if b['cross_source']))
     return merged[:max_topics]
+
+
+# ── Optional cheap enrichment: ONE batched Gemini call ─────────────────────────
+
+def enrich_radar_batch(topics: list[dict]) -> list[dict]:
+    """Clean + classify + contextualise the whole radar in a SINGLE Gemini call.
+
+    Regex can't turn "Wayne Rooney Delivers Brutal…" into a clean card or tell cricket
+    from football; one cheap LLM pass can. Given the merged candidates + their source
+    headlines, the model returns, for each: a clean topic name, the correct sport, a
+    one-line "why it's trending", and whether it's a real newsworthy sports story
+    (junk fragments like "Skipper"/"Awkward" are dropped).
+
+    ONE call for the entire list (~₹0.05), invoked only on explicit Refresh, cached and
+    debounced upstream. FAIL-SAFE: any error returns the free topics unchanged — the
+    radar never breaks or blocks on enrichment.
+    """
+    if not topics:
+        return topics
+    try:
+        import json as _json
+        lines = []
+        for i, t in enumerate(topics):
+            heads = '; '.join(a.get('title', '') for a in (t.get('articles') or [])[:2])
+            lines.append(f'{i}. "{t.get("topic","")}" (sources: {t.get("source","")}; headlines: {heads[:180]})')
+        prompt = (
+            "You are a sports news desk editor. For each candidate trending item below, decide if it is a "
+            "REAL, specific, newsworthy SPORTS story (a player, team, match, event or result) — not a vague "
+            "fragment (e.g. 'Skipper', 'Awkward', 'Down'), not politics/entertainment.\n\n"
+            "Return a JSON array; one object per input index with EXACTLY these keys:\n"
+            '  "i": the input index (int)\n'
+            '  "keep": true only if it is a real, specific sports story\n'
+            '  "topic": a clean 1-4 word display name (e.g. "Kylian Mbappé", "India vs Australia", "Virat Kohli")\n'
+            '  "sport": one of cricket|football|kabaddi|tennis|hockey|badminton|athletics|general\n'
+            '  "why": one short factual line on why it is trending (<=12 words), or ""\n\n'
+            "Use ONLY the given topic and headlines — never invent facts. Return ONLY the raw JSON array.\n\n"
+            "CANDIDATES:\n" + "\n".join(lines)
+        )
+        from agents.gemini_client import generate_text as _gen
+        raw = _gen(prompt, json_mode=True) or ""
+        s, e = raw.find('['), raw.rfind(']')
+        if s == -1 or e == -1:
+            logger.warning('SportsRadar enrich: no JSON array in response; using free topics')
+            return topics
+        verdicts = _json.loads(raw[s:e + 1])
+        by_i = {int(v['i']): v for v in verdicts if isinstance(v, dict) and 'i' in v}
+
+        out = []
+        for i, t in enumerate(topics):
+            v = by_i.get(i)
+            if v is None:
+                out.append(t)                 # no verdict → keep as-is
+                continue
+            if not v.get('keep', True):
+                continue                       # drop junk / non-sports
+            t = dict(t)
+            if v.get('topic'):
+                t['topic'] = str(v['topic']).strip()
+            if v.get('sport'):
+                t['sport'] = str(v['sport']).strip()
+            if v.get('why'):
+                t['reason'] = str(v['why']).strip()
+                t['editorial_angle'] = t['reason']
+            t['enriched'] = True
+            out.append(t)
+        # re-rank after drops
+        out.sort(key=lambda x: x.get('momentum', 0), reverse=True)
+        for idx, t in enumerate(out):
+            t['rank'] = idx + 1
+        logger.info('SportsRadar enrich: %d in → %d kept (Gemini, 1 call)', len(topics), len(out))
+        return out or topics
+    except Exception as exc:
+        logger.warning('SportsRadar enrich failed (%s); serving free topics', exc)
+        return topics

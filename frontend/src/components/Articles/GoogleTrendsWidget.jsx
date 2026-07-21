@@ -230,8 +230,23 @@ function GoogleTrendCard({ item, onTopicClick, fetchingTopic, fetchSuccess }) {
                   🔍 {traffic}
                 </span>
               )}
+              {item.source && (
+                <span
+                  title={item.cross_source ? 'Trending on more than one platform — a stronger signal' : `Source: ${item.source}`}
+                  className={`text-xs px-1.5 py-0.5 rounded-full font-medium border ${
+                    item.cross_source
+                      ? 'bg-red-50 text-red-700 border-red-200'
+                      : 'bg-gray-50 text-gray-500 border-gray-100'
+                  }`}
+                >
+                  {item.cross_source ? '🔥 ' : ''}{item.source}
+                </span>
+              )}
             </div>
             <h3 className="font-semibold text-gray-900 text-sm leading-snug">{topic}</h3>
+            {item.reason && (
+              <p className="text-xs text-gray-500 mt-0.5 leading-snug">{item.reason}</p>
+            )}
           </div>
         </div>
 

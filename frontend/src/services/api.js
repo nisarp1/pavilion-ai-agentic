@@ -101,6 +101,19 @@ api.interceptors.response.use(
       }
     }
 
+    // Normalize the API error envelope so a component can never render an error
+    // OBJECT as a React child. Backend returns {success:false, error:{status_code,
+    // message, detail}} — flatten .error / .detail down to their string message.
+    const _d = error.response?.data
+    if (_d && typeof _d === 'object') {
+      if (_d.error && typeof _d.error === 'object') {
+        _d.error = _d.error.message || _d.error.detail?.detail || _d.error.detail || 'An error occurred'
+      }
+      if (_d.detail && typeof _d.detail === 'object') {
+        _d.detail = _d.detail.detail || 'An error occurred'
+      }
+    }
+
     return Promise.reject(error)
   }
 )
